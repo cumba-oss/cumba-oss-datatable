@@ -286,16 +286,20 @@ jobs:
 
       # setup-java writes the settings.xml <server id="central"> AND imports the
       # GPG key, so neither a hand-rolled settings file nor a third-party GPG
-      # action is needed. server-username/server-password name the ENV VARS the
-      # generated settings.xml reads — they are not the values themselves.
+      # action is needed. server-username-env-var / server-password-env-var name
+      # the ENV VARS the generated settings.xml reads — not the values
+      # themselves. (They were `server-username` / `server-password` until
+      # setup-java deprecated those as aliases; the new names say what they are.
+      # `gpg-passphrase` is deprecated the same way, but is deliberately unused
+      # here — see below.)
       - name: Set up JDK and signing key
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
           server-id: central
-          server-username: CENTRAL_USERNAME
-          server-password: CENTRAL_PASSWORD
+          server-username-env-var: CENTRAL_USERNAME
+          server-password-env-var: CENTRAL_PASSWORD
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
           # No gpg-passphrase here on purpose: that input makes setup-java write
           # <gpg.passphrase> into settings.xml, and maven-gpg-plugin deprecated
