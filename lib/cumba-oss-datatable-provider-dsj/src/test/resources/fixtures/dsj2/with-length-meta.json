@@ -1,0 +1,14 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.META",
+  "name": "META",
+  "label": "META Table",
+  "records": 1,
+  "columns": [
+    {"itemOID": "IT.TEST", "name": "TESTCOL", "label": "Test Column", "dataType": "string", "length": 20}
+  ],
+  "rows": [
+    ["val"]
+  ]
+}

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: Idiomatic SPI provider / supplier shape;
+             constructors parse a file or URI and throw IOException; the
+             throw is documented contract and the constructor fails fast
+             without publishing `this`. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <Match>
+        <!-- MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR: Swing constructors
+             invoke inherited overridable methods (setBorder, add, setBounds,
+             etc.) by API design; the rule fires by construction on any
+             class extending JComponent/JFrame/JPanel/etc. -->
+        <Bug pattern="MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- DefineXml supplier probes the "/define.xml" path suffix (ASCII). -->
+        <Class name="net.cumba.datatable.provider.define.library.DefineXmlLibrarySupplier" />
+        <Method name="canProvideFor" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- DefineDataTableMetadata folds CDISC variable names (ASCII per
+             SDTM/ADaM IG). -->
+        <Class name="net.cumba.datatable.provider.define.metadata.DefineMetadataLibrary$DefineDataTableMetadata" />
+        <Method name="buildColumns" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- DefineDataTableMetadata folds CDISC domain-key names (ASCII per
+             SDTM/ADaM IG). -->
+        <Class name="net.cumba.datatable.provider.define.metadata.DefineMetadataLibrary$DefineDataTableMetadata" />
+        <Method name="parseDomainKeys" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- Getter returns the internal collection by design; the metadata
+             library is treated as an immutable view by callers. -->
+        <Class name="net.cumba.datatable.provider.define.metadata.DefineMetadataLibrary" />
+        <Field name="codelists" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <!-- Getter returns the internal collection by design; the metadata
+             library is treated as an immutable view by callers. -->
+        <Class name="net.cumba.datatable.provider.define.metadata.DefineMetadataLibrary" />
+        <Field name="dataTables" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+</FindBugsFilter>

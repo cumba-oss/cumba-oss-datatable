@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: Idiomatic SPI provider / supplier shape:
+             constructors parse a file or URI and throw IOException; the
+             throw is documented contract and the constructor fails fast
+             without publishing `this`. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- XPT library name derived from URI filename (SAS dataset name,
+             <=8 ASCII chars per V5 transport spec). -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.library.XptLibraryProvider" />
+        <Method name="getLibraryNameFor" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- BdatObservation holds byte arrays by reference for zero-copy parsing. -->
+        <Class name="net.cumba.datatable.provider.sas.sas7bdat.BdatObservation" />
+        <Field name="buffer" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- BdatObservation holds parser list by reference for zero-copy parsing. -->
+        <Class name="net.cumba.datatable.provider.sas.sas7bdat.BdatObservation" />
+        <Field name="parsers" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- ObservationIteratorXpt holds DatasetXpt member by reference; iterator owns the stream. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.ObservationIteratorXpt" />
+        <Field name="member" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- XptObservation holds byte arrays by reference for zero-copy parsing. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.XptObservation" />
+        <Field name="buffer" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- XptObservation holds parser list by reference for zero-copy parsing. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.XptObservation" />
+        <Field name="parsers" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- XptVarParser holds VariableXpt metadata reference by design. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.XptVarParser" />
+        <Field name="variable" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- ObservationIteratorXpt.next: iterator contract consumed by
+             internal callers that pre-check hasNext(); NoSuchElementException
+             would never fire in practice. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.ObservationIteratorXpt" />
+        <Method name="next" />
+        <Bug pattern="IT_NO_SUCH_ELEMENT" />
+    </Match>
+
+    <Match>
+        <!-- File.delete in temp-file cleanup block. -->
+        <Class name="net.cumba.datatable.provider.sas.sas7bcat.BcatFormatCatalogProvider" />
+        <Method name="provide" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+    <Match>
+        <!-- File.delete in temp-file cleanup block. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.XptTableProvider" />
+        <Method name="provide" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+    <Match>
+        <!-- File.delete in temp-file cleanup block. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.XptTableProvider" />
+        <Method name="provideMetaData" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+</FindBugsFilter>

@@ -1,0 +1,17 @@
+{
+  "datasetJSONCreationDateTime": "2026-08-09T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.BLANKTEST",
+  "name": "BLANKTEST",
+  "label": "A character column carrying both a source null and a genuine empty string",
+  "records": 3,
+  "columns": [
+    {"itemOID": "IT.CHARCOL", "name": "CHARCOL", "label": "Char", "dataType": "string"},
+    {"itemOID": "IT.NUMCOL", "name": "NUMCOL", "label": "Num", "dataType": "double"}
+  ],
+  "rows": [
+    ["A", 1.0],
+    [null, null],
+    ["", 2.0]
+  ]
+}

@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: idiomatic SPI provider/supplier shape;
+             constructors parse a file/URI and throw IOException.
+             Documented in CLAUDE.md. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <Match>
+        <!-- DB_DUPLICATE_SWITCH_CLAUSES: multiple DataValueType enum cases
+             handled identically (LONG and DOUBLE both exporting as numeric);
+             clearer than helper extraction. -->
+        <Bug pattern="DB_DUPLICATE_SWITCH_CLAUSES" />
+    </Match>
+
+    <Match>
+        <!-- PZLA_PREFER_ZERO_LENGTH_ARRAYS: codebase chose null sentinels for
+             "not found"; style preference, intentional. -->
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+
+    <Match>
+        <!-- REC_CATCH_EXCEPTION: library-boundary normalisation is intentional;
+             wraps unknown JDK/library failures. -->
+        <Bug pattern="REC_CATCH_EXCEPTION" />
+    </Match>
+
+    <Match>
+        <!-- SE_COMPARATOR_SHOULD_BE_SERIALIZABLE: plain stateless Comparators,
+             never placed in serialised TreeSet/TreeMap. -->
+        <Bug pattern="SE_COMPARATOR_SHOULD_BE_SERIALIZABLE" />
+    </Match>
+
+    <Match>
+        <!-- THROWS_METHOD_THROWS_RUNTIMEEXCEPTION: project pattern (LazyValue.get
+             etc.); declaring the unchecked throws makes the contract visible. -->
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+    </Match>
+
+    <Match>
+        <!-- UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR: Jackson @Data
+             @NoArgsConstructor DTOs and Lombok builder beans populate fields
+             post-construction. -->
+        <Bug pattern="UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One Match per (class, method-or-field, bug pattern) tuple.    -->
+    <!--    Multiple findings sharing the same tuple collapse into one    -->
+    <!--    Match (SpotBugs filter has no line-level scope).              -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- ExMsgs: capitalises the first letter of a parameter name
+             ("value", "row", "column") for error messages; the names are
+             project-controlled ASCII identifiers. -->
+        <Class name="net.cumba.datatable.ExMsgs" />
+        <Method name="indexOutOfBounds" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- Sentinel-equality test against canonical NaN/missing constants; intentional. -->
+        <Class name="net.cumba.datatable.values.DataValueDouble" />
+        <Method name="getValueAsString" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
+        <!-- Tri-state Boolean: true / false / null (= unknown).
+             Documented API contract on isExtensible(). -->
+        <Class name="net.cumba.datatable.metadata.ICodeList" />
+        <Method name="isExtensible" />
+        <Bug pattern="NP_BOOLEAN_RETURN_NULL" />
+    </Match>
+
+    <!-- Property (ported verbatim from the upstream project; see PropertyTest for the
+         drift pin). Its two collection components are declaration
+         metadata: a provider or exporter builds a Property once, as a static constant, and every
+         consumer only reads allowedValues / conditionalAllowedValues to render a picker. There is
+         no mutation path in either project.
+
+         The suppression rather than a defensive copy is deliberate and load-bearing: this type is
+         used UNMODIFIED by owner agreement, so that the later IDataTableProvider migration is a
+         pure add with no second divergence. Adding List.copyOf here would fork the copy from its
+         source on its first day - exactly the drift the port exists to close - and would also
+         change behaviour, since the components are @Nullable and copyOf rejects null. Anything
+         worth changing is changed upstream first and re-ported. -->
+    <Match>
+        <Class name="net.cumba.datatable.io.Property" />
+        <Field name="allowedValues" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+    <Match>
+        <Class name="net.cumba.datatable.io.Property" />
+        <Field name="conditionalAllowedValues" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+    <Match>
+        <Class name="net.cumba.datatable.io.Property" />
+        <Field name="allowedValues" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+    <Match>
+        <Class name="net.cumba.datatable.io.Property" />
+        <Field name="conditionalAllowedValues" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+</FindBugsFilter>

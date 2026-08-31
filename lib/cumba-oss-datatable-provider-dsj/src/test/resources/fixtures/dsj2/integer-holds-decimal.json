@@ -1,0 +1,16 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.J2",
+  "name": "J2TEST",
+  "label": "J2 integer-holds-decimal Table",
+  "records": 3,
+  "columns": [
+    {"itemOID": "IT.VAL", "name": "VAL", "label": "Value", "dataType": "integer"}
+  ],
+  "rows": [
+    [3],
+    [0.2],
+    [null]
+  ]
+}

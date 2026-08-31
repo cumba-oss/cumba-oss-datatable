@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: Idiomatic SPI provider / supplier shape:
+             constructors parse a file or URI and throw IOException; the
+             throw is documented contract and the constructor fails fast
+             without publishing `this`. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <Match>
+        <!-- PZLA_PREFER_ZERO_LENGTH_ARRAYS: Codebase chose null sentinels
+             for "not found" vs empty result (style preference); changing
+             to zero-length arrays would destroy the documented signal. -->
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+
+    <Match>
+        <!-- REC_CATCH_EXCEPTION: Library-boundary normalisation is
+             intentional; catch (Exception) wraps unknown JDK/library
+             failures into project-typed exceptions or fallback values. -->
+        <Bug pattern="REC_CATCH_EXCEPTION" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- ParquetTableProvider folds reserved Parquet metadata keys ("r",
+             "arrow:schema") which are ASCII per Parquet / Arrow spec. -->
+        <Class name="net.cumba.datatable.provider.parquet.ParquetTableProvider" />
+        <Method name="getTable" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- ParquetTableProvider folds reserved Parquet metadata keys ("r",
+             "arrow:schema") which are ASCII per Parquet / Arrow spec. -->
+        <Class name="net.cumba.datatable.provider.parquet.ParquetTableProvider" />
+        <Method name="getTableMeta" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- File.delete in temp-file cleanup blocks. -->
+        <Class name="net.cumba.datatable.provider.parquet.ParquetTableProvider" />
+        <Method name="provide" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+    <Match>
+        <!-- File.delete in temp-file cleanup blocks. -->
+        <Class name="net.cumba.datatable.provider.parquet.ParquetTableProvider" />
+        <Method name="provideMetaData" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+    <Match>
+        <!-- Parquet2TableDataParser is an inner class whose lifecycle is
+             tied to the enclosing ParquetTableProvider; flagged as
+             refactorable to static but the enclosing reference is
+             intentional for callback / resource sharing. -->
+        <Class name="net.cumba.datatable.provider.parquet.ParquetTableProvider$Parquet2TableDataParser" />
+        <Bug pattern="SIC_INNER_SHOULD_BE_STATIC_NEEDS_THIS" />
+    </Match>
+
+</FindBugsFilter>

@@ -1,0 +1,3 @@
+{"datasetJSONCreationDateTime":"2026-05-27T10:00:00","datasetJSONVersion":"1.1.0","itemGroupOID":"IG.NDJTEST","name":"NDJTEST","label":"NDJTEST Table","records":2,"columns":[{"itemOID":"IT.NAME","name":"NAME","label":"Name","dataType":"string"},{"itemOID":"IT.VAL","name":"VAL","label":"Value","dataType":"double"}]}
+["Alpha",1.0]
+["Beta",2.0]

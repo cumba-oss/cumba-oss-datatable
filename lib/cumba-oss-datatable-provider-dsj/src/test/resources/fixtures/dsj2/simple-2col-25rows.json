@@ -1,0 +1,124 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.TEST",
+  "name": "TEST",
+  "label": "TEST Table",
+  "records": 25,
+  "columns": [
+    {
+      "itemOID": "IT.NAME",
+      "name": "NAME",
+      "label": "Subject Name",
+      "dataType": "string"
+    },
+    {
+      "itemOID": "IT.VAL",
+      "name": "VAL",
+      "label": "Value",
+      "dataType": "double"
+    }
+  ],
+  "rows": [
+    [
+      "Subj0",
+      0.0
+    ],
+    [
+      "Subj1",
+      1.5
+    ],
+    [
+      "Subj2",
+      3.0
+    ],
+    [
+      "Subj3",
+      4.5
+    ],
+    [
+      "Subj4",
+      6.0
+    ],
+    [
+      "Subj5",
+      7.5
+    ],
+    [
+      "Subj6",
+      9.0
+    ],
+    [
+      "Subj7",
+      10.5
+    ],
+    [
+      "Subj8",
+      12.0
+    ],
+    [
+      "Subj9",
+      13.5
+    ],
+    [
+      "Subj10",
+      15.0
+    ],
+    [
+      "Subj11",
+      16.5
+    ],
+    [
+      "Subj12",
+      18.0
+    ],
+    [
+      "Subj13",
+      19.5
+    ],
+    [
+      "Subj14",
+      21.0
+    ],
+    [
+      "Subj15",
+      22.5
+    ],
+    [
+      "Subj16",
+      24.0
+    ],
+    [
+      "Subj17",
+      25.5
+    ],
+    [
+      "Subj18",
+      27.0
+    ],
+    [
+      "Subj19",
+      28.5
+    ],
+    [
+      "Subj20",
+      30.0
+    ],
+    [
+      "Subj21",
+      31.5
+    ],
+    [
+      "Subj22",
+      33.0
+    ],
+    [
+      "Subj23",
+      34.5
+    ],
+    [
+      "Subj24",
+      36.0
+    ]
+  ]
+}

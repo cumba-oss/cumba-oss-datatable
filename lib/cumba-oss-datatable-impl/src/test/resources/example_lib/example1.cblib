@@ -1,0 +1,20 @@
+{
+    "name": "example1",
+    "label": "This is the first example library",
+    "defineXmlUri": "",
+    "validationReportUri": "",
+    "members": [
+        {"name": "mem1", "label": "The first member in the first example", "uri": "mem1.json", "columns": [
+            {"name": "m1_col1", "label": "First Column", "type": "DOUBLE", "format": "best12.4", "key": -1},
+            {"name": "m1_col2", "label": "Second Column", "type": "STRING", "format": "$200.", "key": -1}
+        ]},
+        {"name": "mem2", "label": "The second member in the first example", "uri": "mem2.json", "columns": [
+            {"name": "m2_col1", "label": "First Column", "type": "STRING", "format": "$CHAR16.", "key": -1},
+            {"name": "m2_col2", "label": "Second Column", "type": "STRING", "format": "$200.", "key": -1}
+        ]}
+    ],
+    "libraryUris": [],
+    "formatCatalogUris": [],
+    "memberMetaTableUri": "",
+    "columnMetaTableUri": ""
+}

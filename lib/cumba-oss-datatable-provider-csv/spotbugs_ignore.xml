@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: Idiomatic SPI provider / supplier shape:
+             constructors parse a file or URI and throw IOException; the
+             throw is documented contract and the constructor fails fast
+             without publishing `this`. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <Match>
+        <!-- REC_CATCH_EXCEPTION: Library-boundary normalisation is
+             intentional; `catch (Exception)` wraps unknown JDK/library
+             failures into project-typed exceptions or fallback values. -->
+        <Bug pattern="REC_CATCH_EXCEPTION" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <!-- (none for this module) -->
+
+</FindBugsFilter>

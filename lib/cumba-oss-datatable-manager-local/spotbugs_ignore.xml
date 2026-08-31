@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: Idiomatic SPI provider / supplier shape:
+             constructors parse a file or URI and throw IOException; the
+             throw is documented contract and the constructor fails fast
+             without publishing `this`. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <Match>
+        <!-- THROWS_METHOD_THROWS_RUNTIMEEXCEPTION: Established project
+             pattern (LazyValue.get, parser-style rethrows in
+             DataSetJsonTableParallelParser/URIBuilder); declaring the
+             unchecked throws makes the contract visible to callers. -->
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- Folder library probes file extensions (".sas7bdat", ".sas7bcat",
+             "formats.", "define.xml") with ASCII suffix tokens; locale-
+             insensitive folding is intentional. -->
+        <Class name="net.cumba.datatable.library.folder.FolderLibrary" />
+        <Method name="acceptFile" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- Folder member derives dataset name from ASCII filename per
+             SDTM/ADaM IG; locale-insensitive folding is intentional. -->
+        <Class name="net.cumba.datatable.library.folder.FolderMember" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- getColumns() returns the lazily-built column metadata list by
+             reference; the contract is that callers see (and may extend)
+             the live list owned by the FolderMember. -->
+        <Class name="net.cumba.datatable.library.folder.FolderMember" />
+        <Field name="columns" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <!-- Constructor stores the parent FolderLibrary as a back-
+             reference for navigation; the member is owned by the library
+             and the link is part of the ILibraryMember contract. -->
+        <Class name="net.cumba.datatable.library.folder.FolderMember" />
+        <Field name="library" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- Path.getFileName() chains in FolderLibrary/FolderMember/
+             LocalDataTableManager only null for root paths, unreachable
+             for folder member / export URIs. -->
+        <Class name="net.cumba.datatable.library.folder.FolderLibrary" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" />
+    </Match>
+
+    <Match>
+        <!-- Path.getFileName() chains in FolderLibrary/FolderMember/
+             LocalDataTableManager only null for root paths, unreachable
+             for folder member / export URIs. -->
+        <Class name="net.cumba.datatable.library.folder.FolderLibrary" />
+        <Method name="acceptFile" />
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" />
+    </Match>
+
+    <Match>
+        <!-- Path.getFileName() chains in FolderLibrary/FolderMember/
+             LocalDataTableManager only null for root paths, unreachable
+             for folder member / export URIs. -->
+        <Class name="net.cumba.datatable.library.folder.FolderMember" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" />
+    </Match>
+
+</FindBugsFilter>

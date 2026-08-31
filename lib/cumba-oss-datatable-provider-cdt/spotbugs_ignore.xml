@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR: Jackson @Data
+             @NoArgsConstructor DTOs and Lombok builder beans populate
+             fields post-construction rather than in the constructor;
+             project-wide convention. -->
+        <Bug pattern="UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CdtWriter.classifyKind folds SAS format prefixes ("DATETIME",
+             "DATE", "TIME", "E8601…" etc.) which are ASCII per SAS format
+             spec. -->
+        <Class name="net.cumba.datatable.provider.cdt.CdtWriter" />
+        <Method name="classifyKind" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CdtLibraryProvider derives library names from URI filenames
+             (CDISC dataset, ASCII per IG). -->
+        <Class name="net.cumba.datatable.provider.cdt.library.CdtLibraryProvider" />
+        <Method name="getLibraryNameFor" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- Numeric rendering compares against integral form to choose
+             integer vs decimal output; equality test on double is the
+             intended check. -->
+        <Class name="net.cumba.datatable.provider.cdt.CdtWriter" />
+        <Method name="renderNumber" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
+        <!-- File.delete in temp-file cleanup; failure to delete is
+             harmless (JVM exit cleanup catches it). -->
+        <Class name="net.cumba.datatable.provider.cdt.CdtTableProvider" />
+        <Method name="readContent" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+    <Match>
+        <!-- File.delete in temp-file cleanup; failure to delete is
+             harmless (JVM exit cleanup catches it). -->
+        <Class name="net.cumba.datatable.provider.cdt.library.CdtLibraryProvider" />
+        <Method name="readContent" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+</FindBugsFilter>

@@ -1,0 +1,28 @@
+{
+	"datasetJSONCreationDateTime":"2024-12-18T15:34:33",
+	"datasetJSONVersion":"1.1.0",
+	"fileOID":"CDISCPILOT01.adtte",
+	"dbLastModifiedDateTime":"2012-10-15T22:56:22",
+	"originator":"CDISC Data Exchange Standards Team",
+	"sourceSystem":{"name":"Notepad++","version":"8.9"},
+	"itemGroupOID":"ADTTE",
+	"records":10,
+	"name":"EXAMPLE",
+	"label":"Example Data Set",
+	"columns":[
+		{"itemOID":"ADTTE.M1_COL1","name":"m1_col1","label":"First Column Label","dataType":"double"},
+		{"itemOID":"ADTTE.M1_COL2","name":"m1_col2","label":"Second Column Label","dataType":"string","length":200}
+	],
+	"rows":[
+        [1.4,"Some text in a very long column - row 1"],
+        [2.3,"Some text in a very long column - row 2"],
+        [3.1,"Some text in a very long column - row 3"],
+        [4.546,"Some text in a very long column - row 4"],
+        [5,"Some text in a very long column - row 5"],
+        [6,"Some text in a very long column - row 6"],
+        [7,"Some text in a very long column - row 7"],
+        [8,"Some text in a very long column - row 8"],
+        [9,"Some text in a very long column - row 9"],
+        [10,"Some text in a very long column - row 10"]
+	]
+}

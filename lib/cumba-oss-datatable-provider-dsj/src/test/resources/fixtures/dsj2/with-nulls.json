@@ -1,0 +1,16 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.NULLTEST",
+  "name": "NULLTEST",
+  "label": "NULLTEST Table",
+  "records": 3,
+  "columns": [
+    {"itemOID": "IT.VAL", "name": "VAL", "label": "Value", "dataType": "double"}
+  ],
+  "rows": [
+    [1.0],
+    [null],
+    [3.0]
+  ]
+}

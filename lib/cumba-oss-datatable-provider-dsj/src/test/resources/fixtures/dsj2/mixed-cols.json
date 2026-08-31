@@ -1,0 +1,17 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.MIXED",
+  "name": "MIXED",
+  "label": "MIXED Table",
+  "records": 2,
+  "columns": [
+    {"itemOID": "IT.NAME", "name": "NAME", "label": "Name", "dataType": "string"},
+    {"itemOID": "IT.AGE", "name": "AGE", "label": "Age", "dataType": "integer"},
+    {"itemOID": "IT.WEIGHT", "name": "WEIGHT", "label": "Weight", "dataType": "float"}
+  ],
+  "rows": [
+    ["Alice", 30, 65.5],
+    ["Bob", 25, 80.2]
+  ]
+}

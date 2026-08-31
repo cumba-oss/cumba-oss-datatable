@@ -1,0 +1,15 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.DECTEST",
+  "name": "DECTEST",
+  "label": "DECTEST Table",
+  "records": 2,
+  "columns": [
+    {"itemOID": "IT.VAL", "name": "VAL", "label": "Value", "dataType": "string", "targetDataType": "decimal"}
+  ],
+  "rows": [
+    ["1.5"],
+    ["2.7"]
+  ]
+}

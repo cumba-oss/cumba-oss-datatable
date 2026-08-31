@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: Idiomatic SPI provider / supplier shape;
+             constructors parse a file or URI and throw IOException; the
+             throw is documented contract and the constructor fails fast
+             without publishing `this`. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <Match>
+        <!-- THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION: CLI main(String[])
+             methods declare `throws Exception` as the pragmatic top-level
+             surface. -->
+        <Bug pattern="THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- Returning the parsed DOM Document is the documented purpose of
+             the pruner; callers consume the pruned tree directly. -->
+        <Class name="net.cumba.cdisc.define.DefineXmlPruner" />
+        <Method name="getDocument" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <!-- Same rationale as DefineXmlPruner: exposing the converted DOM
+             Document is the documented purpose of the converter. -->
+        <Class name="net.cumba.cdisc.define.DefineXmlConverter" />
+        <Method name="getDocument" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <!-- XMLInputFactory is intentionally stored by reference; the
+             factory wrapper delegates to it for the lifetime of the
+             agnostic factory. -->
+        <Class name="net.cumba.cdisc.define.NamespaceAgnosticAttrFactory" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+</FindBugsFilter>

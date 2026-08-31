@@ -1,0 +1,15 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.TDTTEST",
+  "name": "TDTTEST",
+  "label": "TDTTEST Table",
+  "records": 2,
+  "columns": [
+    {"itemOID": "IT.ID", "name": "ID", "label": "Identifier", "dataType": "string", "targetDataType": "integer"}
+  ],
+  "rows": [
+    ["10"],
+    ["20"]
+  ]
+}

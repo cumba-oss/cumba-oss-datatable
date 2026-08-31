@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <!-- ================================================================ -->
+    <!-- 1. Generic project-wide FP categories                            -->
+    <!--    Every instance of these patterns is structurally an FP in     -->
+    <!--    this codebase by project convention. Only categories with     -->
+    <!--    at least one finding in this module are listed.               -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CT_CONSTRUCTOR_THROW: Idiomatic SPI provider / supplier shape:
+             constructors parse a file or URI and throw IOException; the
+             throw is documented contract and the constructor fails fast
+             without publishing `this`. -->
+        <Bug pattern="CT_CONSTRUCTOR_THROW" />
+    </Match>
+
+    <Match>
+        <!-- DB_DUPLICATE_SWITCH_CLAUSES: Multiple DataValueType enum cases
+             handled identically (e.g. LONG and DOUBLE both exporting as
+             numeric); clearer than introducing a helper method. -->
+        <Bug pattern="DB_DUPLICATE_SWITCH_CLAUSES" />
+    </Match>
+
+    <Match>
+        <!-- PZLA_PREFER_ZERO_LENGTH_ARRAYS: Codebase chose null sentinels
+             for "not found" vs empty result (style preference); changing
+             to zero-length arrays would destroy the documented signal. -->
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS" />
+    </Match>
+
+    <Match>
+        <!-- REC_CATCH_EXCEPTION: Library-boundary normalisation is
+             intentional; catch (Exception) wraps unknown JDK/library
+             failures into project-typed exceptions or fallback values. -->
+        <Bug pattern="REC_CATCH_EXCEPTION" />
+    </Match>
+
+    <Match>
+        <!-- SE_COMPARATOR_SHOULD_BE_SERIALIZABLE: Plain stateless
+             Comparators are never placed in serialised TreeSet/TreeMap;
+             the project doesn't use Java Object Serialization. -->
+        <Bug pattern="SE_COMPARATOR_SHOULD_BE_SERIALIZABLE" />
+    </Match>
+
+    <Match>
+        <!-- THROWS_METHOD_THROWS_RUNTIMEEXCEPTION: Established project
+             pattern (LazyValue.get, parser-style rethrows in
+             DataSetJsonTableParallelParser/URIBuilder); declaring the
+             unchecked throws makes the contract visible to callers. -->
+        <Bug pattern="THROWS_METHOD_THROWS_RUNTIMEEXCEPTION" />
+    </Match>
+
+    <!-- ================================================================ -->
+    <!-- 2. Targeted suppressions                                         -->
+    <!--    One <Match> per unique (class, method-or-field, bug pattern)  -->
+    <!--    tuple. Multiple findings sharing the same tuple collapse into -->
+    <!--    one Match (filter has no line-level scope).                   -->
+    <!-- ================================================================ -->
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on .dblib URI/path segments. -->
+        <Class name="net.cumba.datatable.impl.library.dblib.DataBrowserLibrary" />
+        <Method name="resolveDirectorySource" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on .dblib URI/path segments. -->
+        <Class name="net.cumba.datatable.impl.library.dblib.DataBrowserLibrary" />
+        <Method name="resolveFileSource" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on ASCII column names. -->
+        <Class name="net.cumba.datatable.impl.library.dblib.DataBrowserLibraryProvider" />
+        <Method name="applyTableRowToColumnBuilder" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on ASCII identifiers. -->
+        <Class name="net.cumba.datatable.impl.metadata.DataTableLibraryMetadataAdapter$AdapterDataTable" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on ASCII identifiers. -->
+        <Class name="net.cumba.datatable.impl.metadata.DataTableLibraryMetadataAdapter$AdapterDataTable" />
+        <Method name="getColumn" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on ASCII identifiers. -->
+        <Class name="net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary$DbLibDataTableMetadata" />
+        <Method name="getName" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on ASCII column names. -->
+        <Class name="net.cumba.datatable.impl.provider.DataTableMetaSupport" />
+        <Method name="addColumn" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on URI-derived dataset names. -->
+        <Class name="net.cumba.datatable.impl.provider.DataTableMetaSupport" />
+        <Method name="getTableNameFor" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- CDISC data-table layer: case folding on ASCII column names. -->
+        <Class name="net.cumba.datatable.impl.view.MergeDataTable" />
+        <Method name="createMetaData" />
+        <Bug pattern="DM_CONVERT_CASE" />
+    </Match>
+
+    <Match>
+        <!-- AbstractLibrarySupplier exposes its supportedFiles list to the SPI registry; treated read-only. -->
+        <Class name="net.cumba.datatable.impl.library.AbstractLibrarySupplier" />
+        <Field name="supportedFiles" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <!-- DataBrowserMetadataLibrary exposes codelists map to callers as a read-only view. -->
+        <Class name="net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary" />
+        <Field name="codelists" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <!-- DataBrowserMetadataLibrary exposes dataTables collection to callers as a read-only view. -->
+        <Class name="net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary" />
+        <Field name="dataTables" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <!-- KeyHashSupport stores caller-owned column-id arrays by reference; treated as immutable. -->
+        <Class name="net.cumba.datatable.impl.KeyHashSupport$KeyColumnMatcher" />
+        <Field name="colIds1" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- KeyHashSupport stores caller-owned column-id arrays by reference; treated as immutable. -->
+        <Class name="net.cumba.datatable.impl.KeyHashSupport$KeyColumnMatcher" />
+        <Field name="colIds2" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- AbstractLibrarySupplier stores caller-owned supportedFiles list by reference; treated read-only. -->
+        <Class name="net.cumba.datatable.impl.library.AbstractLibrarySupplier" />
+        <Field name="supportedFiles" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- DataBrowserMember references its parent DataBrowserLibrary by design. -->
+        <Class name="net.cumba.datatable.impl.library.dblib.DataBrowserMember" />
+        <Field name="library" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- DataBufferDouble.canStore tests exact bit-pattern equality (incl. NaN payload) for missing-value sentinels. -->
+        <Class name="net.cumba.datatable.impl.databuffer.DataBufferDouble" />
+        <Method name="canStore" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
+        <!-- DataBufferInt.canStore tests exact equality with long-roundtrip representation. -->
+        <Class name="net.cumba.datatable.impl.databuffer.DataBufferInt" />
+        <Method name="canStore" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
+        <!-- DataBufferInt.canStoreDouble tests exact equality with long-roundtrip representation. -->
+        <Class name="net.cumba.datatable.impl.databuffer.DataBufferInt" />
+        <Method name="canStoreDouble" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
+        <!-- DataBufferLong.canStore tests exact equality with long-roundtrip representation. -->
+        <Class name="net.cumba.datatable.impl.databuffer.DataBufferLong" />
+        <Method name="canStore" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
+        <!-- DataBufferLong.canStoreDouble tests exact equality with long-roundtrip representation. -->
+        <Class name="net.cumba.datatable.impl.databuffer.DataBufferLong" />
+        <Method name="canStoreDouble" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
+        <!-- DataBrowserLibrary.resolveDirectorySource / resolveFileSource
+             chain Path.getFileName() which only returns null for root
+             paths; unreachable for .dblib library URIs. -->
+        <Class name="net.cumba.datatable.impl.library.dblib.DataBrowserLibrary" />
+        <Method name="resolveDirectorySource" />
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" />
+    </Match>
+
+    <Match>
+        <!-- DataBrowserLibrary.resolveDirectorySource / resolveFileSource
+             chain Path.getFileName() which only returns null for root
+             paths; unreachable for .dblib library URIs. -->
+        <Class name="net.cumba.datatable.impl.library.dblib.DataBrowserLibrary" />
+        <Method name="resolveFileSource" />
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" />
+    </Match>
+
+    <Match>
+        <!-- Anonymous inner class in DataBrowserMetadataLibrary.buildDataTables; refactor not warranted. -->
+        <Class name="net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary" />
+        <Method name="buildDataTables" />
+        <Bug pattern="SIC_INNER_SHOULD_BE_STATIC_ANON" />
+    </Match>
+
+</FindBugsFilter>

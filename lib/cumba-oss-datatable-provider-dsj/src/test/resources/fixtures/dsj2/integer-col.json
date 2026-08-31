@@ -1,0 +1,16 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.INTTEST",
+  "name": "INTTEST",
+  "label": "INTTEST Table",
+  "records": 3,
+  "columns": [
+    {"itemOID": "IT.ID", "name": "ID", "label": "Identifier", "dataType": "integer"}
+  ],
+  "rows": [
+    [10],
+    [20],
+    [30]
+  ]
+}

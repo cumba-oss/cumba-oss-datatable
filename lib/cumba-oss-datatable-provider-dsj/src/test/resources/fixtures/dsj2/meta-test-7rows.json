@@ -1,0 +1,21 @@
+{
+  "datasetJSONCreationDateTime": "2026-05-27T10:00:00",
+  "datasetJSONVersion": "1.1.0",
+  "itemGroupOID": "IG.TEST",
+  "name": "TEST",
+  "label": "TEST Table",
+  "records": 7,
+  "columns": [
+    {"itemOID": "IT.NAME", "name": "NAME", "label": "Subject Name", "dataType": "string", "length": 20},
+    {"itemOID": "IT.VAL", "name": "VAL", "label": "Value", "dataType": "double"}
+  ],
+  "rows": [
+    ["Subj0", 0.0],
+    ["Subj1", 1.5],
+    ["Subj2", 3.0],
+    ["Subj3", 4.5],
+    ["Subj4", 6.0],
+    ["Subj5", 7.5],
+    ["Subj6", 9.0]
+  ]
+}
