@@ -284,6 +284,7 @@
         <module>lib/cumba-oss-datatable-provider-xlsx</module>
         <module>lib/cumba-oss-datatable-provider-define</module>
         <module>lib/cumba-oss-datatable-manager-local</module>
+        <module>lib/cumba-oss-datatable-testkit</module>
 
         <module>coverage</module>
     </modules>
@@ -1302,7 +1303,12 @@
                 <scope>provided</scope>
             </dependency>
 
-        </dependencies>
+                    <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>cumba-oss-datatable-testkit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+</dependencies>
     </dependencyManagement>
 
     <!-- Project-wide dependencies inherited by every module. JSpecify is here

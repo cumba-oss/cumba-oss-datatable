@@ -93,6 +93,11 @@
             <artifactId>cumba-oss-datatable-manager-local</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>net.cumba</groupId>
+            <artifactId>cumba-oss-datatable-testkit</artifactId>
+            <version>${project.version}</version>
+        </dependency>
     </dependencies>
 
     <build>
