@@ -25,7 +25,7 @@ import org.jspecify.annotations.Nullable;
  * </p>
  * <ul>
  * <li>Setting individual cell values (by row/column)</li>
- * <li>Setting cell values as {@link IDataValue} or {@code DataValueFormatted}</li>
+ * <li>Setting cell values as {@link IDataValue} or as plain objects</li>
  * <li>Renaming columns</li>
  * <li>Removing columns</li>
  * <li>Changing column attributes (label, format, type, length)</li>
@@ -251,7 +251,11 @@ public class OverlayDataTable extends AbstractDataTable
         {
             removedDelegateColumns.add(delegateIdx);
         }
-        columnMapping.remove(idx);
+        // columnMapping is a List<Integer>, so remove(int) and remove(Object) are genuinely
+        // ambiguous to a reader. idx is an int, so this is index-based removal, matching the
+        // other two lines: columnNames drops the same position, and columnMetaOverrides is a
+        // Map keyed by column position whose remove(Object) boxes idx.
+        columnMapping.remove(/* index */ idx);
         columnNames.remove(idx);
         columnMetaOverrides.remove(idx);
 

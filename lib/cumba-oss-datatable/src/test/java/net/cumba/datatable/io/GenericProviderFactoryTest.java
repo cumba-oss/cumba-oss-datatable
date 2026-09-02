@@ -17,7 +17,7 @@ class GenericProviderFactoryTest
 
     // ==================== Test Stubs ====================
 
-    private static class TestProvider implements IGenericProvider<String>
+    static class TestProvider implements IGenericProvider<String>
     {
 
         private final List<FileInfo> fileInfos;

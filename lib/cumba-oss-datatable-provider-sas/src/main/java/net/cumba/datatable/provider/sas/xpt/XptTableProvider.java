@@ -502,7 +502,7 @@ public class XptTableProvider extends AbstractDataTableProvider
      */
     protected File downloadToFile(URI aUri) throws IOException
     {
-        File tmp = File.createTempFile("cumba-oss-xpt-", ".xpt");
+        File tmp = File.createTempFile("corej-xpt-", ".xpt");
         try (InputStream in = aUri.toURL().openStream())
         {
             Files.copy(in, tmp.toPath(), StandardCopyOption.REPLACE_EXISTING);

@@ -204,9 +204,15 @@ public class DefineCache
     }
 
     /**
-     * The cache entry
+     * The cache entry.
+     *
+     * <p>
+     * Package-private, not private: {@code getLastModified(CacheEntry)} and
+     * {@code getFromEntry(CacheEntry)} are {@code protected} extension points, so this type is part
+     * of that surface and cannot be private (Error Prone {@code ExposedPrivateType}).
+     * </p>
      */
-    private static class CacheEntry
+    static class CacheEntry
     {
 
         @Getter

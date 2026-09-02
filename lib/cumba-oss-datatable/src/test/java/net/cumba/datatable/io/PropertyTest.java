@@ -17,17 +17,19 @@ import org.junit.jupiter.api.Test;
  *
  * <p>
  * {@code Property} and {@code PropertyType} were copied <b>verbatim</b> — same package, same
- * components, same factories, same javadoc — from the upstream project's
- * {@code net.cumba.datatable.io} package. Only whitespace differs: the two projects'
- * {@code eclipse-formatter.xml} are not identical, so this project's Spotless reformats the copy.
+ * components, same factories, same javadoc — from
+ * {@code /data/net.cumba.dataviewer/lib/net.cumba.datatable/src/main/java/net/cumba/datatable/io/}
+ * at dataviewer commit <b>{@code 10ea72232}</b> (2026-08-12, wave-36 lane B / {@code Fix #224},
+ * plan phase 2a). Only whitespace differs: the two projects' {@code eclipse-formatter.xml} are not
+ * identical, so corej's Spotless reformats the copy.
  * </p>
  *
  * <p>
  * ⚠⚠ <b>Do not "improve" this type here.</b> Its whole reason for living at the original
  * coordinates is that the later {@code IDataTableProvider} migration can then be a pure add, with
- * no relocation and no second divergence. Anything worth changing is changed upstream first and
- * re-ported. In particular the values are always {@link String} — {@code forInteger} stores
- * {@code Long.toString} — because that string form is what crosses the JSON-RPC wire.
+ * no relocation and no second divergence. Anything worth changing is changed in the dataviewer
+ * first and re-ported. In particular the values are always {@link String} — {@code forInteger}
+ * stores {@code Long.toString} — because that string form is what crosses the JSON-RPC wire.
  * </p>
  */
 class PropertyTest
@@ -118,8 +120,8 @@ class PropertyTest
     @Test
     void theTypeEnumerationIsComplete()
     {
-        // A dropped constant would silently change how a UI renders a ported property; upstream
-        // ships exactly these twelve.
+        // A dropped constant would silently change how a UI renders a ported property; the
+        // dataviewer ships exactly these twelve.
         assertEquals(
                 List.of("STRING", "INTEGER", "NUMBER", "BOOLEAN", "ONE_OF", "SOME_OF", "ANY_OF",
                         "FILE", "DIRECTORY", "PASSWORD", "FILES", "SOME_OR_ALL_OF"),

@@ -84,8 +84,8 @@
         <Bug pattern="NP_BOOLEAN_RETURN_NULL" />
     </Match>
 
-    <!-- Property (ported verbatim from the upstream project; see PropertyTest for the
-         drift pin). Its two collection components are declaration
+    <!-- Property (ported verbatim from the dataviewer at commit 10ea72232 - Fix #224 phase 2a;
+         see PropertyTest for the drift pin). Its two collection components are declaration
          metadata: a provider or exporter builds a Property once, as a static constant, and every
          consumer only reads allowedValues / conditionalAllowedValues to render a picker. There is
          no mutation path in either project.
@@ -95,7 +95,7 @@
          pure add with no second divergence. Adding List.copyOf here would fork the copy from its
          source on its first day - exactly the drift the port exists to close - and would also
          change behaviour, since the components are @Nullable and copyOf rejects null. Anything
-         worth changing is changed upstream first and re-ported. -->
+         worth changing is changed in the dataviewer first and re-ported. -->
     <Match>
         <Class name="net.cumba.datatable.io.Property" />
         <Field name="allowedValues" />

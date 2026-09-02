@@ -231,4 +231,18 @@
         <Bug pattern="SIC_INNER_SHOULD_BE_STATIC_ANON" />
     </Match>
 
+    <Match>
+        <!--
+            Verified false positive (SpotBugs 4.10). DbLibDataTableMetadata.getName() opens with
+            `if (uriKey == null) { return ""; }`, which DOMINATES the trailing `return uriKey;`,
+            and uriKey is a final field so it cannot change in between. SpotBugs loses the guard
+            across the intervening try/catch and concludes the constructor parameter must be
+            non-null. NullAway (a complete JSpecify implementation, running at ERROR over this
+            package) is green on the same code.
+        -->
+        <Class name="net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary$DbLibDataTableMetadata" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE" />
+    </Match>
+
 </FindBugsFilter>

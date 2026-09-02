@@ -27,11 +27,18 @@ class DefaultDataTableIndexTest
     }
 
 
-    @Test
-    void testEmptyBlocksAllowed()
+    /** Shared by the two tests below; a @Test method must never be invoked directly. */
+    private static void assertEmptyIndexReportsNoBlocks()
     {
         DefaultDataTableIndex index = new DefaultDataTableIndex(new IDataTableView[0]);
         assertEquals(0, index.getBlockCount());
+    }
+
+
+    @Test
+    void testEmptyBlocksAllowed()
+    {
+        assertEmptyIndexReportsNoBlocks();
     }
 
 
@@ -59,7 +66,7 @@ class DefaultDataTableIndexTest
     @Test
     void testBlockCountEmpty()
     {
-        testEmptyBlocksAllowed();
+        assertEmptyIndexReportsNoBlocks();
     }
 
 
