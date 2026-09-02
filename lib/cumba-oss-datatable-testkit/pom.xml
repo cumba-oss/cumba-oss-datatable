@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>net.cumba</groupId>
+        <artifactId>cumba-oss-datatable-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>cumba-oss-datatable-testkit</artifactId>
+
+    <name>Cumba OSS Datatable :: Testkit</name>
+    <url>https://github.com/cumba-oss/cumba-oss-datatable</url>
+    <packaging>jar</packaging>
+
+    <inceptionYear>2026</inceptionYear>
+    <description>
+        Test helpers for the corej-datatable contract, published as ordinary MAIN code so
+        consumers depend on a normal jar instead of a test-jar.
+
+        MockTable builds a Mockito-backed IDataTable from a fluent column spec;
+        TestMetadataFixtures builds in-memory IMetadataLibrary / IDataTableMetadata /
+        IColumnMetadata / ICodeList fixtures. Both were previously net.cumba.cdisc.core.*
+        classes in corej-cdisc-core's TEST tree, reached across the module boundary by a
+        test-jar dependency; they name nothing from cdisc-core, so they belong to datatable.
+
+        A published datatable artifact must not carry net.cumba.cdisc.core.* packages: that is
+        a permanent split package against cdisc-core's own test tree, and unfixable once on
+        Central. Hence net.cumba.datatable.testkit.
+    </description>
+
+    <properties>
+        <mockito.agent>-javaagent:${org.mockito:mockito-core:jar}</mockito.agent>
+        <!--
+            The parent defaults, restated explicitly rather than inherited silently: this module
+            is ~1 200 lines of MAIN code carrying real gates, and the gates it is measured
+            against should be readable in the module that has to clear them.
+            Same values as the parent (jacoco 0.80, pitest 80 / 55). Tune only against a real
+            measured number, never a guess.
+        -->
+        <jacoco.line.coverage>0.80</jacoco.line.coverage>
+        <pitest.coverage.target>80</pitest.coverage.target>
+        <pitest.mutation.target>55</pitest.mutation.target>
+    </properties>
+
+    <dependencies>
+
+        <dependency>
+            <groupId>net.cumba</groupId>
+            <artifactId>cumba-oss-datatable</artifactId>
+        </dependency>
+
+        <!-- JSpecify nullability annotations (NullAway). -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
+        <!--
+            COMPILE scope, deliberately: MockTable calls Mockito throughout, so a consumer
+            genuinely needs it present. Consumers declare this testkit at <scope>test</scope>,
+            and a test-scoped dependency's transitives stay test-scoped, so compile-scope
+            Mockito cannot reach anyone's production classpath; the containment <provided>
+            would buy is already there. What <provided> would add is a worse failure mode: a
+            consumer that forgets to declare Mockito gets a NoClassDefFoundError at test
+            RUNTIME instead of a compile error.
+        -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+</project>

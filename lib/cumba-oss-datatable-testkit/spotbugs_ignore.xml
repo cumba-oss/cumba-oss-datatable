@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Module-local SpotBugs suppressions. Layered on top of the repo-wide
+    spotbugs_project_filter.xml by the `spotbugs-module-ignore` profile,
+    which activates purely on this file's existence.
+-->
+<FindBugsFilter>
+
+    <Match>
+        <!--
+            Verified false positive. Every one of these getters returns a field that was already
+            made immutable at construction: TestMetadataFixtures' builders pass
+            List.copyOf(...) / Map.copyOf(...) into the record canonical constructor, and the
+            subClassNames default is List.of(). SpotBugs does not track immutability through the
+            JDK copyOf factories, so it sees "returns a List field" and reports EI_EXPOSE_REP.
+
+            Wrapping these in Collections.unmodifiableList to silence it would allocate a second
+            wrapper around an already-immutable list on every call, in a test helper, for no
+            behaviour change. Suppressed instead.
+
+            ⚠ Scope, stated honestly: the Class pattern covers ALL five TestMetadataFixtures
+            Fixture* records (three of which carry a finding today) and carries no Method
+            element, so it also silences EI_EXPOSE_REP on any getter added to them later. That
+            is contained only because all five are private records reachable solely through
+            builders that copyOf their inputs. If a Fixture* type ever gains a non-copied
+            collection field, this Match will hide it.
+
+            Contrast: the genuinely mutable exposures found in the same sweep
+            (CdiscLibraryMetadataLibrary, DefineMetadataLibrary) were FIXED, not suppressed.
+        -->
+        <Class name="~net\.cumba\.datatable\.testkit\.TestMetadataFixtures\$Fixture.*" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+</FindBugsFilter>
