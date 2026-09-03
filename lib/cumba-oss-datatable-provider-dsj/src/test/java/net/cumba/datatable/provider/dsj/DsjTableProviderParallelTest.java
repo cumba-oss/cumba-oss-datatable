@@ -12,8 +12,8 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
-import net.cumba.datasetjson.DataSetJsonTableParallelParser;
-import net.cumba.datasetjson.DataSetJsonTableParser;
+import net.cumba.cdisc.dsj.DataSetJsonTableParallelParser;
+import net.cumba.cdisc.dsj.DataSetJsonTableParser;
 import net.cumba.datatable.IDataTable;
 import org.junit.jupiter.api.Test;
 

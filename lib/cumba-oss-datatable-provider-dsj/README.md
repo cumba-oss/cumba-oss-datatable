@@ -2,7 +2,7 @@
 
 Dataset-JSON v1.1 (DSJ2) provider for the Cumba OSS data-table SPI. Reads
 CDISC Dataset-JSON files into `IDataTable` instances using the
-`cumba-oss-datasetjson` Jackson model.
+`cumba-oss-cdisc-dsj` Jackson model.
 
 ## Maven coordinates
 
@@ -30,7 +30,7 @@ CDISC Dataset-JSON files into `IDataTable` instances using the
 |---|---|---|
 | `cumba-oss-datatable` | compile | provider SPI |
 | `cumba-oss-datatable-impl` | compile | cached column infra |
-| `cumba-oss-datasetjson` | compile | Dataset-JSON DTO model |
+| `cumba-oss-cdisc-dsj` | compile | Dataset-JSON DTO model |
 
 ## Notes
 

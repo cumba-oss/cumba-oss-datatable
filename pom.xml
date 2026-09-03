@@ -90,7 +90,7 @@
         <dependency.mockito.version>5.23.0</dependency.mockito.version>
         <dependency.lombock.version>1.18.46</dependency.lombock.version>
         <dependency.cumba-oss-commons.version>0.1.0</dependency.cumba-oss-commons.version>
-        <dependency.cumba-oss-formats.version>0.1.0</dependency.cumba-oss-formats.version>
+        <dependency.cumba-oss-formats.version>0.3.0</dependency.cumba-oss-formats.version>
         <dependency.jackson.version>2.22.2</dependency.jackson.version>
         <dependency.univocity.version>2.9.1</dependency.univocity.version>
         <dependency.excel-streaming-reader.version>5.2.0</dependency.excel-streaming-reader.version>
@@ -1208,7 +1208,7 @@
 
             <!-- Upstream cumba-oss-formats modules (released separately). -->
             <dependency><groupId>net.cumba</groupId><artifactId>cumba-oss-sas-utils</artifactId><version>${dependency.cumba-oss-formats.version}</version></dependency>
-            <dependency><groupId>net.cumba</groupId><artifactId>cumba-oss-datasetjson</artifactId><version>${dependency.cumba-oss-formats.version}</version></dependency>
+            <dependency><groupId>net.cumba</groupId><artifactId>cumba-oss-cdisc-dsj</artifactId><version>${dependency.cumba-oss-formats.version}</version></dependency>
 
             <!-- === Third-party === -->
 

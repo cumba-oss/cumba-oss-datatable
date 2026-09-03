@@ -54,7 +54,7 @@
 
         <dependency>
             <groupId>net.cumba</groupId>
-            <artifactId>cumba-oss-datasetjson</artifactId>
+            <artifactId>cumba-oss-cdisc-dsj</artifactId>
         </dependency>
 
         <dependency>

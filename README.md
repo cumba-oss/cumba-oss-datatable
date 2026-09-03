@@ -22,7 +22,7 @@ them, and their licences are aggregated by `license-maven-plugin`
 > refers to the internal pre-migration Cumba codebase, not an external
 > project.
 
-Depends on **`cumba-oss-commons`** (for `cumba-oss-help`) and **`cumba-oss-formats`** (for `cumba-oss-sas-utils` and `cumba-oss-datasetjson`). Both must be installed first.
+Depends on **`cumba-oss-commons`** (for `cumba-oss-help`) and **`cumba-oss-formats`** (for `cumba-oss-sas-utils` and `cumba-oss-cdisc-dsj`). Both must be installed first.
 
 ## Modules
 
@@ -33,7 +33,7 @@ Depends on **`cumba-oss-commons`** (for `cumba-oss-help`) and **`cumba-oss-forma
 | [`cumba-oss-cdisc-define`](lib/cumba-oss-cdisc-define/README.md) | `net.cumba.cdisc.define` | Define-XML object model — parser, builder, and disambiguation modules. |
 | [`cumba-oss-datatable-provider-cdt`](lib/cumba-oss-datatable-provider-cdt/README.md) | `net.cumba.datatable.provider.cdt` | CDT (Cumba Data Table) text format, single- and multi-dataset. |
 | [`cumba-oss-datatable-provider-csv`](lib/cumba-oss-datatable-provider-csv/README.md) | `net.cumba.datatable.provider.csv` | CSV, built on univocity-parsers. |
-| [`cumba-oss-datatable-provider-dsj`](lib/cumba-oss-datatable-provider-dsj/README.md) | `net.cumba.datatable.provider.dsj` | Dataset-JSON v1.1 (DSJ2), via `cumba-oss-datasetjson`. |
+| [`cumba-oss-datatable-provider-dsj`](lib/cumba-oss-datatable-provider-dsj/README.md) | `net.cumba.datatable.provider.dsj` | Dataset-JSON v1.1 (DSJ2), via `cumba-oss-cdisc-dsj`. |
 | [`cumba-oss-datatable-provider-parquet`](lib/cumba-oss-datatable-provider-parquet/README.md) | `net.cumba.datatable.provider.parquet` | Parquet, via the Carpet library. |
 | [`cumba-oss-datatable-provider-sas`](lib/cumba-oss-datatable-provider-sas/README.md) | `net.cumba.datatable.provider.sas` | XPT and SAS7BDAT, via `cumba-oss-sas-utils`. |
 | [`cumba-oss-datatable-provider-xlsx`](lib/cumba-oss-datatable-provider-xlsx/README.md) | `net.cumba.datatable.provider.xlsx` | Excel, via Apache POI and excel-streaming-reader. |
