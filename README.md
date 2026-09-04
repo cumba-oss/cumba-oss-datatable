@@ -39,6 +39,7 @@ Depends on **`cumba-oss-commons`** (for `cumba-oss-help`) and **`cumba-oss-forma
 | [`cumba-oss-datatable-provider-xlsx`](lib/cumba-oss-datatable-provider-xlsx/README.md) | `net.cumba.datatable.provider.xlsx` | Excel, via Apache POI and excel-streaming-reader. |
 | [`cumba-oss-datatable-provider-define`](lib/cumba-oss-datatable-provider-define/README.md) | `net.cumba.datatable.provider.define` | Exposes a parsed Define-XML document as a metadata library and format catalog. |
 | [`cumba-oss-datatable-manager-local`](lib/cumba-oss-datatable-manager-local/README.md) | `net.cumba.datatable.manager.local` | Local filesystem manager — browse a directory of CDISC datasets without writing manager code. |
+| [`cumba-oss-datatable-testkit`](lib/cumba-oss-datatable-testkit/README.md) | `net.cumba.datatable.testkit` | Test helpers (`MockTable`, `TestMetadataFixtures`) for the `IDataTable` contract, published as ordinary main code. |
 
 Each module has its own `README.md` with coordinates and dependency detail.
 
@@ -47,9 +48,9 @@ Each module has its own `README.md` with coordinates and dependency detail.
 ```
 cumba-oss-commons     help · web-api · cdisc-library · bootstrap
       ▲
-cumba-oss-datatable   datatable · impl · cdisc-define · providers · manager-local
+cumba-oss-datatable   datatable · impl · cdisc-define · providers · manager-local · testkit
       ▲
-cumba-oss-formats     sas-utils · datasetjson            (independent leaf)
+cumba-oss-formats     sas-utils · cdisc-dsj              (independent leaf)
 ```
 
 Dependencies run in one direction only. Build order is
@@ -147,7 +148,11 @@ And the disable / opt-in switches:
 mvn -T1C clean install                            # full build, report-only checks
 mvn -T1C test                                     # all tests
 mvn -T1C verify -Dspotless.check=true             # CI: verify formatting without rewriting
-mvn -T1C verify -Dspotbugs.failOnError=true -Dpmd.failOnViolation=true   # CI: hard gate
+# ⛔ The CI gate, in full. These four flags ARE MAVEN_CI_GATES in
+#    .gitea/workflows/main.yml — drop any one and a local run stays green
+#    where CI goes red, because all four default to permissive.
+mvn -T1C verify -Dmaven.compiler.failOnWarning=true -Dspotless.check=true \
+    -Dpmd.failOnViolation=true -Dspotbugs.failOnError=true
 mvn -T1C -P Pitest verify                         # opt in to pitest, report-only
 mvn -T1C -P Pitest verify -Dpitest.failOnError=true  # CI: pitest + enforce mutation/coverage targets
 mvn -T1C verify -DskipPmd -DskipSpotbugs          # quick build, no static analysis (pitest already off)
