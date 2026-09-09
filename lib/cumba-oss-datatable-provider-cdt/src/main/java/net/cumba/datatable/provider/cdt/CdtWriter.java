@@ -360,7 +360,7 @@ public final class CdtWriter
         return switch (kind)
         {
         case DATE -> renderDate(aValue);
-        case TIME -> renderTime(aValue);
+        case TIME -> renderTime(aValue, aRowIdx, aColName);
         case DATETIME -> renderDateTime(aValue);
         case NUM -> renderNumber(aValue);
         case CHAR -> checkNoControlChars(aValue.toString(), aRowIdx, aColName);
@@ -401,16 +401,29 @@ public final class CdtWriter
     }
 
 
-    private static String renderTime(Object aValue)
+    private static String renderTime(Object aValue, long aRowIdx, String aColName)
+        throws IOException
     {
         if (aValue instanceof Number n)
         {
             long seconds = n.longValue();
+            // F-prov-04: a SAS TIME value is not constrained to [0, 86400) - elapsed times
+            // beyond 24 h and negative durations are legal in SAS, but the CDT Time field
+            // (HH:mm:ss) cannot represent them. The old "h % 24" silently discarded whole
+            // days, and a negative value escaped as an unchecked DateTimeException; both
+            // cases are refused explicitly instead, the same way checkNoControlChars
+            // refuses a CR/LF.
+            if (seconds < 0 || seconds >= 86400)
+            {
+                throw new IOException(
+                        "CDT export: row %d column %s holds the TIME value %s which is outside the representable range [0, 86400) seconds. CDT Time fields cannot represent negative times or times of 24 hours and more."
+                                .formatted(aRowIdx, aColName, aValue));
+            }
             int h = (int) (seconds / 3600);
             int rem = (int) (seconds - h * 3600L);
             int m = rem / 60;
             int s = rem - m * 60;
-            return LocalTime.of(h % 24, m, s).format(CdtValues.TIME_FMT);
+            return LocalTime.of(h, m, s).format(CdtValues.TIME_FMT);
         }
         return aValue.toString();
     }
@@ -436,7 +449,12 @@ public final class CdtWriter
             {
                 return "";
             }
-            if (d == Math.floor(d) && !Double.isInfinite(d))
+            // F-prov-03: the integral-value shortcut may only take the long path when the
+            // value is genuinely representable as a long - Java's double->long narrowing
+            // SATURATES, so e.g. 1.0E30 would silently be written as Long.MAX_VALUE. 0x1p63
+            // is 2^63: every integral double d with -2^63 <= d < 2^63 fits a long exactly
+            // (the largest double below 2^63 is 2^63 - 1024).
+            if (d == Math.floor(d) && !Double.isInfinite(d) && d >= -0x1p63 && d < 0x1p63)
             {
                 return Long.toString(d.longValue());
             }
@@ -478,8 +496,12 @@ public final class CdtWriter
             if (aFormat != null)
             {
                 String f = aFormat.toUpperCase(Locale.ROOT);
-                if (f.startsWith("DATETIME") || f.startsWith("NLDATM") || f.startsWith("E8601DT")
-                        || f.startsWith("IS8601DT") || f.startsWith("B8601DT"))
+                // F-prov-05: DATEAMPM is a SAS *datetime* format (values are seconds since
+                // 1960-01-01) whose name starts with "DATE" - it must be claimed here, in
+                // the DATETIME arm, before the DATE prefix arm below can swallow it.
+                if (f.startsWith("DATETIME") || f.startsWith("DATEAMPM") || f.startsWith("NLDATM")
+                        || f.startsWith("E8601DT") || f.startsWith("IS8601DT")
+                        || f.startsWith("B8601DT"))
                 {
                     return CdtKind.DATETIME;
                 }

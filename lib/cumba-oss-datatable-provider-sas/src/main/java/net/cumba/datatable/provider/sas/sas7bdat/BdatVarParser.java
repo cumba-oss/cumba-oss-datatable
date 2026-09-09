@@ -149,8 +149,11 @@ public class BdatVarParser
 
         if (aLength < 8)
         {
-            // shift further as if this is 8 byte
-            int shift = 8 - aLength;
+            // F-prov-06: promote the accumulated aLength-byte value to the high end of the
+            // 64-bit word. The value was accumulated one BYTE at a time, so the promotion is
+            // (8 - aLength) * 8 BITS - the same arithmetic as the sibling decoder
+            // XptVarParser.ibmToIeee - not 8 - aLength.
+            int shift = (8 - aLength) * 8;
             res = res << shift;
         }
 

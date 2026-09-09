@@ -384,7 +384,6 @@ public class BdatTableProvider extends AbstractDataTableProvider
         BdatTableDataParser tableParser = new BdatTableDataParser(dtms.getTableMeta().build());
 
         long identifiedDeletedRecords;
-        long expectedDeletedRecords;
 
         ObservationIteratorBdat2 iter = new ObservationIteratorBdat2(aDataSet, aStream);
         while (iter.hasNext())
@@ -393,34 +392,63 @@ public class BdatTableProvider extends AbstractDataTableProvider
         }
 
         identifiedDeletedRecords = iter.getParsedDeletedRowCount();
-        expectedDeletedRecords = aDataSet.getDeletedObservationCount();
 
         IDataTable table = tableParser.completeTable();
 
-        if (identifiedDeletedRecords != expectedDeletedRecords)
+        checkAllRowsRead(aDataSet.getRowCount(), aDataSet.getDeletedObservationCount(),
+                identifiedDeletedRecords, table.getRowCount());
+        return table;
+
+    }
+
+
+    /**
+     * Row-accounting guard: every row the header declares must either have been delivered or be
+     * accounted for by the header's declared deleted-row count.
+     *
+     * <p>
+     * F-prov-07: the expected row count is derived from the header's <em>declared</em> deleted
+     * count, never from the count the reader itself found. Subtracting the found count would make
+     * this guard tautological for exactly the failure it exists to catch: a deleted-row
+     * misdetection changes the found count and the delivered row count in lockstep, so the two
+     * sides of the comparison could never disagree.
+     * </p>
+     *
+     * @param aHeaderRowCount
+     *            the total row count the file header declares ({@code null} reads as 0).
+     * @param aDeclaredDeleted
+     *            the deleted-row count the file header declares.
+     * @param aFoundDeleted
+     *            the deleted-row count the reader actually identified while reading.
+     * @param aActualRows
+     *            the number of rows delivered into the table.
+     * @throws IOException
+     *             if the delivered row count does not match the header's declaration.
+     */
+    static void checkAllRowsRead(@Nullable Long aHeaderRowCount, long aDeclaredDeleted,
+            long aFoundDeleted, long aActualRows)
+        throws IOException
+    {
+        if (aFoundDeleted != aDeclaredDeleted)
         {
             LOGGER.log(Level.WARNING,
                     "Found unexpected number of deleted records. Found {0} but expected {1}.",
-                    identifiedDeletedRecords, expectedDeletedRecords);
-
+                    aFoundDeleted, aDeclaredDeleted);
         }
-        else if (identifiedDeletedRecords > 0)
+        else if (aFoundDeleted > 0)
         {
-            LOGGER.log(Level.DEBUG, "Found {0} deleted records (as expected).",
-                    identifiedDeletedRecords);
+            LOGGER.log(Level.DEBUG, "Found {0} deleted records (as expected).", aFoundDeleted);
         }
 
-        // F-D17: clamp to >= 0 — if a corrupt header declares more deleted records than rows
+        // F-D17: clamp to >= 0 - if a corrupt header declares more deleted records than rows
         // we must not produce a negative expected count (which would always trip the error
         // path below and mislead the user about the actual problem).
-        long expectedRows = clampExpectedRows(aDataSet.getRowCount(), identifiedDeletedRecords);
-        if (expectedRows != table.getRowCount())
+        long expectedRows = clampExpectedRows(aHeaderRowCount, aDeclaredDeleted);
+        if (expectedRows != aActualRows)
         {
             throw new IOException("Can't read all rows. Expected=%d, found=%d"
-                    .formatted(expectedRows, table.getRowCount()));
+                    .formatted(expectedRows, aActualRows));
         }
-        return table;
-
     }
 
 

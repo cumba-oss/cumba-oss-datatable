@@ -125,6 +125,22 @@ public class ObservationIteratorXpt implements Iterator<XptObservation>
                 int read = IOUtils.read(input, buffer);
                 if (read != observationSize)
                 {
+                    // F-prov-02: IOUtils.read only returns fewer bytes at end of stream. XPT
+                    // records are padded to 80-byte boundaries, not observation boundaries,
+                    // so a clean end of the observation section may still deliver a short,
+                    // all-sentinel tail - but any observation DATA in a short read means the
+                    // stream ends mid-observation, i.e. the file is truncated. XPT stores no
+                    // row count, so nothing downstream could ever detect the silently lost
+                    // rows; the truncation must fail loudly here.
+                    for (int i = 0; i < read; i++)
+                    {
+                        if (buffer[i] != SENTINEL)
+                        {
+                            throw new IOException(
+                                    "Truncated XPT file: the stream ends %d byte(s) into an observation of %d bytes."
+                                            .formatted(read, observationSize));
+                        }
+                    }
                     hasNext = false;
                 }
                 else

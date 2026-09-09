@@ -96,9 +96,26 @@ public class HashLookup
      *            32-bit hash of the key columns
      * @param rowIndex
      *            row index in table 1 (must be >= 0)
+     * @throws IllegalStateException
+     *             if the table is already full, i.e. more entries are inserted than were declared
+     *             via the constructor's {@code expectedEntries}. The table always keeps one empty
+     *             slot so the linear probes in {@code put} and {@code get} terminate.
      */
     public void put(int hash32, int rowIndex)
     {
+        if (size >= capacity - 1)
+        {
+            // F-dt-07: the probe loops terminate only on an EMPTY slot, so the table must always
+            // keep at least one. Without this guard, one put past capacity spins forever, and a
+            // get for an absent key in an exactly-full table does too. The capacity formula
+            // (expectedEntries / loadFactor + 1, loadFactor < 1) guarantees room for
+            // expectedEntries entries, so a caller that declared its count correctly never hits
+            // this.
+            throw new IllegalStateException("HashLookup is full: capacity " + capacity
+                    + " cannot accept entry number " + (size + 1)
+                    + " — more entries inserted than declared via expectedEntries");
+        }
+
         int slot = Math.floorMod(mix(hash32), capacity);
         while (table[slot] != EMPTY)
         {

@@ -24,6 +24,7 @@ import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.provider.IDataTableProvider;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
+import net.cumba.datatable.values.TemporalOrigin;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DateUtil;
@@ -452,12 +453,18 @@ public class ExcelTableProvider extends AbstractDataTableProvider
     {
 
         /**
-         * SAS datetime epoch: 1960-01-01 00:00:00 UTC, in milliseconds-since-1970-01-01-UTC. The
+         * The datetime epoch, 1960-01-01 00:00:00 UTC, in milliseconds-since-1970-01-01-UTC. The
          * format catalog renders {@code E8601DT.} as ISO datetime from this base; we convert
          * Excel-serial-derived {@code java.util.Date} values into SAS-datetime-seconds here so a
          * date-formatted Excel column comes through as a {@code DOUBLE} that displays as ISO.
+         *
+         * <p>
+         * F-prov-14: delegates to {@link TemporalOrigin#ORIGIN_EPOCH_MILLI}, the one place the
+         * origin is defined. The literal {@code -315619200000L} that used to stand here is now
+         * derived from that single {@code LocalDate}.
+         * </p>
          */
-        private static final long SAS_DATETIME_EPOCH_MILLIS = -315619200000L;
+        private static final long SAS_DATETIME_EPOCH_MILLIS = TemporalOrigin.ORIGIN_EPOCH_MILLI;
 
         private final @Nullable Object[] values;
 

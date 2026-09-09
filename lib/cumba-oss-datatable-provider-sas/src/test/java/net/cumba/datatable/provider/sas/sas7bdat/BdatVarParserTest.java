@@ -154,6 +154,46 @@ class BdatVarParserTest
     // --- unpackRaw64 / unpackFloat64 ---
 
 
+    /**
+     * F-prov-06 pin: a short numeric must be promoted to the high end of the 64-bit word by
+     * {@code (8 - aLength) * 8} BITS (the value is accumulated one byte at a time), matching the
+     * sibling decoder {@code XptVarParser.ibmToIeee}. The old code shifted by {@code 8 - aLength},
+     * i.e. by bytes-as-bits, leaving the value six orders of magnitude wrong.
+     *
+     * <p>
+     * No production caller reaches {@code aLength < 8} — {@code parseDouble} right-pads the short
+     * numeric itself and always calls with 8 — so this direct call IS the pin; do not replace it
+     * with a {@code .sas7bdat} fixture.
+     * </p>
+     */
+    @Test
+    void testUnpackRaw64ShortLengthPromotesByBitsNotBytes()
+    {
+        BdatVarParser parser = createNumericParser(0, 8, ByteOrder.BIG_ENDIAN);
+        // 0x40 0x59 0x00 promoted by 40 bits = 0x4059000000000000 = 100.0
+        byte[] buf =
+        {
+                0x40, 0x59, 0x00
+        };
+        assertEquals(0x4059000000000000L, parser.unpackRaw64(buf, 0, 3));
+        assertEquals(100.0, Double.longBitsToDouble(parser.unpackRaw64(buf, 0, 3)));
+    }
+
+
+    @Test
+    void testUnpackRaw64SevenBytesPromotedByOneByte()
+    {
+        BdatVarParser parser = createNumericParser(0, 8, ByteOrder.BIG_ENDIAN);
+        // 7-byte prefix of IEEE 1.0 (0x3FF0000000000000) promoted by 8 bits
+        byte[] buf =
+        {
+                0x3F, (byte) 0xF0, 0, 0, 0, 0, 0
+        };
+        assertEquals(0x3FF0000000000000L, parser.unpackRaw64(buf, 0, 7));
+        assertEquals(1.0, Double.longBitsToDouble(parser.unpackRaw64(buf, 0, 7)));
+    }
+
+
     @Test
     void testUnpackRaw64bAllZeros()
     {

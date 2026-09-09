@@ -133,20 +133,63 @@ class ObservationIteratorXptTest
         assertFalse(iter.hasNext());
     }
 
+    // --- F-prov-02: a short read carrying observation DATA is a truncated file and must fail
+    // loudly (wrapped per the F-D16 Iterator contract), because XPT stores no row count and a
+    // silently dropped tail is undetectable downstream. A short read of nothing but sentinel
+    // padding is a clean end: records are padded to 80-byte boundaries, not observation
+    // boundaries.
+    //
+    // NOTE: this replaces the former testPartialRead, which asserted the silent form
+    // (assertFalse(hasNext) on a 2-byte tail of DATA) - i.e. it pinned exactly the bug the
+    // owner ruled on in F-prov-02.
+
 
     @Test
-    void testPartialRead()
+    void testPartialReadOfObservationDataThrows()
     {
-        // Data shorter than observation size
         DatasetXpt ds = createMockDataset(8);
         byte[] data = new byte[]
         {
                 'A', 'B'
-        }; // only 2 bytes, need 8
+        }; // only 2 bytes of DATA, need 8 -> truncated
         ByteArrayInputStream in = new ByteArrayInputStream(data);
 
         ObservationIteratorXpt iter = new ObservationIteratorXpt(ds, in);
-        assertFalse(iter.hasNext());
+        IllegalStateException ex = assertThrows(IllegalStateException.class, iter::hasNext);
+        IOException cause = assertInstanceOf(IOException.class, ex.getCause());
+        assertTrue(cause.getMessage().contains("Truncated XPT"), cause.getMessage());
+        assertTrue(cause.getMessage().contains("2 byte(s)"), cause.getMessage());
+    }
+
+
+    @Test
+    void testTruncationAfterCompleteObservationsThrows()
+    {
+        DatasetXpt ds = createMockDataset(4);
+        // one complete observation, then the file ends 2 bytes into the second one
+        byte[] data = "AAAABB".getBytes(StandardCharsets.UTF_8);
+        ObservationIteratorXpt iter = new ObservationIteratorXpt(ds,
+                new ByteArrayInputStream(data));
+
+        assertTrue(iter.hasNext());
+        assertNotNull(iter.next());
+        IllegalStateException ex = assertThrows(IllegalStateException.class, iter::hasNext);
+        assertInstanceOf(IOException.class, ex.getCause());
+    }
+
+
+    @Test
+    void testShortAllPaddingTailIsCleanEndOfFile()
+    {
+        DatasetXpt ds = createMockDataset(8);
+        // one complete observation followed by a 3-byte tail of record padding (spaces)
+        byte[] data = "ABCDEFGH   ".getBytes(StandardCharsets.UTF_8);
+        ObservationIteratorXpt iter = new ObservationIteratorXpt(ds,
+                new ByteArrayInputStream(data));
+
+        assertTrue(iter.hasNext());
+        assertNotNull(iter.next());
+        assertFalse(iter.hasNext(), "an all-sentinel short tail is a clean end, not truncation");
     }
 
     // --- F-D16: IOException in the read path is surfaced as IllegalStateException whose

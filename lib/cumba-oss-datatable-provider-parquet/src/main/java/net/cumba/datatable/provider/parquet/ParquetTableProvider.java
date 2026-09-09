@@ -35,6 +35,7 @@ import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
+import net.cumba.datatable.values.TemporalOrigin;
 import org.apache.parquet.hadoop.ParquetFileReader;
 import org.apache.parquet.hadoop.metadata.BlockMetaData;
 import org.apache.parquet.hadoop.metadata.ParquetMetadata;
@@ -58,6 +59,65 @@ import org.jspecify.annotations.Nullable;
 @CustomLog
 public class ParquetTableProvider extends AbstractDataTableProvider
 {
+
+    /**
+     * Days from the Unix epoch (1970-01-01) to the data table's temporal origin (1960-01-01): 3653.
+     *
+     * <p>
+     * Parquet declares DATE / TIME / TIMESTAMP structurally in its schema, so temporal values are
+     * re-based onto that origin at load time (F-prov-08 / F-prov-09) — the same convention the SAS,
+     * XPT, CDT and XLSX paths already use — and the matching SAS display format is attached to the
+     * column metadata. F-prov-14: the origin and both offsets are defined once, in
+     * {@link TemporalOrigin}; nothing here hand-writes {@code 3653} or {@code 315619200} any more.
+     * </p>
+     */
+    static final long SAS_EPOCH_OFFSET_DAYS = TemporalOrigin.OFFSET_DAYS;
+
+    /**
+     * Seconds from the Unix epoch to the temporal origin: 3653 &times; 86400 = 315,619,200. See
+     * {@link TemporalOrigin#OFFSET_SECONDS}.
+     */
+    static final long SAS_EPOCH_OFFSET_SECONDS = TemporalOrigin.OFFSET_SECONDS;
+
+    private static final double NANOS_PER_SECOND = 1_000_000_000.0;
+
+    /** SAS display format attached to Parquet DATE columns (days since 1960-01-01). */
+    static final String SAS_DATE_FORMAT = "E8601DA.";
+
+    /** SAS display format attached to Parquet TIME columns (seconds since midnight). */
+    static final String SAS_TIME_FORMAT = "E8601TM.";
+
+    /** SAS display format attached to Parquet TIMESTAMP columns (seconds since 1960-01-01). */
+    static final String SAS_DATETIME_FORMAT = "E8601DT.";
+
+    /**
+     * Converts an instant to SAS datetime seconds (seconds since 1960-01-01T00:00:00 UTC,
+     * fractional).
+     *
+     * <p>
+     * <b>Precision — this is NOT a lossless encoding, and it never was.</b> At today's magnitudes a
+     * {@code double} holding SAS seconds has an ulp of &asymp; 477&nbsp;ns; the previous
+     * epoch-nanos encoding had an ulp of &asymp; 256&nbsp;ns. Both round-trip <em>microsecond</em>
+     * timestamps faithfully; <em>neither</em> preserves nanoseconds, so a Parquet
+     * {@code TIMESTAMP(NANOS)} loses sub-microsecond precision either way. The SAS convention was
+     * chosen for consistency across the stack (every other provider stores temporals as SAS-epoch
+     * seconds/days), not for precision — do not "optimise" this back to epoch nanos in the belief
+     * that it is more accurate.
+     * </p>
+     *
+     * @param aInstant
+     *            the instant to convert
+     * @return fractional seconds since the SAS epoch
+     */
+    private static double toSasSeconds(Instant aInstant)
+    {
+        // Sum the whole seconds in exact long arithmetic first, then widen once and add
+        // the fractional part. A local rather than parentheses: the grouping is what keeps
+        // the second count exact, and PMD flags the (redundant) parentheses that showed it.
+        long wholeSeconds = aInstant.getEpochSecond() + SAS_EPOCH_OFFSET_SECONDS;
+        return wholeSeconds + aInstant.getNano() / NANOS_PER_SECOND;
+    }
+
 
     /** {@inheritDoc} */
     @Override
@@ -328,6 +388,23 @@ public class ParquetTableProvider extends AbstractDataTableProvider
         if (aField.isPrimitive())
         {
             b.nativeType(aField.asPrimitiveType().getPrimitiveTypeName().toString());
+
+            // F-prov-08 / F-prov-09: temporal columns are re-based onto the SAS epoch at load
+            // time (see addData2Column), so attach the matching SAS display format. Set before
+            // applyColumn so explicit Cumba per-column metadata still wins.
+            LogicalTypeAnnotation lta = aField.asPrimitiveType().getLogicalTypeAnnotation();
+            if (lta instanceof LogicalTypeAnnotation.DateLogicalTypeAnnotation)
+            {
+                b.displayFormat(SAS_DATE_FORMAT);
+            }
+            else if (lta instanceof LogicalTypeAnnotation.TimeLogicalTypeAnnotation)
+            {
+                b.displayFormat(SAS_TIME_FORMAT);
+            }
+            else if (lta instanceof LogicalTypeAnnotation.TimestampLogicalTypeAnnotation)
+            {
+                b.displayFormat(SAS_DATETIME_FORMAT);
+            }
         }
 
         // Cumba per-column metadata wins over the Parquet nativeType fallback.
@@ -471,6 +548,14 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                     // blankness consumer asks isEmptyOrMissing(), for which a MissingValue and a
                     // "" are both blank. Only the grouping-key encoding keeps them apart, and
                     // there deliberately (they are distinct keys with a shared disposition).
+                    //
+                    // F-prov-15 (owner ruling: MIS is correct). A Parquet null carries no
+                    // missing-value semantics of its own — the format has exactly one kind of
+                    // null — so it maps to MissingValue.MIS, the stack-wide default for any
+                    // source without its own flavours of missing. CSV, XLSX and DSJ do the same.
+                    // The documented exception is R: RData/RDS distinguish NA, and the RDS
+                    // provider maps that to MissingValue.NA (F-prov-13). Do not "improve" this
+                    // into NA here — that would claim a distinction the Parquet file never made.
                     aDataColumn.addElement(MissingValue.MIS);
                 }
                 else if (val instanceof String str)
@@ -504,26 +589,31 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                 }
                 else if (val instanceof LocalDate ld)
                 {
-                    aDataColumn.addElement((double) ld.toEpochDay());
+                    // F-prov-08: SAS days since 1960-01-01 (not Unix epoch days), matching the
+                    // SAS/XPT/CDT/XLSX providers; addMetaColumn attaches the SAS DATE format.
+                    aDataColumn.addElement((double) (ld.toEpochDay() + SAS_EPOCH_OFFSET_DAYS));
                 }
                 else if (val instanceof LocalTime lt)
                 {
-                    aDataColumn.addElement((double) lt.toNanoOfDay());
+                    // F-prov-08: SAS time — (fractional) seconds since midnight, not nanos;
+                    // addMetaColumn attaches the SAS TIME format.
+                    aDataColumn.addElement(lt.toNanoOfDay() / NANOS_PER_SECOND);
                 }
                 else if (val instanceof LocalDateTime ldt)
                 {
-                    // Encode as epoch nanos (UTC). The previous expression mixed
-                    // microseconds-per-day with nanoseconds-of-day, producing meaningless
-                    // numbers and overflowing for dates past ~2261. Match the Instant
-                    // branch's epoch-nano convention so the two paths are consistent.
-                    Instant inst = ldt.toInstant(ZoneOffset.UTC);
-                    aDataColumn
-                            .addElement(inst.getEpochSecond() * 1_000_000_000.0 + inst.getNano());
+                    // F-prov-09: SAS datetime — seconds since 1960-01-01 (UTC), matching the
+                    // Instant branch so the two paths stay consistent. History: the original
+                    // expression mixed microseconds-per-day with nanoseconds-of-day, producing
+                    // meaningless numbers and overflowing for dates past ~2261; an interim fix
+                    // encoded epoch nanos, which no format in the stack could render. See
+                    // toSasSeconds for the precision trade-off.
+                    aDataColumn.addElement(toSasSeconds(ldt.toInstant(ZoneOffset.UTC)));
                 }
                 else if (val instanceof Instant inst)
                 {
-                    aDataColumn
-                            .addElement(inst.getEpochSecond() * 1_000_000_000.0 + inst.getNano());
+                    // F-prov-09: SAS datetime seconds (previously epoch nanos); see toSasSeconds
+                    // for the precision trade-off.
+                    aDataColumn.addElement(toSasSeconds(inst));
                 }
                 else if (val instanceof BigDecimal bd)
                 {

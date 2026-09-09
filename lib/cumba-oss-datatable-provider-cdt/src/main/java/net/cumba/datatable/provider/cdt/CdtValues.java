@@ -8,6 +8,7 @@ import java.time.format.DateTimeParseException;
 
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
+import net.cumba.datatable.values.TemporalOrigin;
 
 import org.jspecify.annotations.Nullable;
 
@@ -19,8 +20,16 @@ import org.jspecify.annotations.Nullable;
 public final class CdtValues
 {
 
-    /** SAS epoch for Date / DateTime columns: 1960-01-01. */
-    public static final LocalDate SAS_EPOCH = LocalDate.of(1960, 1, 1);
+    /**
+     * Epoch for Date / DateTime columns: 1960-01-01.
+     *
+     * <p>
+     * F-prov-14: retained as public API, but no longer an independent definition — it delegates to
+     * the data table's canonical temporal origin, {@link TemporalOrigin#ORIGIN_DATE}. New code
+     * should use that constant directly; read its javadoc before changing anything about the value.
+     * </p>
+     */
+    public static final LocalDate SAS_EPOCH = TemporalOrigin.ORIGIN_DATE;
 
     public static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
 

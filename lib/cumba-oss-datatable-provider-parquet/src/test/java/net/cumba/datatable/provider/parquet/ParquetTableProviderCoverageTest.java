@@ -2,6 +2,7 @@ package net.cumba.datatable.provider.parquet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -112,6 +113,48 @@ class ParquetTableProviderCoverageTest
         {
             assertNotNull(table.getValue(0, c));
         }
+    }
+
+
+    /**
+     * F-prov-08 / F-prov-09: Parquet temporals are re-based onto the SAS epoch at load time so
+     * temporal columns share one numeric convention with the SAS/XPT/CDT/XLSX providers, and the
+     * matching SAS display format is attached to the column metadata. Pins the exact values: dates
+     * are days since 1960-01-01 (NOT Unix epoch days), times are seconds since midnight (NOT
+     * nanos), and both timestamp flavours are seconds since 1960-01-01 UTC (NOT epoch nanos, which
+     * no format in the stack could render).
+     */
+    @Test
+    void testTemporalValuesUseSasEpochAndSasFormats() throws Exception
+    {
+        Path file = writeParquetWithSchema(buildTemporalSchema(), this::writeTemporalRow,
+                "temporal_sas.parquet", 2);
+
+        ParquetTableProvider provider = new ParquetTableProvider();
+        IDataTable table = provider.provide(file.toUri(), ParquetProviderSupplier.FI_PARQUET);
+
+        // DAT: 2026-01-01 = Unix epoch day 20454 = SAS day 20454 + 3653 = 24107.
+        assertEquals(24107.0, (double) table.getValue(0, 0));
+        assertEquals(24108.0, (double) table.getValue(1, 0));
+        // TIM: 01:00:00 = 3600 seconds since midnight (row 1 adds 1000 ms = 1 s).
+        assertEquals(3600.0, (double) table.getValue(0, 1));
+        assertEquals(3601.0, (double) table.getValue(1, 1));
+        // LDT / INS: 2026-01-01T01:00:00Z = 1,767,229,200 s since 1970
+        // = 1,767,229,200 + 315,619,200 = 2,082,848,400 s since 1960.
+        assertEquals(2_082_848_400.0, (double) table.getValue(0, 2));
+        assertEquals(2_082_848_401.0, (double) table.getValue(1, 2));
+        assertEquals(2_082_848_400.0, (double) table.getValue(0, 3));
+        assertEquals(2_082_848_401.0, (double) table.getValue(1, 3));
+
+        // The SAS display formats are attached from the schema's logical type annotations.
+        DataTableMeta meta = provider.provideMetaData(file.toUri(),
+                ParquetProviderSupplier.FI_PARQUET);
+        assertEquals("E8601DA.", meta.getColumn("DAT").getDisplayFormat());
+        assertEquals("E8601TM.", meta.getColumn("TIM").getDisplayFormat());
+        assertEquals("E8601DT.", meta.getColumn("LDT").getDisplayFormat());
+        assertEquals("E8601DT.", meta.getColumn("INS").getDisplayFormat());
+        // Non-temporal columns keep no format.
+        assertNull(meta.getColumn("DEC").getDisplayFormat());
     }
 
 

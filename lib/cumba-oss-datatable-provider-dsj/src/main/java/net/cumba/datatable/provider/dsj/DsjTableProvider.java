@@ -209,7 +209,18 @@ public class DsjTableProvider extends AbstractDataTableProvider
         DataTableMeta[] metaHolder = new DataTableMeta[1];
         IDataTypeMapper[][] mappersHolder = new IDataTypeMapper[1][];
 
-        dsjtp.setHandlerMetadata(table -> handleMetadata(table, aURI, metaHolder, mappersHolder));
+        // Declared row count as captured PRE-parse from the document's "records" attribute
+        // (-1 means the document does not declare one); see the row-accounting check below.
+        long[] declaredRows = new long[]
+        {
+                -1L
+        };
+
+        dsjtp.setHandlerMetadata(table ->
+        {
+            declaredRows[0] = table.getRecords();
+            return handleMetadata(table, aURI, metaHolder, mappersHolder);
+        });
 
         dsjtp.setHandlerChunkRows((chunkIdx, _, count, rows) ->
         {
@@ -267,13 +278,22 @@ public class DsjTableProvider extends AbstractDataTableProvider
 
         IDataTable table = assembleResult(chunkParsers, singleParser[0], metaHolder[0]);
 
-        long expectedRowCount = table.getMetaData().getRowCount();
+        // F-prov-01: a declared-vs-parsed row-count mismatch means the document is
+        // corrupt (typically a truncated upload); returning the short table as a
+        // successful load would feed silently incomplete data into every downstream
+        // verdict and export. Both SAS providers throw for the identical condition.
+        //
+        // The declared count must be taken from the document's "records" attribute as
+        // captured PRE-parse (declaredRows[0]; -1 means the document does not declare
+        // one): completeTable() rebuilds the result table's metadata with the row count
+        // actually parsed, so a comparison against table.getMetaData().getRowCount()
+        // would compare the parsed count with itself and could never fire.
+        long declaredRowCount = declaredRows[0];
         long parsedRowCount = table.getRowCount();
-        if (expectedRowCount >= 0 && parsedRowCount != expectedRowCount)
+        if (declaredRowCount >= 0 && parsedRowCount != declaredRowCount)
         {
-            LOGGER.log(Level.WARNING,
-                    "Row count mismatch: metadata declares {0} rows but {1} were parsed.",
-                    expectedRowCount, parsedRowCount);
+            throw new IOException("Can't read all rows. Expected=%d, found=%d"
+                    .formatted(declaredRowCount, parsedRowCount));
         }
 
         debugCalcDataSize(table);

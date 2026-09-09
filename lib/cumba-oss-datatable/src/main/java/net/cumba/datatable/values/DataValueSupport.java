@@ -522,8 +522,53 @@ public class DataValueSupport
 
 
     /**
+     * Identify the {@link MissingValue} a data value carries, if any. Recognizes both the explicit
+     * form — a value whose {@code getValue()} is a {@link MissingValue}, i.e. a
+     * {@link DataValueMissing} — and the encoded form: a DOUBLE-typed value whose double is a NaN
+     * carrying the missing-value byte in its mantissa payload. A DOUBLE NaN without a known payload
+     * maps to {@link MissingValue#MIS_UNKNOWN}, mirroring the numeric buffers' decoding. A STRING
+     * (or any other non-DOUBLE) value never counts as missing here, no matter what its numeric
+     * interpretation would be.
+     *
+     * @param aValue
+     *            the value to inspect.
+     * @return the missing value the given data value carries, or null if it is not missing.
+     */
+    public static @Nullable MissingValue getMissingValue(IDataValue aValue)
+    {
+        if (aValue.getValue() instanceof MissingValue mv)
+        {
+            return mv;
+        }
+        if (aValue.getType() == DataValueType.DOUBLE)
+        {
+            double val = aValue.getValueAsDouble();
+            if (Double.isNaN(val))
+            {
+                return MissingValue.forValue(val, MissingValue.MIS_UNKNOWN);
+            }
+        }
+        return null;
+    }
+
+
+    /**
      * Compare two data values. This can be used as a generic {@link Comparator} for
      * {@link IDataValue}s.
+     *
+     * <p>
+     * <b>Missing values (SAS semantics, F-dt-06):</b> a missing value sorts BELOW any non-missing
+     * value — numeric or string — and missings order among themselves by their missing-value byte,
+     * which reproduces the SAS collating sequence ({@code ._ < . < .A < ... < .Z}). This includes
+     * DOUBLE-typed values that carry a missing encoded as a NaN payload; {@code Double.compare}
+     * alone would sort every NaN LAST and call all special missings equal.
+     * </p>
+     *
+     * <p>
+     * <b>DOUBLE values are compared normalised:</b> both sides pass through
+     * {@link #getAsDoubleCleaned(double)} first, so sub-{@code 1e-13} magnitudes flatten to 0 and
+     * values are rounded to 12 significant digits before comparison.
+     * </p>
      *
      * @param aValue1
      *            the first value to compare.
@@ -545,6 +590,21 @@ public class DataValueSupport
 
         IDataValue val1 = aValue1;
         IDataValue val2 = aValue2;
+
+        // F-dt-06: missing values sort below every non-missing value and among themselves by
+        // their missing-value byte (the SAS collating sequence). Handling them here — before the
+        // type routing — also keeps NaNs out of the DOUBLE arm's Double.compare, whose total
+        // order would otherwise sort missings last and collapse all special missings into one.
+        MissingValue mis1 = getMissingValue(val1);
+        MissingValue mis2 = getMissingValue(val2);
+        if (mis1 != null || mis2 != null)
+        {
+            if (mis1 != null && mis2 != null)
+            {
+                return Integer.compare(mis1.getValue() & 0xFF, mis2.getValue() & 0xFF);
+            }
+            return mis1 != null ? -1 : 1;
+        }
 
         if (val1.getType() != val2.getType())
         {
