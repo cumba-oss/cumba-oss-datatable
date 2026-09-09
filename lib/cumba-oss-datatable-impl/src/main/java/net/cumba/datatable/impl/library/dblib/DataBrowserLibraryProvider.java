@@ -22,6 +22,7 @@ import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary;
 import net.cumba.datatable.impl.provider.DataTableProviderFactory;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -47,7 +48,24 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
 
     @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        String beanDefault = computeBeanDefaultName(aUri);
+        return List.of(ILibraryProvider.libraryNameProperty(aUri, aFileInfo, beanDefault));
+    }
+
+
+    @Override
     public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
+    {
+        return provide(aUri, aFileInfo, Map.of());
+    }
+
+
+    @Override
+    public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
     {
         URL url = aUri.toURL();
         try (InputStream in = url.openStream())
@@ -55,7 +73,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             DataBrowserLibraryBean bean = new ObjectMapper().readValue(in,
                     DataBrowserLibraryBean.class);
 
-            String resolvedName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo,
+            String resolvedName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo, aProperties,
                     bean.getName());
             if (!CDT.isBlankOrNull(resolvedName))
             {
@@ -65,6 +83,32 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             DataBrowserLibrary lib = new DataBrowserLibrary(aUri, bean);
             lib.setMetadata(DataBrowserMetadataLibrary.from(bean, aUri));
             return lib;
+        }
+    }
+
+
+    /**
+     * Reads the {@code .dblib} JSON file just to extract the stored library name for use as default
+     * in the library-name property. Returns {@code null} on any failure so callers fall back to the
+     * URI-based default.
+     */
+    private static @Nullable String computeBeanDefaultName(URI aUri)
+    {
+        try
+        {
+            URL url = aUri.toURL();
+            try (InputStream in = url.openStream())
+            {
+                DataBrowserLibraryBean bean = new ObjectMapper().readValue(in,
+                        DataBrowserLibraryBean.class);
+                return bean.getName();
+            }
+        }
+        catch (Exception ex)
+        {
+            LOGGER.log(System.Logger.Level.DEBUG,
+                    "Failed to pre-load .dblib for default library name: {0}", aUri, ex);
+            return null;
         }
     }
 

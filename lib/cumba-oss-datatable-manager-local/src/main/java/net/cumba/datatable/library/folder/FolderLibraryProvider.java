@@ -6,10 +6,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.impl.library.AbstractLibraryProvider;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -34,14 +36,30 @@ public class FolderLibraryProvider extends AbstractLibraryProvider
 
 
     @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return List.of(ILibraryProvider.libraryNameProperty(aUri, aFileInfo));
+    }
+
+
+    @Override
     public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
+    {
+        return provide(aUri, aFileInfo, Map.of());
+    }
+
+
+    @Override
+    public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
     {
         Path p = Path.of(aUri);
         if (!Files.isDirectory(p))
         {
             throw new IOException("URI does not point to a local directory.");
         }
-        String name = ILibraryProvider.defaultLibraryName(aUri, aFileInfo);
+        String name = ILibraryProvider.resolveLibraryName(aUri, aFileInfo, aProperties);
         return new FolderLibrary(p, name);
     }
 

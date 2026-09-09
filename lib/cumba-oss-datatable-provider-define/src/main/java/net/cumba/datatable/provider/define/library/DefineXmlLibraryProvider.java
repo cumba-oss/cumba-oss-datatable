@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Stream;
+import lombok.CustomLog;
 import net.cumba.cdisc.define.DefineCache;
 import net.cumba.cdisc.define.DefineSupport;
 import net.cumba.cdisc.define.DocumentRef;
@@ -22,6 +23,7 @@ import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -30,6 +32,7 @@ import net.cumba.datatable.metadata.IMetadataLibrary;
 import net.cumba.datatable.provider.define.metadata.DefineMetadataLibrary;
 import org.jspecify.annotations.Nullable;
 
+@CustomLog
 public class DefineXmlLibraryProvider extends AbstractLibraryProvider
 {
 
@@ -41,7 +44,24 @@ public class DefineXmlLibraryProvider extends AbstractLibraryProvider
 
 
     @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        String studyDefault = computeStudyDefaultName(aUri);
+        return List.of(ILibraryProvider.libraryNameProperty(aUri, aFileInfo, studyDefault));
+    }
+
+
+    @Override
     public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
+    {
+        return provide(aUri, aFileInfo, Map.of());
+    }
+
+
+    @Override
+    public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
     {
         DefineSupport define = DefineCache.sharedInstance().getOrLoad(aUri);
         IMetadataLibrary metadata = DefineMetadataLibrary.from(define);
@@ -51,7 +71,8 @@ public class DefineXmlLibraryProvider extends AbstractLibraryProvider
         DataBrowserSourceBean[] sources = buildSources(metadata);
 
         String studyDefault = buildStudyName(metadata);
-        String libraryName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo, studyDefault);
+        String libraryName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo, aProperties,
+                studyDefault);
 
         // Discover validation report URI from the Define-XML
         Map<String, String> attributes = new HashMap<>();
@@ -102,6 +123,33 @@ public class DefineXmlLibraryProvider extends AbstractLibraryProvider
             }
         }
         return null;
+    }
+
+
+    /**
+     * Attempts to compute the "StudyName - StandardName Version" default by loading the Define-XML
+     * via {@link DefineCache}. Returns {@code null} on any failure so callers fall back to the
+     * URI-based default.
+     */
+    private static @Nullable String computeStudyDefaultName(URI aUri)
+    {
+        try
+        {
+            DefineSupport define = DefineCache.sharedInstance().getOrLoad(aUri);
+            IMetadataLibrary metadata = DefineMetadataLibrary.from(define);
+            return buildStudyName(metadata);
+        }
+        catch (IOException | RuntimeException ex)
+        {
+            // F-dtcdisc-05: the javadoc above promises "null on any failure", but only IOException
+            // was caught. Define-XML parsing and DefineMetadataLibrary.from(...) can raise
+            // unchecked failures (InvalidPathException, JAXB/DOM RuntimeExceptions, an NPE on a
+            // structurally odd document), and those aborted provide() entirely — the library would
+            // not open at all — where the documented behaviour is the URI-based fallback name.
+            LOGGER.log(System.Logger.Level.DEBUG,
+                    "Failed to pre-load Define-XML for default library name: {0}", aUri, ex);
+            return null;
+        }
     }
 
 

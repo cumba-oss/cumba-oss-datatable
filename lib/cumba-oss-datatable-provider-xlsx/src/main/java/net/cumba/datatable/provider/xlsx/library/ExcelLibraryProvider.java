@@ -9,11 +9,13 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -57,7 +59,24 @@ public class ExcelLibraryProvider implements ILibraryProvider
 
 
     @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return List
+                .of(ILibraryProvider.libraryNameProperty(aUri, aFileInfo, getLibraryNameFor(aUri)));
+    }
+
+
+    @Override
     public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
+    {
+        return provide(aUri, aFileInfo, Map.of());
+    }
+
+
+    @Override
+    public IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
     {
         try (InputStream in = aUri.toURL().openStream())
         {
@@ -66,7 +85,7 @@ public class ExcelLibraryProvider implements ILibraryProvider
             {
                 // TODO: if aFileInfo is null derive correct FileInfo from extension
                 FileInfo fi = aFileInfo != null ? aFileInfo : ExcelProviderSupplier.FI_XLSX;
-                String libName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo,
+                String libName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo, aProperties,
                         getLibraryNameFor(aUri));
                 ExcelLibrary lib = new ExcelLibrary(libName, "", aUri, fi);
 

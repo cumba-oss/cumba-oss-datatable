@@ -9,12 +9,14 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.library.AbstractLibraryProvider;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -51,6 +53,14 @@ public class XptLibraryProvider extends AbstractLibraryProvider
     }
 
 
+    @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return List
+                .of(ILibraryProvider.libraryNameProperty(aUri, aFileInfo, getLibraryNameFor(aUri)));
+    }
+
+
     // NullAway: IGenericProvider.provide is declared @NonNull, but this provider returns null for a
     // non-file: URI (a contract the LibraryProviderFactory already null-tolerates, and which an
     // existing test pins). The interface lives in a sibling module and cannot be relaxed here, so
@@ -58,6 +68,15 @@ public class XptLibraryProvider extends AbstractLibraryProvider
     @Override
     @SuppressWarnings("NullAway")
     public @Nullable IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo)
+        throws IOException
+    {
+        return provide(aUri, aFileInfo, Map.of());
+    }
+
+
+    @Override
+    public @Nullable IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
         throws IOException
     {
         if (!"file".equalsIgnoreCase(aUri.getScheme()))
@@ -70,7 +89,7 @@ public class XptLibraryProvider extends AbstractLibraryProvider
 
         List<DatasetXpt> dataSets = library.getDatasets();
 
-        String libName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo,
+        String libName = ILibraryProvider.resolveLibraryName(aUri, aFileInfo, aProperties,
                 getLibraryNameFor(aUri));
         XptLibrary lib = new XptLibrary(libName, null, aUri);
 

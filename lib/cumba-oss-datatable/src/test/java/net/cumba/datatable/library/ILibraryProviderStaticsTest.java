@@ -1,8 +1,12 @@
 package net.cumba.datatable.library;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
+import net.cumba.datatable.io.Property;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -67,7 +71,75 @@ class ILibraryProviderStaticsTest
 
 
     @Test
-    void resolveLibraryName_nullCustomDefault_returnsUriDefault()
+    void libraryNameProperty_uriDefault_isNonNull()
+    {
+        Property p = ILibraryProvider.libraryNameProperty(URI.create("file:///x.xpt"), null);
+        assertNotNull(p);
+        assertEquals(ILibraryProvider.LIBRARY_NAME_PROPERTY_NAME, p.name());
+        assertEquals("x", p.defaultValue());
+    }
+
+
+    @Test
+    void libraryNameProperty_customDefault_isUsed()
+    {
+        Property p = ILibraryProvider.libraryNameProperty(URI.create("file:///x.xpt"), null,
+                "CustomName");
+        assertEquals("CustomName", p.defaultValue());
+    }
+
+
+    @Test
+    void libraryNameProperty_blankCustomDefault_fallsBackToUriDefault()
+    {
+        Property p = ILibraryProvider.libraryNameProperty(URI.create("file:///abc.xpt"), null, "");
+        assertEquals("abc", p.defaultValue());
+    }
+
+
+    @Test
+    void libraryNameProperty_nullCustomDefault_fallsBackToUriDefault()
+    {
+        Property p = ILibraryProvider.libraryNameProperty(URI.create("file:///abc.xpt"), null,
+                null);
+        assertEquals("abc", p.defaultValue());
+    }
+
+
+    @Test
+    void resolveLibraryName_propertyPresent_returnsUserValue()
+    {
+        URI uri = URI.create("file:///abc.xpt");
+        Property prop = ILibraryProvider.libraryNameProperty(uri, null);
+        Map<Property, String> props = new HashMap<>();
+        props.put(prop, "ChosenName");
+
+        assertEquals("ChosenName", ILibraryProvider.resolveLibraryName(uri, null, props));
+    }
+
+
+    @Test
+    void resolveLibraryName_propertyMissing_returnsDefault()
+    {
+        URI uri = URI.create("file:///abc.xpt");
+        assertEquals("abc", ILibraryProvider.resolveLibraryName(uri, null, new HashMap<>()));
+    }
+
+
+    @Test
+    void resolveLibraryName_propertyBlankValue_returnsDefault()
+    {
+        URI uri = URI.create("file:///abc.xpt");
+        Property prop = ILibraryProvider.libraryNameProperty(uri, null);
+        Map<Property, String> props = new HashMap<>();
+        props.put(prop, "");
+
+        assertEquals("abc", ILibraryProvider.resolveLibraryName(uri, null, props));
+    }
+
+
+    @Test
+    void resolveLibraryName_nullProperties_returnsDefault()
     {
         URI uri = URI.create("file:///abc.xpt");
         assertEquals("abc", ILibraryProvider.resolveLibraryName(uri, null, null));
@@ -75,17 +147,23 @@ class ILibraryProviderStaticsTest
 
 
     @Test
-    void resolveLibraryName_blankCustomDefault_returnsUriDefault()
+    void resolveLibraryName_withCustomDefault_propertyMissing_returnsCustomDefault()
     {
         URI uri = URI.create("file:///abc.xpt");
-        assertEquals("abc", ILibraryProvider.resolveLibraryName(uri, null, ""));
+        assertEquals("CustomDef",
+                ILibraryProvider.resolveLibraryName(uri, null, new HashMap<>(), "CustomDef"));
     }
 
 
     @Test
-    void resolveLibraryName_customDefault_isUsed()
+    void resolveLibraryName_withCustomDefault_propertyPresent_returnsUserValue()
     {
         URI uri = URI.create("file:///abc.xpt");
-        assertEquals("CustomDef", ILibraryProvider.resolveLibraryName(uri, null, "CustomDef"));
+        Property prop = ILibraryProvider.libraryNameProperty(uri, null, "CustomDef");
+        Map<Property, String> props = new HashMap<>();
+        props.put(prop, "UserChosen");
+
+        assertEquals("UserChosen",
+                ILibraryProvider.resolveLibraryName(uri, null, props, "CustomDef"));
     }
 }
