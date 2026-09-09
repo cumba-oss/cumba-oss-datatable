@@ -1,0 +1,20 @@
+# Third-party attribution manifest -- read by AttributionTest.
+# path (under src/main/java) <TAB> kind <TAB> marker that must appear in the file's leading
+# block comment.  kind: DERIVED | PORTED | PARTIAL | ORIGINAL | NOT_DERIVED.
+#
+# NOT_DERIVED is the explicit allow-list: P300's own code, no upstream notice required. It must
+# still be LISTED -- adding a source file with no row here FAILS the build, which is what stops
+# a new derived file slipping in unattributed.
+net/cumba/datatable/provider/sas/sas7bdat/BdatObservation.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/sas7bdat/BdatProviderSupplier.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/sas7bdat/BdatTableProvider.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/sas7bdat/BdatVarParser.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/ObservationIteratorXpt.java	DERIVED	Derived from theshoeshiner/sas-utils
+net/cumba/datatable/provider/sas/xpt/XptObservation.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/XptProviderSupplier.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/XptTableProvider.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/XptVarParser.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/library/XptLibrary.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/library/XptLibraryMember.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/library/XptLibraryProvider.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/xpt/library/XptLibrarySupplier.java	NOT_DERIVED	-

@@ -1,3 +1,14 @@
+/*
+ * Derived from theshoeshiner/sas-utils (https://github.com/theshoeshiner/sas-utils), licensed under
+ * the Apache License, Version 2.0. This class is a copy of that project's XPT observation iterator,
+ * carried here so the provider can stream observations without going through the reader library's
+ * own model; a sibling copy lives in the sas-utils reader module.
+ *
+ * Changed by P300: repackaged to net.cumba.datatable.provider.sas.xpt, adapted to the datatable
+ * provider's row model, annotated for null-safety, and adapted to this project's build and
+ * static-analysis gates. See this module's README.md for the full attribution notice and
+ * LICENSE-APACHE-2.0.txt for the licence.
+ */
 package net.cumba.datatable.provider.sas.xpt;
 
 import java.io.IOException;

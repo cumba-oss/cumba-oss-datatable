@@ -1,0 +1,12 @@
+# Module attribution artefacts -- read by AttributionTest.
+# SCOPE         <TAB> subtree (under src/main/java) the manifest must cover COMPLETELY.
+#                     Omitted = the whole module. The directory must exist.
+# FILE          <TAB> path relative to the module directory
+# LICENSETUPLE  <TAB> groupId <TAB> artifactId <TAB> version <TAB> name <TAB> url
+#
+# A LICENSE-*.txt FILE row additionally requires a byte-identical copy at
+# src/main/resources/META-INF/<same name>, so the text the notices point at is the one that
+# actually ships inside the jar.
+FILE	README.md
+FILE	LICENSE-APACHE-2.0.txt
+LICENSETUPLE	org.thshsh	sas-utils	unknown	Apache License, Version 2.0	https://www.apache.org/licenses/LICENSE-2.0

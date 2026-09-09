@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Third-party attribution for the About dialog.
+
+    net.cumba.dataviewer.licenses.LicenseReader aggregates EVERY licenses.xml on the
+    classpath, so attribution is additive per module: this file contributes its rows to
+    the dialog without any change to the application.
+
+    Two rules this file must keep:
+
+      * The coordinates are the UPSTREAM project's, never net.cumba. AboutPanel skips
+        every entry whose groupId is exactly "net.cumba", so an attribution row filed
+        under our own coordinates is invisible while looking correct.
+
+      * LicenseInfo is a value object over groupId/artifactId/version/name/url held in a
+        HashSet, and the dialog renders only groupId/artifactId/name. Two modules
+        declaring the same upstream with a different <version> therefore render as two
+        rows that look identical. Keep each tuple BYTE-IDENTICAL across modules; where
+        no upstream revision is recorded we pin the literal "unknown" rather than
+        inventing one.
+
+    AttributionTest in this module asserts both rules.
+-->
+<licenseSummary>
+  <dependencies>
+    <dependency>
+      <groupId>org.thshsh</groupId>
+      <artifactId>sas-utils</artifactId>
+      <version>unknown</version>
+      <licenses>
+        <license>
+          <name>Apache License, Version 2.0</name>
+          <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+        </license>
+      </licenses>
+    </dependency>
+  </dependencies>
+</licenseSummary>
