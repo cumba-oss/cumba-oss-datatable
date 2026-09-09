@@ -25,28 +25,12 @@ public class DefineSupport
     {
         if (aCompareCaseInsensitive)
         {
-            return e -> equalsIgnoreCaseNullSafe(e.getName(), aName);
+            return e -> CDT.equalsIgnoreCase(e.getName(), aName);
         }
         else
         {
             return e -> Objects.equals(e.getName(), aName);
         }
-    }
-
-
-    /**
-     * Null-safe case-insensitive equality. {@link CDT#equalsIgnoreCase} declares both parameters
-     * {@code @NonNull}, so the null handling (two {@code null}s are equal, one {@code null} is not)
-     * is performed here before delegating; this preserves the original null-tolerant contract.
-     */
-    private static boolean equalsIgnoreCaseNullSafe(@Nullable String aLeft, @Nullable String aRight)
-    {
-        if (aLeft == null || aRight == null)
-        {
-            // both null => equal; exactly one null => not equal
-            return aLeft == null && aRight == null;
-        }
-        return CDT.equalsIgnoreCase(aLeft, aRight);
     }
 
 
@@ -82,6 +66,8 @@ public class DefineSupport
             return null;
         }
         List<TranslatedText> translations = aDescription.getTranslatedTexts();
+        // Explicit null + empty guard (instead of CDT.isEmptyOrNull) so NullAway can see that
+        // translations is non-null at the dereference below.
         if (translations == null || translations.isEmpty())
         {
             return null;
