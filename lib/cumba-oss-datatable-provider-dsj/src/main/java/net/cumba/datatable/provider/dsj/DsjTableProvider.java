@@ -149,6 +149,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport metaSup = new DataTableMetaSupport(getMetadata());
         metaSup.setTable(aURI, aTable.getName());
         metaSup.setFileFormat("DATASET-JSON", null);
+        metaSup.setDatasetSize(aURI);
         aTable.getColumnsStream().forEachOrdered(tc -> addColumn(metaSup, tc));
 
         long rowCount = aTable.getRecords();
@@ -468,6 +469,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport metaSup = new DataTableMetaSupport(getMetadata());
         metaSup.setTable(aURI, aTable.getName());
         metaSup.setFileFormat("DATASET-JSON", null);
+        metaSup.setDatasetSize(aURI);
         aTable.getColumnsStream().forEachOrdered(tc -> addColumn(metaSup, tc));
 
         DataTableMetaBuilder b = metaSup.getTableMeta();

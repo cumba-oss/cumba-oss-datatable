@@ -154,6 +154,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri, aSheet.getSheetName());
         dtms.setFileFormat("XLSX", null);
+        dtms.setDatasetSize(aUri);
 
         int colCount = headRow.getColumnCount();
         DataValueType[] dataTypes = determineTypes(guessRows, colCount);
@@ -213,6 +214,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri, aSheet.getSheetName());
         dtms.setFileFormat("XLSX", null);
+        dtms.setDatasetSize(aUri);
 
         int colCount = headRow.getColumnCount();
 

@@ -234,6 +234,7 @@ public class XptTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri, aDataSet.getName());
         dtms.setFileFormat("XPORT", "5");
+        dtms.setDatasetSize(aUri);
         String dsLabel = aDataSet.getLabel();
         if (!CDT.isBlankOrNull(dsLabel))
         {
@@ -324,6 +325,9 @@ public class XptTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri, aDataSet.getName());
         dtms.setFileFormat("XPORT", "5");
+        // aFile is what was actually parsed: for a non-file URI provide(URI, FileInfo) downloads
+        // to a temp file first, so this reports a real size where stat'ing the URI reports none.
+        dtms.setDatasetSize(aFile, aUri);
         String dsLabel = aDataSet.getLabel();
         if (!CDT.isBlankOrNull(dsLabel))
         {

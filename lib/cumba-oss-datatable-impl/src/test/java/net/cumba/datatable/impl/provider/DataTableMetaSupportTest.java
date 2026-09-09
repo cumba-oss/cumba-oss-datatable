@@ -6,10 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta.DataTableMetaBuilder;
 import net.cumba.datatable.values.DataValueType;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class DataTableMetaSupportTest
 {
@@ -365,5 +368,119 @@ class DataTableMetaSupportTest
         assertNull(cols[0].getDisplayFormat());
         assertNull(cols[0].getNativeType());
         assertEquals(0, cols[0].getLength());
+    }
+
+    // ==================== setDatasetSize ====================
+
+
+    @Test
+    void setDatasetSize_fromLocalFile(@TempDir Path aTmp) throws Exception
+    {
+        Path f = aTmp.resolve("lb.xpt");
+        Files.write(f, new byte[1234]);
+
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(f.toUri(), "LB");
+        s.setDatasetSize(f.toUri());
+
+        assertEquals(Long.valueOf(1234L),
+                s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
+    }
+
+
+    @Test
+    void setDatasetSize_parsedFileWinsOverUri(@TempDir Path aTmp) throws Exception
+    {
+        // The XPT/parquet case: the provider parsed a local file that a remote URI was
+        // materialised into, so the file is authoritative and the unusable URI is ignored.
+        Path parsed = aTmp.resolve("downloaded.xpt");
+        Files.write(parsed, new byte[77]);
+
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(URI.create("https://example.org/lb.xpt"), "LB");
+        s.setDatasetSize(parsed.toFile(), URI.create("https://example.org/lb.xpt"));
+
+        assertEquals(Long.valueOf(77L),
+                s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
+    }
+
+
+    @Test
+    void setDatasetSize_remoteUriRecordsNothing()
+    {
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(URI.create("https://example.org/lb.xpt"), "LB");
+        s.setDatasetSize(URI.create("https://example.org/lb.xpt"));
+
+        // Absent, not a -1 sentinel: a consumer must be able to tell "unknown" from a real size.
+        assertNull(
+                s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
+    }
+
+
+    @Test
+    void setDatasetSize_missingFileRecordsNothing(@TempDir Path aTmp)
+    {
+        URI gone = aTmp.resolve("nope.xpt").toUri();
+
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(gone, "LB");
+        s.setDatasetSize(gone);
+
+        assertNull(
+                s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
+    }
+
+
+    @Test
+    void setDatasetSize_stripsFragmentOfContainerMember(@TempDir Path aTmp) throws Exception
+    {
+        // A member of a multi-dataset container is addressed as "file:/x/lb.xpt#DM"; Path.of
+        // rejects a URI carrying a fragment, so the size would otherwise be lost entirely.
+        Path f = aTmp.resolve("lb.xpt");
+        Files.write(f, new byte[4096]);
+        URI member = URI.create(f.toUri() + "#DM");
+
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(member, "DM");
+        s.setDatasetSize(member);
+
+        assertEquals(Long.valueOf(4096L),
+                s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
+    }
+
+
+    @Test
+    void setDatasetSize_emptyFileIsARealZero(@TempDir Path aTmp) throws Exception
+    {
+        Path f = aTmp.resolve("empty.csv");
+        Files.write(f, new byte[0]);
+
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(f.toUri(), "E");
+        s.setDatasetSize(f.toUri());
+
+        assertEquals(Long.valueOf(0L),
+                s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
+    }
+
+
+    @Test
+    void setDatasetSize_negativeIsNotRecorded()
+    {
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(URI.create("file:/test"), "t");
+        s.setDatasetSize(-1L);
+
+        assertNull(
+                s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
+    }
+
+
+    @Test
+    void setDatasetSize_beforeSetTableThrows()
+    {
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        assertThrows(IllegalStateException.class, () -> s.setDatasetSize(42L));
     }
 }

@@ -299,6 +299,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
         dtms.setTable(aUri);
         dtms.setFileFormat("SAS7BDAT", null);
+        dtms.setDatasetSize(aUri);
 
         List<VariableBdat> vars = aDataSet.getVariables();
         for (int i = 0; i < vars.size(); i++)
@@ -362,6 +363,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri);
         dtms.setFileFormat("SAS7BDAT", null);
+        dtms.setDatasetSize(aUri);
 
         List<VariableBdat> vars = aDataSet.getVariables();
 

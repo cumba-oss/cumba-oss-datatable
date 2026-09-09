@@ -116,6 +116,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
                 dtms.setTable(aURI);
                 dtms.setFileFormat("CSV", null);
+                dtms.setDatasetSize(aURI);
 
                 int colCount = headRow.getColumnCount();
                 DataValueType[] dataTypes = determineTypes(headRowBlock, colCount);
@@ -183,6 +184,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
             dtms.setTable(aURI);
             dtms.setFileFormat("CSV", null);
+            dtms.setDatasetSize(aURI);
 
             int colCount = headRow.getColumnCount();
 

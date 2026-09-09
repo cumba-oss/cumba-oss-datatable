@@ -1,5 +1,6 @@
 package net.cumba.datatable.impl.provider;
 
+import java.io.File;
 import java.net.URI;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Path;
@@ -15,6 +16,7 @@ import net.cumba.datatable.DataTableColumnMeta.DataTableColumnMetaBuilder;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.DataTableMeta.DataTableMetaBuilder;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.metadata.IColumnMetadata;
 import net.cumba.datatable.metadata.IDataTableMetadata;
 import net.cumba.datatable.metadata.IMetadataLibrary;
@@ -73,6 +75,22 @@ public class DataTableMetaSupport
 
     /** The transport/container version for formats that define one (XPORT ⇒ {@code "5"}). */
     public static final String META_KEY_TRANSPORT_VERSION = "transport_version";
+
+    /**
+     * Size in bytes of the file this table was parsed from, as a {@link Long}. Lower-case key: it
+     * backs the rule-engine {@code extract_metadata("dataset_size")} accessor
+     * ({@code OperationExecutor.evalExtractMetadata}), matching the {@code file_format} /
+     * {@code dataset_location} accessor-key convention.
+     *
+     * <p>
+     * ⚠ This key is <b>not</b> decoration: {@code PMDA-SD1142} ("the submitted dataset is larger
+     * than 5 GB") is a Published rule in the shipping corpus whose whole check is
+     * {@code $dataset_size > 5368709120}. Until a provider populates the key the rule reads
+     * {@code null} and can never fire, on a dataset of any size. Each provider therefore states the
+     * size of the bytes <b>it actually parsed</b> — see {@link #setDatasetSize(java.io.File, URI)}.
+     * </p>
+     */
+    public static final String META_KEY_DATASET_SIZE = "dataset_size";
 
     /**
      * The optional metadata library.
@@ -223,6 +241,115 @@ public class DataTableMetaSupport
         if (aTransportVersion != null)
         {
             tableMetaBuilder.addMetaData(META_KEY_TRANSPORT_VERSION, aTransportVersion);
+        }
+    }
+
+
+    /**
+     * Records the size of the file a {@code file:} URI points at — the stream-based providers' form
+     * of {@link #setDatasetSize(File, URI)}, which hold no file of their own. A remote source
+     * yields no size rather than a guessed one.
+     *
+     * @param aUri
+     *            the table's source URI.
+     */
+    public void setDatasetSize(@Nullable URI aUri)
+    {
+        setDatasetSize(null, aUri);
+    }
+
+
+    /**
+     * Records the size in bytes of the file this table was parsed from, as the
+     * {@value #META_KEY_DATASET_SIZE} table-metadata key. Call after
+     * {@link #setTable(URI, String)}.
+     *
+     * <p>
+     * {@code aParsedFile} is preferred over {@code aUri} and is what makes the value authoritative
+     * rather than a guess: a provider that materialised its input locally —
+     * {@code XptTableProvider} downloads a non-{@code file} URI to a temp file before parsing,
+     * {@code ParquetTableProvider} needs random access — holds the very bytes it read, and so
+     * reports a real size even for an {@code http:} source, where stat'ing the URI can report
+     * nothing. The URI is the fallback for the stream-based providers, which never hold a file.
+     * </p>
+     *
+     * @param aParsedFile
+     *            the local file whose bytes this table was actually parsed from, or {@code null}
+     *            when the provider streamed its input.
+     * @param aUri
+     *            the table's source URI, used when {@code aParsedFile} is {@code null} and the URI
+     *            has the {@code file} scheme; any other scheme yields no size.
+     */
+    public void setDatasetSize(@Nullable File aParsedFile, @Nullable URI aUri)
+    {
+        long size = sizeOf(aParsedFile);
+        if (size < 0)
+        {
+            size = sizeOfUri(aUri);
+        }
+        setDatasetSize(size);
+    }
+
+
+    /**
+     * Records an already-known dataset size as the {@value #META_KEY_DATASET_SIZE} table-metadata
+     * key. A negative size means "unknown" and is not recorded at all — consumers distinguish an
+     * absent key from a real size, and a sentinel written into the metadata would read as a real
+     * one. Call after {@link #setTable(URI, String)}.
+     *
+     * @param aSizeInBytes
+     *            the size in bytes, or a negative value when the size is not known.
+     */
+    public void setDatasetSize(long aSizeInBytes)
+    {
+        if (tableMetaBuilder == null)
+        {
+            throw new IllegalStateException("setTable() must be called before setDatasetSize()");
+        }
+        if (aSizeInBytes >= 0)
+        {
+            tableMetaBuilder.addMetaData(META_KEY_DATASET_SIZE, Long.valueOf(aSizeInBytes));
+        }
+    }
+
+
+    /**
+     * Size of a local file, or {@code -1} when it is null, absent or not a regular file.
+     */
+    private static long sizeOf(@Nullable File aFile)
+    {
+        if (aFile == null || !aFile.isFile())
+        {
+            return -1;
+        }
+        long len = aFile.length();
+        // File.length() answers 0 both for an empty file and for one it could not stat; an empty
+        // file is a legitimate 0, so only a negative result is treated as unknown.
+        return len >= 0 ? len : -1;
+    }
+
+
+    /**
+     * Size of the file a {@code file:} URI points at, or {@code -1} for any other scheme or when it
+     * cannot be stat'ed. The fragment is stripped first: a member of a multi-dataset container is
+     * addressed as {@code file:/x/lb.xpt#DM}, and {@code Path.of} rejects that with "URI has a
+     * fragment component" — the size then reported is the container's, which is what the
+     * {@code dataset_size} rules mean by the submitted dataset.
+     */
+    private static long sizeOfUri(@Nullable URI aUri)
+    {
+        if (aUri == null || !"file".equalsIgnoreCase(aUri.getScheme()))
+        {
+            return -1;
+        }
+        try
+        {
+            URI plain = aUri.getFragment() == null ? aUri : URIHelper.replaceFragment(aUri, null);
+            return sizeOf(new File(plain));
+        }
+        catch (IllegalArgumentException | FileSystemNotFoundException _)
+        {
+            return -1;
         }
     }
 

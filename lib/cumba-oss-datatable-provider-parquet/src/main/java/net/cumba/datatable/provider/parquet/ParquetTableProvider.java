@@ -207,6 +207,7 @@ public class ParquetTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
         dtms.setTable(aURI);
         dtms.setFileFormat("PARQUET", null);
+        dtms.setDatasetSize(aFile, aURI);
 
         LocalInputFile inputFile = new LocalInputFile(aFile.toPath());
         MessageType parquetSchema;
@@ -283,6 +284,7 @@ public class ParquetTableProvider extends AbstractDataTableProvider
             DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
             dtms.setTable(aURI);
             dtms.setFileFormat("PARQUET", null);
+            dtms.setDatasetSize(aFile, aURI);
 
             // Read Parquet schema metadata
             LocalInputFile inputFile = new LocalInputFile(aFile.toPath());
