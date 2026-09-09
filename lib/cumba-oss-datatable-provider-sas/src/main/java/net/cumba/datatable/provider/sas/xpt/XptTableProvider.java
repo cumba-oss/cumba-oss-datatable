@@ -169,58 +169,87 @@ public class XptTableProvider extends AbstractDataTableProvider
     {
         String fragment = aUri.getFragment();
 
-        File f;
-        boolean downloaded = false;
         if ("file".equalsIgnoreCase(aUri.getScheme()))
         {
+            // ⚠ The caller's own file — NOT ours to delete. This path returns before the cleanup
+            // below is even reachable, which is the whole point: see the note on that finally.
             URI uri = CDT.isBlankOrNull(fragment) ? aUri : URIHelper.replaceFragment(aUri, null);
-            f = new File(uri);
-        }
-        else
-        {
-            f = downloadToFile(aUri);
-            f.deleteOnExit();
-            downloaded = true;
+            return buildMetaFrom(new File(uri), aUri, fragment);
         }
 
+        File f = downloadToFile(aUri);
+        f.deleteOnExit();
         try
         {
-            LibraryXpt library = new ParserXpt().parseLibrary(f, true);
-            if (library.getDatasets().isEmpty())
-            {
-                throw new IOException("XPT file contains no datasets");
-            }
-
-            DatasetXpt ds;
-            if (CDT.isBlankOrNull(fragment))
-            {
-                ds = library.getDatasets().get(0);
-            }
-            else
-            {
-                ds = library.getDatasets().stream()//
-                        .filter(d -> d.getName().equalsIgnoreCase(fragment))//
-                        .findAny()//
-                        .orElseThrow(() -> new IOException(
-                                "XPT file does not contain dataset: " + fragment));
-            }
-
-            return buildMeta(aUri, ds);
+            return buildMetaFrom(f, aUri, fragment);
         }
         finally
         {
-            if (downloaded)
+            // ⚠⚠ Reachable ONLY on the download path, so `f` is provably a temp file we created.
+            // Do NOT restructure this into a single exit guarded by an `isTemporary` flag: the
+            // flag then becomes the only thing between this line and the caller's dataset, and
+            // one desynchronised branch silently deletes the user's data. A mutation run proved
+            // the blast radius by flipping exactly such a flag and eating a committed fixture.
+            // Note the delete is merely PROMPT cleanup — deleteOnExit above already guarantees
+            // it — so the upside here is small and the downside is unbounded. Keep the local
+            // case out of this block by construction, as provide(URI, FileInfo) above and
+            // ParquetTableProvider both do.
+            try
             {
-                try
-                {
-                    Files.deleteIfExists(f.toPath());
-                }
-                catch (IOException _)
-                {
-                    // best-effort cleanup
-                }
+                Files.deleteIfExists(f.toPath());
+            }
+            catch (IOException _)
+            {
+                // best-effort cleanup
             }
         }
+    }
+
+
+    /**
+     * Parse the XPT library in {@code aFile} and build the {@link DataTableMeta} for the dataset
+     * the URI selects, without reading any observations.
+     *
+     * <p>
+     * Extracted so {@link #provideMetaData(URI, FileInfo)} can serve a caller-owned file and a
+     * downloaded temp file from two separate exits, rather than one exit that has to decide at
+     * runtime which kind of file it is holding.
+     * </p>
+     *
+     * @param aFile
+     *            the local XPT file to parse, whoever owns it.
+     * @param aUri
+     *            the original URI, used for the table metadata.
+     * @param aFragment
+     *            the dataset name selected by the URI fragment, or blank for the first dataset.
+     * @return the metadata for the selected dataset.
+     * @throws IOException
+     *             if the file holds no datasets, or none matching {@code aFragment}.
+     */
+    private DataTableMeta buildMetaFrom(File aFile, URI aUri, @Nullable String aFragment)
+        throws IOException
+    {
+        LibraryXpt library = new ParserXpt().parseLibrary(aFile, true);
+        if (library.getDatasets().isEmpty())
+        {
+            throw new IOException("XPT file contains no datasets");
+        }
+
+        DatasetXpt ds;
+        if (CDT.isBlankOrNull(aFragment))
+        {
+            ds = library.getDatasets().get(0);
+        }
+        else
+        {
+            ds = library.getDatasets().stream()//
+                    .filter(d -> d.getName().equalsIgnoreCase(aFragment))//
+                    .findAny()//
+                    .orElseThrow(() -> new IOException(
+                            "XPT file does not contain dataset: " + aFragment));
+        }
+
+        return buildMeta(aUri, ds);
     }
 
 

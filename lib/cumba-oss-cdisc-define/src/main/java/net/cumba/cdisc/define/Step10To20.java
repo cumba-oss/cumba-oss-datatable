@@ -138,7 +138,10 @@ final class Step10To20 implements ConversionStep
                 }
                 if (!DefineDomUtil.childrenByLocalName(el, "Description").isEmpty())
                 {
-                    continue; // already has a Description
+                    ctx.warn(container + " " + DefineDomUtil.attrIgnoreNs(el, "OID")
+                            + ": def:Label=\"" + label + "\" dropped; a Description element was"
+                            + " already present and may differ");
+                    continue;
                 }
                 DefineDomUtil.insertFirstChild(el, describedBy(doc, odmNs, label));
                 converted++;
@@ -199,20 +202,28 @@ final class Step10To20 implements ConversionStep
             }
             if (!DefineDomUtil.childrenByLocalName(it, "Origin").isEmpty())
             {
-                continue; // already has an Origin element
+                ctx.warn("ItemDef " + DefineDomUtil.attrIgnoreNs(it, "OID") + ": Origin=\"" + origin
+                        + "\" dropped; a def:Origin element was already present and may"
+                        + " differ");
+                continue;
             }
             String type = mapOriginType(origin);
             Element originEl = DefineDomUtil.createDefElement(doc, defNs, defPrefix, "Origin");
             originEl.setAttribute("Type", type);
             DefineDomUtil.insertBeforeFirstChild(it, originEl, "ValueListRef");
-            if ("CRF".equals(type) && origin.matches(".*\\d.*"))
+            // Only the mapped Type survives into def:Origin -- the free text is dropped in
+            // every case. A digit in the text is most likely a page reference, and that loss
+            // must be warned about REGARDLESS of the mapped type: "Derived from CRF page 4"
+            // correctly maps to Type="Derived", but the page reference is still discarded
+            // (F-cdisc-define-16 -- the round-1 F-12 fix silenced exactly this case by gating
+            // the warning on Type=="CRF").
+            if (origin.matches(".*\\d.*"))
             {
                 ctx.warn("ItemDef " + DefineDomUtil.attrIgnoreNs(it, "OID")
-                        + ": CRF page reference \"" + origin
+                        + ": page reference in Origin \"" + origin
                         + "\" dropped (v2.0 needs def:DocumentRef/def:PDFPageRef)");
             }
-            else if (DEFAULT_ORIGIN.equals(type)
-                    && !origin.toLowerCase(Locale.ROOT).contains("assign"))
+            if (DEFAULT_ORIGIN.equals(type) && !origin.toLowerCase(Locale.ROOT).contains("assign"))
             {
                 ctx.warn("ItemDef " + DefineDomUtil.attrIgnoreNs(it, "OID")
                         + ": could not map Origin \"" + origin + "\"; defaulted to Type=\""
@@ -263,16 +274,25 @@ final class Step10To20 implements ConversionStep
      */
     private void convertComputationMethods(Document doc, String odmNs, ConversionContext ctx)
     {
-        Map<String, String> itemOidToMethod = new HashMap<>();
+        Map<String, String> itemOidToMethod = new java.util.LinkedHashMap<>();
         for (Element it : DefineDomUtil.elementsByLocalName(doc, "ItemDef"))
         {
             String method = DefineDomUtil.removeAttrByLocalName(it, "ComputationMethodOID");
             String itemOid = DefineDomUtil.attrIgnoreNs(it, "OID");
-            if (method != null && !method.isBlank() && itemOid != null)
+            if (method != null && !method.isBlank())
             {
-                itemOidToMethod.put(itemOid, method);
+                if (itemOid != null)
+                {
+                    itemOidToMethod.put(itemOid, method);
+                }
+                else
+                {
+                    ctx.warn("ItemDef without an OID carried def:ComputationMethodOID=\"" + method
+                            + "\"; the derivation reference was dropped");
+                }
             }
         }
+        java.util.Set<String> rewritten = new java.util.HashSet<>();
         if (!itemOidToMethod.isEmpty())
         {
             for (Element ref : DefineDomUtil.elementsByLocalName(doc, "ItemRef"))
@@ -282,7 +302,17 @@ final class Step10To20 implements ConversionStep
                 if (method != null)
                 {
                     ref.setAttribute("MethodOID", method);
+                    rewritten.add(itemOid);
                 }
+            }
+        }
+        for (Map.Entry<String, String> entry : itemOidToMethod.entrySet())
+        {
+            if (!rewritten.contains(entry.getKey()))
+            {
+                ctx.warn("ItemDef " + entry.getKey() + " is not referenced by any ItemRef; its"
+                        + " def:ComputationMethodOID=\"" + entry.getValue()
+                        + "\" derivation reference was dropped");
             }
         }
 
@@ -357,7 +387,16 @@ final class Step10To20 implements ConversionStep
                 continue;
             }
             String[] segs = vldOid.split("\\.", 0);
-            String dataset = segs.length >= 2 ? segs[1] : null;
+            if (segs.length < 3)
+            {
+                // Fewer than 3 segments carry no dataset/variable pair to decode; fabricating a
+                // self-referential dataset.dataset ItemOID would be worse than synthesising
+                // nothing.
+                ctx.warn(vldOid + ": irregular ValueListDef OID structure; expected"
+                        + " <prefix>.<dataset>[...].<finalVar> -- no WhereClause synthesised");
+                continue;
+            }
+            String dataset = segs[1];
             String finalItemOid = qualify(dataset, segs[segs.length - 1]);
 
             // Leading qualifier (var, value) pairs occupy segments [2 .. len-2].
@@ -490,13 +529,15 @@ final class Step10To20 implements ConversionStep
     private static String mapOriginType(String raw)
     {
         String s = raw.toLowerCase(Locale.ROOT);
-        if (s.contains("crf"))
-        {
-            return "CRF";
-        }
+        // "deriv" outranks "crf": v1.0 free text like "Derived from CRF page 4" records a
+        // derived value, not one collected on the CRF.
         if (s.contains("deriv"))
         {
             return "Derived";
+        }
+        if (s.contains("crf"))
+        {
+            return "CRF";
         }
         if (s.contains("assign"))
         {
@@ -512,7 +553,7 @@ final class Step10To20 implements ConversionStep
         }
         // a bare DATASET.VAR token (no spaces) is a predecessor reference; free text with a
         // sentence-ending period is not.
-        if (s.contains("predecessor") || raw.matches("[A-Za-z][\\w]*\\.[A-Za-z][\\w]*"))
+        if (s.contains("predecessor") || raw.trim().matches("[A-Za-z][\\w]*\\.[A-Za-z][\\w]*"))
         {
             return "Predecessor";
         }

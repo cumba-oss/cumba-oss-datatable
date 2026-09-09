@@ -14,6 +14,14 @@ import org.apache.commons.lang3.ArrayUtils;
  * Parses individual variable values from a BDAT observation byte buffer. Numeric variables are
  * stored as IEEE 754 doubles (potentially in little-endian order). Character variables are decoded
  * using the configured charset.
+ *
+ * <p>
+ * <b>Immutable, and required to stay that way.</b> A single instance may be shared across threads
+ * and {@link #getValue(byte[])} called concurrently, so any per-instance mutable state would be a
+ * data race producing silently wrong cell values. Every field is {@code final} and each parse
+ * allocates its own scratch; the {@code TODO} on {@link #parseDouble(byte[])} about avoiding the
+ * copy must therefore <em>not</em> be resolved with a reusable instance buffer.
+ * </p>
  */
 public class BdatVarParser
 {
@@ -21,17 +29,17 @@ public class BdatVarParser
     private static final Logger LOGGER = System.getLogger(BdatVarParser.class.getName());
 
     @Getter
-    private VariableBdat bdatVar;
+    private final VariableBdat bdatVar;
 
-    private VariableType type;
+    private final VariableType type;
 
-    private int length;
+    private final int length;
 
-    private int offset;
+    private final int offset;
 
-    private Charset charset;
+    private final Charset charset;
 
-    private ByteOrder byteOrder;
+    private final ByteOrder byteOrder;
 
     /**
      * Create a new parser for the given BDAT variable.
@@ -85,7 +93,8 @@ public class BdatVarParser
      */
     public double parseDouble(byte[] aBuffer)
     {
-        // TODO: unpack without copy
+        // TODO: unpack without copy — but NOT via a reusable instance field; see the class
+        // javadoc. This method may run concurrently on one shared instance.
 
         byte[] full = new byte[]
         {

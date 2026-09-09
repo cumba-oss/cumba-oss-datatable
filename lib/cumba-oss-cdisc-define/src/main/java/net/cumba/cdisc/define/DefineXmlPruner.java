@@ -52,6 +52,8 @@ public class DefineXmlPruner
 
     private static final String ELEM_ITEM_REF = "ItemRef";
 
+    private static final int MAX_CASCADE_PASSES = 20;
+
     private static final String ATTR_ITEM_OID = "ItemOID";
 
     private final Document doc;
@@ -314,9 +316,20 @@ public class DefineXmlPruner
 
     /**
      * Perform cascading removal of all orphaned elements. This iterates until no more orphans are
-     * found.
+     * found, up to a safety cap of 20 passes; a run truncated by the cap records a WARNING line in
+     * the log.
      */
     public DefineXmlPruner cascadeOrphans()
+    {
+        return cascadeOrphans(MAX_CASCADE_PASSES);
+    }
+
+
+    /**
+     * Cascading removal with an explicit pass cap; the public overload uses the 20-pass default.
+     * Package-visible so the truncation warning is testable.
+     */
+    DefineXmlPruner cascadeOrphans(int maxPasses)
     {
         int pass = 0;
         int totalRemoved;
@@ -324,18 +337,48 @@ public class DefineXmlPruner
         {
             pass++;
             totalRemoved = 0;
-            totalRemoved += removeOrphanedItemRefs();
-            totalRemoved += removeOrphanedItemDefs();
-            totalRemoved += removeOrphanedCodeLists();
-            totalRemoved += removeOrphanedMethodDefs();
-            totalRemoved += removeOrphanedCommentDefs();
-            totalRemoved += removeOrphanedValueListDefs();
-            totalRemoved += removeOrphanedWhereClauseDefs();
-            totalRemoved += removeOrphanedLeafs();
+            totalRemoved += removeOrphanedItemRefs(true);
+            totalRemoved += removeOrphanedItemDefs(true);
+            totalRemoved += removeOrphanedCodeLists(true);
+            totalRemoved += removeOrphanedMethodDefs(true);
+            totalRemoved += removeOrphanedCommentDefs(true);
+            totalRemoved += removeOrphanedValueListDefs(true);
+            totalRemoved += removeOrphanedWhereClauseDefs(true);
+            totalRemoved += removeOrphanedLeafs(true);
             log("Cascade pass " + pass + ": removed " + totalRemoved + " orphans");
         }
-        while (totalRemoved > 0 && pass < 20);
+        while (totalRemoved > 0 && pass < maxPasses);
+        // The loop exiting at the cap while the last pass still removed something does NOT
+        // mean the output is dirty -- a document can converge exactly at the cap. Warn only
+        // when orphans actually remain, established by a non-mutating detection sweep
+        // (F-cdisc-define-19: the previous condition, totalRemoved > 0, was a false positive
+        // on clean output).
+        if (totalRemoved > 0 && countOrphans() > 0)
+        {
+            log("WARNING: cascade stopped at the " + maxPasses + "-pass cap before converging;"
+                    + " the output retains orphaned elements");
+        }
         return this;
+    }
+
+
+    /**
+     * Count, without removing, the elements the next cascade pass would remove. Zero means the
+     * document has converged: each family's detector is run against the unmodified document, so if
+     * all report zero, a real pass would remove nothing either.
+     */
+    private int countOrphans()
+    {
+        int count = 0;
+        count += removeOrphanedItemRefs(false);
+        count += removeOrphanedItemDefs(false);
+        count += removeOrphanedCodeLists(false);
+        count += removeOrphanedMethodDefs(false);
+        count += removeOrphanedCommentDefs(false);
+        count += removeOrphanedValueListDefs(false);
+        count += removeOrphanedWhereClauseDefs(false);
+        count += removeOrphanedLeafs(false);
+        return count;
     }
 
     // ========== Output ==========
@@ -408,7 +451,7 @@ public class DefineXmlPruner
     /**
      * Remove ItemRef elements that reference non-existent ItemDefs.
      */
-    private int removeOrphanedItemRefs()
+    private int removeOrphanedItemRefs(boolean aApply)
     {
         int count = 0;
         Set<String> existingItemOIDs = collectOIDs(ELEM_ITEM_DEF);
@@ -425,6 +468,10 @@ public class DefineXmlPruner
                 toRemove.add(ref);
             }
         }
+        if (!aApply)
+        {
+            return toRemove.size();
+        }
         for (Element el : toRemove)
         {
             log("Removed orphaned ItemRef -> " + el.getAttribute(ATTR_ITEM_OID));
@@ -438,24 +485,14 @@ public class DefineXmlPruner
     /**
      * Remove ItemDefs that are not referenced by any ItemRef (in ItemGroupDefs or ValueListDefs).
      */
-    private int removeOrphanedItemDefs()
+    private int removeOrphanedItemDefs(boolean aApply)
     {
         int count = 0;
-        Set<String> referencedOIDs = new HashSet<>();
+        // Collect every ItemOID reference wherever it appears: ItemRef/@ItemOID and the
+        // RangeCheck/@def:ItemOID of a value-level WhereClause condition both keep an ItemDef
+        // alive. The collector matches by local name, so both spellings are found.
+        Set<String> referencedOIDs = collectAllAttributeValues(ATTR_ITEM_OID);
 
-        // Collect all ItemOID attributes from ItemRef elements
-        NodeList itemRefs = getElementsByLocalName(ELEM_ITEM_REF);
-        for (int i = 0; i < itemRefs.getLength(); i++)
-        {
-            Element ref = (Element) itemRefs.item(i);
-            String oid = ref.getAttribute(ATTR_ITEM_OID);
-            if (!oid.isEmpty())
-            {
-                referencedOIDs.add(oid);
-            }
-        }
-
-        // Also check RangeCheck/FormalExpression references if needed
         NodeList itemDefs = getElementsByLocalName(ELEM_ITEM_DEF);
         List<Element> toRemove = new ArrayList<>();
         for (int i = 0; i < itemDefs.getLength(); i++)
@@ -466,6 +503,10 @@ public class DefineXmlPruner
             {
                 toRemove.add(def);
             }
+        }
+        if (!aApply)
+        {
+            return toRemove.size();
         }
         for (Element el : toRemove)
         {
@@ -482,7 +523,7 @@ public class DefineXmlPruner
     /**
      * Remove CodeLists not referenced by any existing ItemDef's CodeListRef.
      */
-    private int removeOrphanedCodeLists()
+    private int removeOrphanedCodeLists(boolean aApply)
     {
         int count = 0;
         Set<String> referencedOIDs = new HashSet<>();
@@ -509,6 +550,10 @@ public class DefineXmlPruner
                 toRemove.add(cl);
             }
         }
+        if (!aApply)
+        {
+            return toRemove.size();
+        }
         for (Element el : toRemove)
         {
             String oid = el.getAttribute("OID");
@@ -524,22 +569,13 @@ public class DefineXmlPruner
     /**
      * Remove MethodDefs not referenced by any existing ItemRef or ItemDef.
      */
-    private int removeOrphanedMethodDefs()
+    private int removeOrphanedMethodDefs(boolean aApply)
     {
         int count = 0;
-        Set<String> referencedOIDs = new HashSet<>();
-
-        // MethodOID on ItemRef
-        NodeList itemRefs = getElementsByLocalName(ELEM_ITEM_REF);
-        for (int i = 0; i < itemRefs.getLength(); i++)
-        {
-            Element ref = (Element) itemRefs.item(i);
-            String oid = ref.getAttribute("MethodOID");
-            if (!oid.isEmpty())
-            {
-                referencedOIDs.add(oid);
-            }
-        }
+        // Namespace-agnostic, like the ItemOID collection in removeOrphanedItemDefs (F-10):
+        // MethodOID has no def: spelling today, but the asymmetric qualified-name lookup read
+        // as an oversight (F-cdisc-define-20).
+        Set<String> referencedOIDs = collectAllAttributeValues("MethodOID");
 
         NodeList methodDefs = getElementsByLocalName("MethodDef");
         List<Element> toRemove = new ArrayList<>();
@@ -551,6 +587,10 @@ public class DefineXmlPruner
             {
                 toRemove.add(md);
             }
+        }
+        if (!aApply)
+        {
+            return toRemove.size();
         }
         for (Element el : toRemove)
         {
@@ -567,7 +607,7 @@ public class DefineXmlPruner
     /**
      * Remove CommentDefs not referenced by any existing element's def:CommentOID attribute.
      */
-    private int removeOrphanedCommentDefs()
+    private int removeOrphanedCommentDefs(boolean aApply)
     {
         int count = 0;
         Set<String> referencedOIDs = collectAllAttributeValues("CommentOID");
@@ -582,6 +622,10 @@ public class DefineXmlPruner
             {
                 toRemove.add(cd);
             }
+        }
+        if (!aApply)
+        {
+            return toRemove.size();
         }
         for (Element el : toRemove)
         {
@@ -598,7 +642,7 @@ public class DefineXmlPruner
     /**
      * Remove ValueListDefs not referenced by any existing ItemDef's def:ValueListOID.
      */
-    private int removeOrphanedValueListDefs()
+    private int removeOrphanedValueListDefs(boolean aApply)
     {
         int count = 0;
         Set<String> referencedOIDs = collectAllAttributeValues("ValueListOID");
@@ -620,6 +664,10 @@ public class DefineXmlPruner
                 toRemove.add(vl);
             }
         }
+        if (!aApply)
+        {
+            return toRemove.size();
+        }
         for (Element el : toRemove)
         {
             String oid = el.getAttribute("OID");
@@ -635,7 +683,7 @@ public class DefineXmlPruner
     /**
      * Remove WhereClauseDefs not referenced by any existing ItemRef's def:WhereClauseRef.
      */
-    private int removeOrphanedWhereClauseDefs()
+    private int removeOrphanedWhereClauseDefs(boolean aApply)
     {
         int count = 0;
         Set<String> referencedOIDs = new HashSet<>();
@@ -679,6 +727,10 @@ public class DefineXmlPruner
                 toRemove.add(wc);
             }
         }
+        if (!aApply)
+        {
+            return toRemove.size();
+        }
         for (Element el : toRemove)
         {
             String oid = el.getAttribute("OID");
@@ -694,7 +746,7 @@ public class DefineXmlPruner
     /**
      * Remove leaf elements not referenced by any DocumentRef.
      */
-    private int removeOrphanedLeafs()
+    private int removeOrphanedLeafs(boolean aApply)
     {
         int count = 0;
         Set<String> referencedIDs = new HashSet<>();
@@ -730,6 +782,10 @@ public class DefineXmlPruner
             {
                 toRemove.add(leaf);
             }
+        }
+        if (!aApply)
+        {
+            return toRemove.size();
         }
         for (Element el : toRemove)
         {
@@ -892,15 +948,14 @@ public class DefineXmlPruner
     }
 
 
-    private String detectDefineNamespace(Document doc)
+    /**
+     * Package-visible for tests. Delegates to {@link DefineDomUtil#hasNamespace}, which also finds
+     * a declaration on a descendant element or under a non-{@code def} prefix -- the converter side
+     * detects the same fact this way, and the two implementations had drifted.
+     */
+    static String detectDefineNamespace(Document doc)
     {
-        Element root = doc.getDocumentElement();
-        // Check if def 2.1 namespace is used
-        if (root.lookupPrefix(DEF21_NS) != null || root.getAttribute("xmlns:def").equals(DEF21_NS))
-        {
-            return DEF21_NS;
-        }
-        return DEF_NS;
+        return DefineDomUtil.hasNamespace(doc, DEF21_NS) ? DEF21_NS : DEF_NS;
     }
 
 

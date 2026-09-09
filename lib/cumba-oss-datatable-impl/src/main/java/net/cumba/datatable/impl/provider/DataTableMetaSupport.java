@@ -58,6 +58,19 @@ public class DataTableMetaSupport
 
     public static final String META_KEY_STRUCTURE = "Structure";
 
+    /**
+     * The dataset's observation class (e.g. {@code EVENTS}, {@code BASIC DATA STRUCTURE}).
+     *
+     * <p>
+     * Unlike its neighbours this is <b>not</b> a free-form metadata key on the source — it is a
+     * first-class accessor, {@link IDataTableMetadata#getClassName()} (from Define-XML's
+     * {@code def:Class}, in either the 2.0 attribute or the 2.1 element form). It is carried here
+     * so a consumer holding only a {@link DataTableMeta} can still reach it — notably a define.xml
+     * generator, which must emit the class to satisfy the conformance rules that require one.
+     * </p>
+     */
+    public static final String META_KEY_CLASS = "Class";
+
     public static final String META_KEY_REPEATING = "Repeating";
 
     public static final String META_KEY_CREATED = "Created";
@@ -212,6 +225,14 @@ public class DataTableMetaSupport
             copyMetaValue(metaTable, META_KEY_PURPOSE);
             copyMetaValue(metaTable, META_KEY_SAS_DATASET_NAME);
             copyMetaValue(metaTable, META_KEY_STANDARD);
+
+            // The class comes from a first-class accessor rather than a metadata key, so it needs
+            // its own line — copyMetaValue would look for a "Class" entry that no source sets.
+            String className = metaTable.getClassName();
+            if (className != null && !className.isBlank())
+            {
+                tableMetaBuilder.addMetaData(META_KEY_CLASS, className);
+            }
         }
     }
 

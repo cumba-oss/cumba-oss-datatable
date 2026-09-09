@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.DeserializationConfig;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonDeserializer;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.deser.BeanDeserializerModifier;
 import com.fasterxml.jackson.databind.deser.std.DelegatingDeserializer;
@@ -109,12 +110,27 @@ final class ItemGroupClassDisambiguationModule extends SimpleModule
             throws IOException
         {
             ObjectMapper mapper = (ObjectMapper) aParser.getCodec();
-            ObjectNode node = mapper.readTree(aParser);
-            if (node.path("Class").getNodeType() == JsonNodeType.OBJECT)
+            JsonNode tree = mapper.readTree(aParser);
+
+            // Defensive: only an ObjectNode can carry a "Class" key to disambiguate.
+            //
+            // ⚠ NB. this guard replaced an unchecked assignment of readTree's result straight
+            // to an ObjectNode. A review claimed a degenerate `<ItemGroupDef/>` parses as a
+            // TextNode
+            // and so threw ClassCastException there; that does NOT reproduce — Jackson-XML gives
+            // an EMPTY ObjectNode for an empty element, which binds to an all-null bean (pinned
+            // by an internal binding test). No input was found that reaches the fallback
+            // below. The cast was genuinely unchecked, so the guard stays, but it is insurance
+            // rather than a fix for an observed failure.
+            if (tree instanceof ObjectNode node)
             {
-                node.set(ItemGroupDef.CLASS_ELEMENT_PROPERTY, node.remove("Class"));
+                if (node.path("Class").getNodeType() == JsonNodeType.OBJECT)
+                {
+                    node.set(ItemGroupDef.CLASS_ELEMENT_PROPERTY, node.remove("Class"));
+                }
+                return treeMapper.treeToValue(node, ItemGroupDef.class);
             }
-            return treeMapper.treeToValue(node, ItemGroupDef.class);
+            return treeMapper.treeToValue(tree, ItemGroupDef.class);
         }
     }
 }

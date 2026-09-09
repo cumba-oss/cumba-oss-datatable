@@ -105,39 +105,54 @@ final class Step20To21 implements ConversionStep
         }
         String stdName = DefineDomUtil.attrIgnoreNs(mdv, "StandardName");
         String stdVer = DefineDomUtil.attrIgnoreNs(mdv, "StandardVersion");
+        // ⚠ No early return in the failure branches: whatever happens to the synthesis, the
+        // deprecated 2.0 attributes must still be handled below — a document stamped
+        // DefineVersion="2.1.0" must not silently retain @def:StandardName/@def:StandardVersion
+        // (that would re-open F-09; see F-cdisc-define-15). Trade chosen for a failed
+        // synthesis: OMIT the def:Standards block entirely rather than emit a def:Standard
+        // missing its required @Version — a partial element would swap a warned rules-level
+        // gap for a schema-level violation, and the warning already records what is missing.
         if (stdName == null || stdName.isBlank())
         {
             ctx.warn("no @def:StandardName in v2.0 input; could not synthesise a def:Standards"
                     + " block (required when def:Context=\"Submission\")");
-            return;
         }
-
-        String oid = ctx.oids().mint("STD");
-        Element standards = DefineDomUtil.createDefElement(doc, defNs, prefix, "Standards");
-        Element standard = DefineDomUtil.createDefElement(doc, defNs, prefix, "Standard");
-        standard.setAttribute("OID", oid);
-        standard.setAttribute("Name", normaliseStandardName(stdName));
-        standard.setAttribute("Type", "IG");
-        if (stdVer != null && !stdVer.isBlank())
+        else if (stdVer == null || stdVer.isBlank())
         {
+            ctx.warn("no @def:StandardVersion in v2.0 input; could not synthesise a def:Standards"
+                    + " block for @def:StandardName=\"" + stdName + "\" (@Version is required on"
+                    + " def:Standard in Define-XML v2.1)");
+        }
+        else
+        {
+            String oid = ctx.oids().mint("STD");
+            Element standards = DefineDomUtil.createDefElement(doc, defNs, prefix, "Standards");
+            Element standard = DefineDomUtil.createDefElement(doc, defNs, prefix, "Standard");
+            standard.setAttribute("OID", oid);
+            standard.setAttribute("Name", normaliseStandardName(stdName));
+            standard.setAttribute("Type", "IG");
             standard.setAttribute("Version", stdVer);
-        }
-        standard.setAttribute("Status", "Final");
-        standards.appendChild(standard);
-        DefineDomUtil.insertInCanonicalOrder(mdv, standards, MDV_ORDER);
-        ctx.log("synthesised def:Standards/def:Standard OID=" + oid + " Name="
-                + normaliseStandardName(stdName) + " Version=" + stdVer);
-        ctx.warn("CT (controlled terminology) Standard rows could not be derived; no CT version is"
-                + " stored in Define-XML v2.0");
+            standard.setAttribute("Status", "Final");
+            standards.appendChild(standard);
+            DefineDomUtil.insertInCanonicalOrder(mdv, standards, MDV_ORDER);
+            ctx.log("synthesised def:Standards/def:Standard OID=" + oid + " Name="
+                    + normaliseStandardName(stdName) + " Version=" + stdVer);
+            ctx.warn("CT (controlled terminology) Standard rows could not be derived; no CT version"
+                    + " is stored in Define-XML v2.0");
 
-        for (Element ig : DefineDomUtil.descendantElements(mdv, "ItemGroupDef"))
-        {
-            if (DefineDomUtil.attrIgnoreNs(ig, "StandardOID") == null)
+            for (Element ig : DefineDomUtil.descendantElements(mdv, "ItemGroupDef"))
             {
-                DefineDomUtil.setDefAttribute(ig, defNs, prefix, "StandardOID", oid);
+                if (DefineDomUtil.attrIgnoreNs(ig, "StandardOID") == null)
+                {
+                    DefineDomUtil.setDefAttribute(ig, defNs, prefix, "StandardOID", oid);
+                }
             }
         }
 
+        if (stdName == null && stdVer == null)
+        {
+            return; // nothing deprecated to keep or drop
+        }
         if (ctx.keepLegacyStandardAttributes())
         {
             ctx.warn(
@@ -158,9 +173,20 @@ final class Step20To21 implements ConversionStep
     {
         for (Element ig : DefineDomUtil.elementsByLocalName(doc, "ItemGroupDef"))
         {
-            if (!DefineDomUtil.childrenByLocalName(ig, "Class").isEmpty())
+            java.util.List<Element> classEls = DefineDomUtil.childrenByLocalName(ig, "Class");
+            if (!classEls.isEmpty())
             {
-                continue; // already an element
+                // 2.1 spells the class as an element; a leftover 2.0 attribute must not assert
+                // the dataset class a second time beside it.
+                String attr = DefineDomUtil.removeAttrByLocalName(ig, "Class");
+                if (attr != null && !attr.equals(classEls.get(0).getAttribute("Name")))
+                {
+                    ctx.warn("ItemGroupDef " + DefineDomUtil.attrIgnoreNs(ig, "OID")
+                            + ": deprecated def:Class attribute \"" + attr + "\" disagreed with"
+                            + " the def:Class element \"" + classEls.get(0).getAttribute("Name")
+                            + "\"; the attribute was removed");
+                }
+                continue;
             }
             String cls = DefineDomUtil.attrIgnoreNs(ig, "Class");
             if (cls == null)

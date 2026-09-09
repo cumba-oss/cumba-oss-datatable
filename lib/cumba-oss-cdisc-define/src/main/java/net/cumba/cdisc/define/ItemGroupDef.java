@@ -98,11 +98,18 @@ public class ItemGroupDef implements IDescribedElement, INamedElement
      * The dataset's class name from whichever Define-XML form the document used: the v2.1
      * {@code <def:Class Name="…">} element when present (and named), else the v2.0
      * {@code def:Class} attribute. {@code null} when neither is present.
+     *
+     * <p>
+     * ⚠ The element wins only when it carries a <b>non-blank</b> name. Testing merely for
+     * {@code isEmpty()} let a whitespace-only {@code <def:Class Name="   ">} beat a perfectly good
+     * 2.0 attribute — and the blank then failed {@code cvc-enumeration-valid} on write, because the
+     * schema restricts the name to the {@code ItemGroupClass} enumeration.
+     * </p>
      */
     public String getEffectiveClassName()
     {
         if (classElement != null && classElement.getName() != null
-                && !classElement.getName().isEmpty())
+                && !classElement.getName().isBlank())
         {
             return classElement.getName();
         }
@@ -122,6 +129,6 @@ public class ItemGroupDef implements IDescribedElement, INamedElement
             return List.of();
         }
         return classElement.getSubClasses().stream().map(SubClassDef::getName)
-                .filter(n -> n != null && !n.isEmpty()).toList();
+                .filter(n -> n != null && !n.isBlank()).toList();
     }
 }
