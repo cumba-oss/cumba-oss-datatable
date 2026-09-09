@@ -89,6 +89,18 @@
         <dependency.junit.jupiter.version>6.1.3</dependency.junit.jupiter.version>
         <dependency.mockito.version>5.23.0</dependency.mockito.version>
         <dependency.lombock.version>1.18.48</dependency.lombock.version>
+        <!--
+            ⚠⚠ This property's SPELLING is load-bearing. MetadataCacheLocatorTest matches
+            it with a compiled Pattern against this literal name and asserts the value
+            equals MetadataCacheLocator.DEFAULT_CACHE_REF, so renaming it or letting the
+            two drift fails the build. It pins the upstream cdisc-org/cdisc-rules-engine
+            tag whose resources/cache seeds the metadata store — a public upstream ref,
+            nothing internal.
+            ⚠ It arrived with the metadatacache port (owner ruling 2026-09-09). This pom
+            is outside the sync's reach, so a re-sync will neither add nor remove it: if
+            the internal pin moves, move this one too or the test goes red here only.
+        -->
+        <dependency.cdisc-rules-engine-cache.tag>v0.17.1</dependency.cdisc-rules-engine-cache.tag>
         <dependency.cumba-oss-commons.version>0.2.1</dependency.cumba-oss-commons.version>
         <dependency.cumba-oss-formats.version>0.3.0</dependency.cumba-oss-formats.version>
         <dependency.jackson.version>2.22.2</dependency.jackson.version>
