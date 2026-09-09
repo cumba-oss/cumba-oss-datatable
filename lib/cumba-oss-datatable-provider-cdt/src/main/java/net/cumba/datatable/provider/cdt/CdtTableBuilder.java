@@ -10,6 +10,7 @@ import net.cumba.datatable.DataTableColumnMeta.DataTableColumnMetaBuilder;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.DataTableMeta.DataTableMetaBuilder;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
 import net.cumba.datatable.values.DataValueType;
@@ -44,7 +45,7 @@ public final class CdtTableBuilder
         CachedDataTableColumn[] columns = createColumns(meta);
         populate(columns, aDataset);
         completeColumns(columns);
-        DataTableColumnMeta[] reconciled = reconcileLengths(meta, columns);
+        DataTableColumnMeta @Nullable [] reconciled = reconcileLengths(meta, columns);
         DataTableMeta finalMeta = reconciled != null
                 ? DataTableMeta.builderFrom(meta).columns(reconciled).build()
                 : meta;
@@ -160,6 +161,10 @@ public final class CdtTableBuilder
             for (int c = 0; c < aColumns.length; c++)
             {
                 Object val = CdtValues.parseValue(row.get(c), cdtCols.get(c).getType());
+                if (val instanceof String s)
+                {
+                    val = CDT.intern(s);
+                }
                 aColumns[c].addElement(val);
             }
         }
@@ -182,7 +187,7 @@ public final class CdtTableBuilder
             CachedDataTableColumn[] aColumns)
     {
         int colCount = aMeta.getColumnCount();
-        DataTableColumnMeta[] out = null;
+        DataTableColumnMeta @Nullable [] out = null;
         for (int i = 0; i < colCount; i++)
         {
             DataTableColumnMeta cm = aMeta.getColumn(i);

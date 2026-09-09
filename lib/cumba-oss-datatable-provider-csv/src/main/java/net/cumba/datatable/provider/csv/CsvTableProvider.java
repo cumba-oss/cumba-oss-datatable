@@ -158,67 +158,73 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
             parser.beginParsing(new InputStreamReader(bin, getCharset()));
 
-            // head row contains column names
-            String[] firstRow = parser.parseNext();
-            if (firstRow == null)
+            CsvTableDataParser tblParser;
+            try
             {
-                throw new IOException("CSV file is empty (no header row).");
-            }
-            CsvRecord headRow = new CsvRecord(firstRow);
-
-            // the first #guessingRowCount# rows are used to determine column types
-
-            List<CsvRecord> headRowBlock = new ArrayList<>(guessingRowCount);
-
-            String[] row;
-            while ((row = parser.parseNext()) != null)
-            {
-                headRowBlock.add(new CsvRecord(row));
-                if (headRowBlock.size() >= guessingRowCount)
+                // head row contains column names
+                String[] firstRow = parser.parseNext();
+                if (firstRow == null)
                 {
-                    break;
+                    throw new IOException("CSV file is empty (no header row).");
+                }
+                CsvRecord headRow = new CsvRecord(firstRow);
+
+                // the first #guessingRowCount# rows are used to determine column types
+
+                List<CsvRecord> headRowBlock = new ArrayList<>(guessingRowCount);
+
+                String[] row;
+                while ((row = parser.parseNext()) != null)
+                {
+                    headRowBlock.add(new CsvRecord(row));
+                    if (headRowBlock.size() >= guessingRowCount)
+                    {
+                        break;
+                    }
+                }
+
+                DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
+
+                dtms.setTable(aURI);
+                dtms.setFileFormat("CSV", null);
+                dtms.setDatasetSize(aURI);
+
+                int colCount = headRow.getColumnCount();
+
+                DataValueType[] dataTypes = determineTypes(headRowBlock, colCount);
+
+                for (int i = 0; i < colCount; i++)
+                {
+                    String name = headRow.getValue(i);
+                    if (name.isBlank())
+                    {
+                        String fallback = "V" + (i + 1);
+                        LOGGER.log(System.Logger.Level.WARNING,
+                                "CSV column %d has blank header; using fallback '%s' (uri=%s)"
+                                        .formatted(i, fallback, aURI));
+                        name = fallback;
+                    }
+                    DataValueType type = dataTypes[i];
+                    dtms.addColumn(name, type);
+                }
+
+                tblParser = new CsvTableDataParser(this, dtms.getTableMeta().build());
+
+                for (CsvRecord csvRow : headRowBlock)
+                {
+                    tblParser.addDataRow(csvRow);
+                }
+
+                while ((row = parser.parseNext()) != null)
+                {
+                    CsvRecord csvRow = new CsvRecord(row);
+                    tblParser.addDataRow(csvRow);
                 }
             }
-
-            DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
-
-            dtms.setTable(aURI);
-            dtms.setFileFormat("CSV", null);
-            dtms.setDatasetSize(aURI);
-
-            int colCount = headRow.getColumnCount();
-
-            DataValueType[] dataTypes = determineTypes(headRowBlock, colCount);
-
-            for (int i = 0; i < colCount; i++)
+            finally
             {
-                String name = headRow.getValue(i);
-                if (name.isBlank())
-                {
-                    String fallback = "V" + (i + 1);
-                    LOGGER.log(System.Logger.Level.WARNING,
-                            "CSV column %d has blank header; using fallback '%s' (uri=%s)"
-                                    .formatted(i, fallback, aURI));
-                    name = fallback;
-                }
-                DataValueType type = dataTypes[i];
-                dtms.addColumn(name, type);
+                parser.stopParsing();
             }
-
-            CsvTableDataParser tblParser = new CsvTableDataParser(this,
-                    dtms.getTableMeta().build());
-
-            for (CsvRecord csvRow : headRowBlock)
-            {
-                tblParser.addDataRow(csvRow);
-            }
-
-            while ((row = parser.parseNext()) != null)
-            {
-                CsvRecord csvRow = new CsvRecord(row);
-                tblParser.addDataRow(csvRow);
-            }
-            parser.stopParsing();
 
             return tblParser.completeTable();
         }
@@ -287,9 +293,26 @@ public class CsvTableProvider extends AbstractDataTableProvider
             try
             {
                 boolean possiblyDouble = true;
+                boolean sawCell = false;
                 for (int rowIdx = 0; rowIdx < aRowBlock.size(); rowIdx++)
                 {
                     CsvRecord row = aRowBlock.get(rowIdx);
+                    if (i >= row.getColumnCount())
+                    {
+                        // ⚠ Ragged row: this record does not reach column i at all. An ABSENT cell
+                        // is evidence of nothing and must not veto a numeric column — exactly as
+                        // isDoubleOrMissing already treats a blank field and a "." as compatible
+                        // with DOUBLE, because a CSV cannot distinguish absent from blank.
+                        //
+                        // Skipping matters because isDoubleOrMissing THROWS
+                        // IndexOutOfBoundsException here (its documented contract), which the
+                        // catch below swallowed at DEBUG while leaving the column at its STRING
+                        // default. One short row inside the sampled block therefore retyped every
+                        // column beyond its width to character — however numeric the other
+                        // thousands of rows were.
+                        continue;
+                    }
+                    sawCell = true;
                     if (possiblyDouble && !row.isDoubleOrMissing(i))
                     {
                         possiblyDouble = false;
@@ -300,7 +323,17 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     }
                 }
 
-                if (possiblyDouble)
+                // ⚠ `sawCell` guards a column NO sampled row reaches. Skipping absent cells (above)
+                // would otherwise leave possiblyDouble untouched and type such a column DOUBLE on
+                // zero evidence — and a later row's text would then be destroyed: addData2Column
+                // parses it as a double, gets NaN, and stores MissingValue.MIS. Types are fixed
+                // before the parser runs and never revised, so the text is gone with no warning.
+                //
+                // Concretely: a header declaring STUDYID,USUBJID,COMMENT whose first
+                // `guessingRowCount` rows omit the trailing field entirely, with a comment
+                // appearing only later. With no evidence either way, keep the STRING default —
+                // which is also what this column got before absent cells were skipped at all.
+                if (possiblyDouble && sawCell)
                 {
                     dt = DataValueType.DOUBLE;
                 }
@@ -316,7 +349,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
     }
 
 
-    private char findDelimChar(String aLine) throws IOException
+    private char findDelimChar(@Nullable String aLine) throws IOException
     {
         if (aLine == null || aLine.isEmpty())
         {
@@ -382,16 +415,13 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
                 if (aColumnIndex >= row.getColumnCount())
                 {
-                    // Ragged row: this record has fewer fields than the header declares, so the
-                    // cell is absent rather than present-and-empty.
-                    //
-                    // Fix #161: a blank cell must not depend on the file format. The ordinary
-                    // (non-ragged) CSV path below already yields "" for a blank CHARACTER cell,
-                    // as do SAS7BDAT, XPT, Dataset-JSON, CDT, XLSX and Parquet, per the house
-                    // contract in AbstractDataBuffer.createDataValue ("for STRING we map from
-                    // null to empty string"). Mapping the ragged case to MissingValue regardless
-                    // of type made the very same blank cell report differently depending only on
-                    // whether its row happened to be short.
+                    // A CSV cannot express a null: a short row's absent character field is
+                    // indistinguishable from a present-but-empty one, and the ordinary path
+                    // below already yields "" for the latter (tri(row.getValue(i), "")).
+                    // Loading it as a MissingValue made the very same blank cell read
+                    // differently depending only on whether its row happened to be short.
+                    // A numeric column keeps MIS — there the value is genuinely absent, and
+                    // "" is not a number.
                     aDataColumn.addElement(
                             aMetaColumn.getType() == DataValueType.STRING ? "" : MissingValue.MIS);
                 }

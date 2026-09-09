@@ -1,6 +1,7 @@
 package net.cumba.datatable.provider.cdt;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -101,17 +102,14 @@ public class CdtTableProvider extends AbstractDataTableProvider
                     : URIHelper.replaceFragment(aUri, null);
             return stripBom(Files.readString(Path.of(fileUri), StandardCharsets.UTF_8));
         }
-        // Non-file URIs: stream the bytes straight into memory. `.cdt` data files
-        // are small enough that buffering the whole payload beats round-tripping
-        // through a temp file.
-        try (var in = aUri.toURL().openStream())
+        try (InputStream in = aUri.toURL().openStream())
         {
             return stripBom(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
 
     /** Unicode BOM ({@code U+FEFF}). UTF-8 encoded files may have this as their first character. */
-    private static final char UTF8_BOM = '﻿';
+    private static final char UTF8_BOM = '\uFEFF';
 
     /**
      * Strips a leading UTF-8 BOM ({@code U+FEFF}) from the given text if present. Java's

@@ -417,8 +417,9 @@ public final class CdtParser
 
         private List<String> parseDataRow(String aLine, int aColumnCount, int aLineIdx)
         {
-            // Sentinel: a line consisting solely of "." represents a row of all-null fields.
-            // Needed to express all-null rows in single-column tables (otherwise
+            // Sentinel: a line consisting solely of "." represents a row where every
+            // field is missing. Needed to express all-missing rows in single-column
+            // tables (otherwise
             // indistinguishable from a blank line, which is skipped). A literal "."
             // char value must be quoted (write as "."), see CdtWriter.
             if (".".equals(aLine))

@@ -80,7 +80,7 @@ public class ExcelLibraryProvider implements ILibraryProvider
                     // best-guess types in the library tree before the user opens the sheet. The
                     // sample is small to keep multi-sheet workbooks cheap; types may be revised
                     // when the sheet is fully read (Excel doesn't store types — they're sniffed).
-                    DataTableColumnMeta[] columns;
+                    DataTableColumnMeta @Nullable [] columns;
                     try
                     {
                         columns = ExcelTableProvider.inferColumns(sheet,

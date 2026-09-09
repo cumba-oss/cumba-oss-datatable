@@ -279,6 +279,79 @@ class CsvTableProviderTest
     }
 
 
+    /**
+     * ⚠ A ragged row must not retype a numeric column to character.
+     *
+     * <p>
+     * {@code determineTypes} calls {@code CsvRecord.isDoubleOrMissing} per sampled row, and that
+     * method <em>throws</em> {@code IndexOutOfBoundsException} for a column a short row does not
+     * reach. The surrounding catch swallowed it at DEBUG and left the column at its {@code STRING}
+     * default — so <b>one</b> short row inside the sampled block retyped every column beyond its
+     * width to character, however numeric the other rows were. An absent cell is evidence of
+     * nothing, exactly as a blank field is.
+     * </p>
+     *
+     * <p>
+     * The consequences of getting this wrong are not cosmetic: a character {@code AGE} sorts
+     * lexically ({@code 1, 10, 2}), offers no statistics, and exports as a character variable to
+     * SAS / XPT.
+     * </p>
+     */
+    @Test
+    void testRaggedRowDoesNotRetypeANumericColumnToCharacter() throws Exception
+    {
+        // The short row is row 2 of 4 — squarely inside the sampled block.
+        String csv = "A,B,C\n1,2,3\n4\n7,8,9\n10,11,12\n";
+        URI uri = writeTempCsv(csv);
+
+        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
+
+        assertNotNull(table);
+        for (int col = 0; col < 3; col++)
+        {
+            assertSame(DataValueType.DOUBLE, table.getMetaData().getColumn(col).getType(),
+                    "column " + col + " is numeric in every row that has it");
+        }
+
+        // The values still read correctly on both sides of the short row.
+        assertEquals(2.0, ((Number) table.getValue(0, 1)).doubleValue(), 1e-9);
+        assertEquals(8.0, ((Number) table.getValue(2, 1)).doubleValue(), 1e-9);
+        assertInstanceOf(MissingValue.class, table.getValue(1, 1));
+    }
+
+
+    /**
+     * ⚠ A column that <b>no</b> sampled row reaches must stay {@code STRING} — inferring
+     * {@code DOUBLE} on zero evidence destroys data.
+     *
+     * <p>
+     * Skipping absent cells (so a ragged row cannot veto a numeric column) leaves
+     * {@code possiblyDouble} untouched when every sampled row is short, which would type such a
+     * column {@code DOUBLE}. A later row's text is then parsed as a double, yields NaN and is
+     * stored as {@link MissingValue}: the text is gone, with no warning and no recovery — types are
+     * fixed before the parser runs and never revised.
+     * </p>
+     */
+    @Test
+    void testColumnAbsentFromEverySampledRowStaysCharacterAndKeepsLaterText() throws Exception
+    {
+        // Sample only the first two rows, neither of which reaches COMMENT; row 3 then carries
+        // text. This mirrors a real file whose trailing field appears only after the sample.
+        String csv = "STUDYID,USUBJID,COMMENT\nS1,SUBJ-1\nS1,SUBJ-2\nS1,SUBJ-3,withdrew consent\n";
+        URI uri = writeTempCsv(csv);
+
+        provider.setGuessingRowCount(2);
+        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
+
+        assertNotNull(table);
+        assertSame(DataValueType.STRING, table.getMetaData().getColumn(2).getType(),
+                "no evidence either way must not become DOUBLE");
+        assertEquals("withdrew consent", table.getValue(2, 2),
+                "the text that appears after the sample must survive");
+        assertTrue(table.isEmptyOrMissing(0, 2), "the rows that never had the field read blank");
+    }
+
+
     @Test
     void testProvideQuotedFields() throws Exception
     {

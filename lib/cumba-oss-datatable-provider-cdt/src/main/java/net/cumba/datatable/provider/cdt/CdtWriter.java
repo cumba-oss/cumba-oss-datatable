@@ -278,7 +278,7 @@ public final class CdtWriter
     /**
      * Quote a rendered data field when needed so the parser can recover the exact characters: any
      * field that begins with whitespace, contains {@code |}, contains {@code "} or {@code \}, or is
-     * exactly {@code .} (the all-null sentinel) is wrapped in double quotes with backslash
+     * exactly {@code .} (the all-missing sentinel) is wrapped in double quotes with backslash
      * escaping.
      */
     private static String quoteFieldIfNeeded(String aValue)

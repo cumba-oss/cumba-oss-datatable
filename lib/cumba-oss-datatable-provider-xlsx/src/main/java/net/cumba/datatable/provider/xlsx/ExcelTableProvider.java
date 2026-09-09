@@ -42,6 +42,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      */
     public static final int DEFAULT_GUESS_ROW_COUNT = 10_240;
 
+    private static final String MSG_BLANK_HEADER_FALLBACK = "Excel column %d has blank header; using fallback '%s' (uri=%s)";
+
     /**
      * The number of rows to be used to guess the column types.
      */
@@ -166,9 +168,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             if (name.isBlank())
             {
                 String fallback = "V" + (i + 1);
-                LOGGER.log(Level.WARNING,
-                        "Excel column %d has blank header; using fallback '%s' (uri=%s)"
-                                .formatted(i, fallback, aUri));
+                LOGGER.log(Level.WARNING, MSG_BLANK_HEADER_FALLBACK.formatted(i, fallback, aUri));
                 name = fallback;
             }
             DataValueType type = dataTypes[i];
@@ -227,9 +227,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             if (name.isBlank())
             {
                 String fallback = "V" + (i + 1);
-                LOGGER.log(Level.WARNING,
-                        "Excel column %d has blank header; using fallback '%s' (uri=%s)"
-                                .formatted(i, fallback, aUri));
+                LOGGER.log(Level.WARNING, MSG_BLANK_HEADER_FALLBACK.formatted(i, fallback, aUri));
                 name = fallback;
             }
             DataValueType type = dataTypes[i];
@@ -308,9 +306,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             if (name.isBlank())
             {
                 String fallback = "V" + (i + 1);
-                LOGGER.log(Level.WARNING,
-                        "Excel column %d has blank header; using fallback '%s' (uri=%s)"
-                                .formatted(i, fallback, aUri));
+                LOGGER.log(Level.WARNING, MSG_BLANK_HEADER_FALLBACK.formatted(i, fallback, aUri));
                 name = fallback;
             }
             out[i] = DataTableColumnMeta.builder().index(i).name(name).label("").type(dataTypes[i])
