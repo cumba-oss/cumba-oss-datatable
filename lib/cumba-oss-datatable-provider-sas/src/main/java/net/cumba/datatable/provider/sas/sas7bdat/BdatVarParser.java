@@ -122,9 +122,16 @@ public class BdatVarParser
                 {
                     return MissingValue.MIS.asDouble();
                 }
-                // corej's MissingValue model keeps only MIS / MIS_UNKNOWN / MIS_ERROR. The SAS
-                // special-missing values ._ (val2 == 0x3F) and .A-.Z (0x41..0x5A) were dropped in
-                // the OSS extraction, so they all collapse to MIS_UNKNOWN here.
+                if (val2 == 0x3F)
+                {
+                    return MissingValue.MIS__.asDouble();
+                }
+                if (val2 >= 0x41 && val2 <= 0x5A)
+                {
+                    int offs = ((int) val2) - 0x41;
+                    int mv = MissingValue.MIS_A.getValue() + offs;
+                    return MissingValue.forValue(mv).asDouble();
+                }
                 return MissingValue.MIS_UNKNOWN.asDouble();
             }
             return res;

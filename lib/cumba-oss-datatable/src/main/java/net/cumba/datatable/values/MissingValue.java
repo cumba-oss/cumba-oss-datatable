@@ -11,10 +11,173 @@ import org.jspecify.annotations.Nullable;
 public enum MissingValue
 {
 
+    // R missing values
+    /**
+     * The R NA value
+     */
+    NA(10, "NA", "R NA (Not Available)"),
+
+    // Python missing values
+
+    /**
+     * The Python None value for objects.
+     */
+    None(20, "None", "Python None"),
+
+    /**
+     * The Python np.nan value for float numbers.
+     */
+    NP_NAN(21, "np.nan", "Python NaN (from numpy)"),
+
+    /**
+     * The Python pd.NA value from pandas.
+     */
+    PD_NA(22, "pd.NA", "Pandas NA"),
+
+    /**
+     * The Python pd.NaT value from pandas.
+     */
+    PD_NAT(23, "pd.NaT", "Pandas NaT"),
+
+    /**
+     * The SAS special missing ._ &lt;dot&gt;&lt;underscore&gt;
+     */
+    MIS__(60, "._", "SAS Missing ._"),
+
     /**
      * The SAS default missing . &lt;dot&gt;&lt;space&gt;
      */
     MIS(64, ".", "SAS Missing ."),
+
+    /**
+     * The SAS special missing .A &lt;dot&gt;&lt;A&gt;
+     */
+    MIS_A(65, ".A", "SAS Missing .A"),
+
+    /**
+     * The SAS special missing .B &lt;dot&gt;&lt;B&gt;
+     */
+    MIS_B(66, ".B", "SAS Missing .B"),
+
+    /**
+     * The SAS special missing .C &lt;dot&gt;&lt;C&gt;
+     */
+    MIS_C(67, ".C", "SAS Missing .C"),
+
+    /**
+     * The SAS special missing .D &lt;dot&gt;&lt;D&gt;
+     */
+    MIS_D(68, ".D", "SAS Missing .D"),
+
+    /**
+     * The SAS special missing .E &lt;dot&gt;&lt;E&gt;
+     */
+    MIS_E(69, ".E", "SAS Missing .E"),
+
+    /**
+     * The SAS special missing .F &lt;dot&gt;&lt;F&gt;
+     */
+    MIS_F(70, ".F", "SAS Missing .F"),
+
+    /**
+     * The SAS special missing .G &lt;dot&gt;&lt;G&gt;
+     */
+    MIS_G(71, ".G", "SAS Missing .G"),
+
+    /**
+     * The SAS special missing .H &lt;dot&gt;&lt;H&gt;
+     */
+    MIS_H(72, ".H", "SAS Missing .H"),
+
+    /**
+     * The SAS special missing .I &lt;dot&gt;&lt;I&gt;
+     */
+    MIS_I(73, ".I", "SAS Missing .I"),
+
+    /**
+     * The SAS special missing .J &lt;dot&gt;&lt;J&gt;
+     */
+    MIS_J(74, ".J", "SAS Missing .J"),
+
+    /**
+     * The SAS special missing .K &lt;dot&gt;&lt;K&gt;
+     */
+    MIS_K(75, ".K", "SAS Missing .K"),
+
+    /**
+     * The SAS special missing .L &lt;dot&gt;&lt;L&gt;
+     */
+    MIS_L(76, ".L", "SAS Missing .L"),
+
+    /**
+     * The SAS special missing .M &lt;dot&gt;&lt;M&gt;
+     */
+    MIS_M(77, ".M", "SAS Missing .M"),
+
+    /**
+     * The SAS special missing .N &lt;dot&gt;&lt;N&gt;
+     */
+    MIS_N(78, ".N", "SAS Missing .N"),
+
+    /**
+     * The SAS special missing .O &lt;dot&gt;&lt;O&gt;
+     */
+    MIS_O(79, ".O", "SAS Missing .O"),
+
+    /**
+     * The SAS special missing .P &lt;dot&gt;&lt;P&gt;
+     */
+    MIS_P(80, ".P", "SAS Missing .P"),
+
+    /**
+     * The SAS special missing .Q &lt;dot&gt;&lt;Q&gt;
+     */
+    MIS_Q(81, ".Q", "SAS Missing .Q"),
+
+    /**
+     * The SAS special missing .R &lt;dot&gt;&lt;R&gt;
+     */
+    MIS_R(82, ".R", "SAS Missing .R"),
+
+    /**
+     * The SAS special missing .S &lt;dot&gt;&lt;S&gt;
+     */
+    MIS_S(83, ".S", "SAS Missing .S"),
+
+    /**
+     * The SAS special missing .T &lt;dot&gt;&lt;T&gt;
+     */
+    MIS_T(84, ".T", "SAS Missing .T"),
+
+    /**
+     * The SAS special missing .U &lt;dot&gt;&lt;U&gt;
+     */
+    MIS_U(85, ".U", "SAS Missing .U"),
+
+    /**
+     * The SAS special missing .V &lt;dot&gt;&lt;V&gt;
+     */
+    MIS_V(86, ".V", "SAS Missing .V"),
+
+    /**
+     * The SAS special missing .W &lt;dot&gt;&lt;W&gt;
+     */
+    MIS_W(87, ".W", "SAS Missing .W"),
+
+    /**
+     * The SAS special missing .X &lt;dot&gt;&lt;X&gt;
+     */
+    MIS_X(88, ".X", "SAS Missing .X"),
+
+    /**
+     * The SAS special missing .Y &lt;dot&gt;&lt;Y&gt;
+     */
+    MIS_Y(89, ".Y", "SAS Missing .Y"),
+
+    /**
+     * The SAS special missing .Z &lt;dot&gt;&lt;Z&gt;
+     */
+    MIS_Z(90, ".Z", "SAS Missing .Z"),
 
     /**
      * A missing value to be used for unexpected values / unknown missing. This should never be used
@@ -74,7 +237,7 @@ public enum MissingValue
      * Fast decode-free lookup for the NaN-payload hash path in numeric buffers. Indexed by the
      * unsigned byte value (0..255). Slot contains the pre-computed {@link #hashCodeStable()} for
      * known missing constants; 0 means "not a recognized missing payload" (safe sentinel because no
-     * {@link MissingValue} constant has {@code value == 0} — lowest is {@link #MIS} with 64).
+     * {@link MissingValue} constant has {@code value == 0} — lowest is {@link #NA} with 10).
      */
     static final int[] HASHES_BY_BYTE;
 
@@ -116,7 +279,7 @@ public enum MissingValue
      * {@code long}/{@code int} hashes in a mixed-type hash space.
      *
      * @return the stable hash for this missing value. Never 0 for any existing constant (lowest
-     *         value is {@link #MIS} with {@code value = 64}).
+     *         value is {@link #NA} with {@code value = 10}).
      */
     public int hashCodeStable()
     {

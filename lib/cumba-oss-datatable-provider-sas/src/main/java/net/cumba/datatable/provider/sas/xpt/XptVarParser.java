@@ -93,9 +93,9 @@ public class XptVarParser
     /**
      * Convert an IBM System/360 floating-point number to an IEEE 754 double. Handles SAS missing
      * values encoded as special byte patterns when the mantissa is zero: {@code '.'} maps to
-     * {@link MissingValue#MIS}; the SAS special-missing values {@code '_'} and
-     * {@code 'A'}-{@code 'Z'} collapse to {@link MissingValue#MIS_UNKNOWN} (corej dropped the
-     * per-letter missing constants).
+     * {@link MissingValue#MIS}, {@code '_'} to {@link MissingValue#MIS__}, and
+     * {@code 'A'}-{@code 'Z'} to the per-letter constants {@link MissingValue#MIS_A} onwards;
+     * anything else falls back to {@link MissingValue#MIS_UNKNOWN}.
      *
      * @param aBuffer
      *            the byte buffer containing the IBM float.
@@ -145,18 +145,19 @@ public class XptVarParser
             }
             case '_' ->
             {
-                // corej's MissingValue keeps only MIS / MIS_UNKNOWN / MIS_ERROR; the SAS
-                // special-missing ._ (dropped in the OSS extraction) collapses to MIS_UNKNOWN.
-                return MissingValue.MIS_UNKNOWN.asDouble();
+                return MissingValue.MIS__.asDouble();
             }
             default ->
             {
                 /* fall through to letter handling below */ }
             }
 
-            // Any other zero-mantissa pattern — including the SAS special-missing values .A-.Z —
-            // collapses to MIS_UNKNOWN (the per-letter MissingValue constants were dropped in the
-            // corej extraction).
+            if (aBuffer[aOffset] >= 'A' && aBuffer[aOffset] <= 'Z')
+            {
+                int diff = aBuffer[aOffset] - 'A';
+                int mv = MissingValue.MIS_A.getValue() + diff;
+                return MissingValue.forValue(mv).asDouble();
+            }
             return MissingValue.MIS_UNKNOWN.asDouble();
         }
 

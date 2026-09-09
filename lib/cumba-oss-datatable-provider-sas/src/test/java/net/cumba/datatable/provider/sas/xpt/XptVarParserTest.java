@@ -58,9 +58,7 @@ class XptVarParserTest
         };
         double result = XptVarParser.ibmToIeee(buf, 0, 8);
         assertTrue(Double.isNaN(result));
-        // corej dropped the SAS special-missing constants, so ._ collapses to MIS_UNKNOWN.
-        assertEquals(MissingValue.MIS_UNKNOWN,
-                MissingValue.forValue(result, MissingValue.MIS_UNKNOWN));
+        assertEquals(MissingValue.MIS__, MissingValue.forValue(result, MissingValue.MIS_UNKNOWN));
     }
 
 
@@ -74,9 +72,7 @@ class XptVarParserTest
         };
         double result = XptVarParser.ibmToIeee(buf, 0, 8);
         assertTrue(Double.isNaN(result));
-        // corej dropped the SAS special-missing constants, so .A collapses to MIS_UNKNOWN.
-        assertEquals(MissingValue.MIS_UNKNOWN,
-                MissingValue.forValue(result, MissingValue.MIS_UNKNOWN));
+        assertEquals(MissingValue.MIS_A, MissingValue.forValue(result, MissingValue.MIS_UNKNOWN));
     }
 
 
@@ -90,9 +86,7 @@ class XptVarParserTest
         };
         double result = XptVarParser.ibmToIeee(buf, 0, 8);
         assertTrue(Double.isNaN(result));
-        // corej dropped the SAS special-missing constants, so .Z collapses to MIS_UNKNOWN.
-        assertEquals(MissingValue.MIS_UNKNOWN,
-                MissingValue.forValue(result, MissingValue.MIS_UNKNOWN));
+        assertEquals(MissingValue.MIS_Z, MissingValue.forValue(result, MissingValue.MIS_UNKNOWN));
     }
 
 
