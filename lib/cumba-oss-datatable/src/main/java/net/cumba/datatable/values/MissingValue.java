@@ -323,7 +323,7 @@ public enum MissingValue
      */
     public static MissingValue forValue(int aValue)
     {
-        // MIS_ERROR is non-null, so the overload never falls through to a null default here.
+        // MIS_ERROR is a non-null default, so the two-arg overload never returns null here.
         return Objects.requireNonNull(forValue(aValue, MIS_ERROR));
     }
 
@@ -379,7 +379,7 @@ public enum MissingValue
      */
     public static MissingValue forValue(String aValue)
     {
-        return forValue(aValue, MIS_ERROR);
+        return Objects.requireNonNull(forValue(aValue, MIS_ERROR));
     }
 
 
@@ -393,7 +393,7 @@ public enum MissingValue
      * @return the missing value for the given display string value or aDefault if no matching
      *         missing value is found.
      */
-    public static MissingValue forValue(String aValue, MissingValue aDefault)
+    public static @Nullable MissingValue forValue(String aValue, @Nullable MissingValue aDefault)
     {
         for (MissingValue mv : values())
         {
