@@ -322,8 +322,6 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         {
             if (columns == null)
             {
-                // Wrapped so the lazily-built list cannot be mutated through the accessor
-                // (SpotBugs EI_EXPOSE_REP).
                 columns = Collections.unmodifiableList(buildColumns());
             }
             return columns;
@@ -342,15 +340,12 @@ public class DefineMetadataLibrary implements IMetadataLibrary
 
 
         @Override
-        public @Nullable String getClassName()
+        public String getClassName()
         {
             // Effective form: the Define-XML 2.1 <def:Class Name="…"> element when present, else
             // the 2.0 def:Class attribute — before this unification a native-2.1 define yielded a
             // null class for every dataset (the element form was silently dropped by the
             // attribute-only binding).
-            //
-            // @Nullable matches both sides: IDataTableMetadata.getClassName() declares it, and a
-            // define.xml need not state a class at all.
             return itemGroup.getEffectiveClassName();
         }
 
@@ -425,8 +420,11 @@ public class DefineMetadataLibrary implements IMetadataLibrary
                     continue;
                 }
                 ItemDef def = optDef.get();
-                int derivedKs = domainKeyPositions.getOrDefault(
-                        def.getName() != null ? def.getName().toLowerCase(Locale.ROOT) : "", 0);
+                // Read once into a local - the second getName() call was not covered by the
+                // null check guarding the first.
+                String defName = def.getName();
+                int derivedKs = domainKeyPositions
+                        .getOrDefault(defName != null ? defName.toLowerCase(Locale.ROOT) : "", 0);
                 result.add(new DefineColumnMetadata(def, ir, idx++, derivedKs));
             }
             return Collections.unmodifiableList(result);
@@ -806,8 +804,6 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         {
             if (entries == null)
             {
-                // Wrapped so the lazily-built list cannot be mutated through the accessor
-                // (SpotBugs EI_EXPOSE_REP).
                 entries = Collections.unmodifiableList(buildEntries());
             }
             return entries;
