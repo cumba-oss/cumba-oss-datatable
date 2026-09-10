@@ -55,7 +55,16 @@ class DsjRowCountTest
         DsjTableProvider provider = new DsjTableProvider();
         IOException ex = assertThrows(IOException.class,
                 () -> provider.provide(uri, DsjProviderSupplier.FI_DSJ_JSON));
-        assertTrue(ex.getMessage().contains("Expected=3, found=2"), ex.getMessage());
+        // ⚠ TWO layers answer this, and which one wins depends on the cdisc-dsj pin. Since
+        // cumba-oss-formats 0.4.0 the PARSER throws first ("Declared \"records\" (3) does not match
+        // the number of rows parsed (2)."); before it the parser returned a short table and THIS
+        // provider's own guard threw ("Can't read all rows. Expected=3, found=2"). Both are correct
+        // answers to the same question, so assert the contract - an IOException naming both counts
+        // -
+        // rather than one layer's wording, which is what pinned this test to the old pin.
+        String msg = ex.getMessage();
+        assertTrue(msg.contains("3") && msg.contains("2")
+                && (msg.contains("Expected=") || msg.contains("does not match")), msg);
     }
 
 

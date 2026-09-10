@@ -101,8 +101,8 @@
             the internal pin moves, move this one too or the test goes red here only.
         -->
         <dependency.cdisc-rules-engine-cache.tag>v0.17.1</dependency.cdisc-rules-engine-cache.tag>
-        <dependency.cumba-oss-commons.version>0.2.1</dependency.cumba-oss-commons.version>
-        <dependency.cumba-oss-formats.version>0.3.0</dependency.cumba-oss-formats.version>
+        <dependency.cumba-oss-commons.version>0.3.0</dependency.cumba-oss-commons.version>
+        <dependency.cumba-oss-formats.version>0.4.0</dependency.cumba-oss-formats.version>
         <dependency.jackson.version>2.22.2</dependency.jackson.version>
         <dependency.univocity.version>2.9.1</dependency.univocity.version>
         <dependency.excel-streaming-reader.version>5.3.0</dependency.excel-streaming-reader.version>
