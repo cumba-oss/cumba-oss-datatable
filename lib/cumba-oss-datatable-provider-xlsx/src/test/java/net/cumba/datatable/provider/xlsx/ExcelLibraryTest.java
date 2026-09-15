@@ -8,14 +8,18 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.stream.Stream;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -23,6 +27,7 @@ import net.cumba.datatable.provider.xlsx.library.ExcelLibrary;
 import net.cumba.datatable.provider.xlsx.library.ExcelLibraryMember;
 import net.cumba.datatable.provider.xlsx.library.ExcelLibraryProvider;
 import net.cumba.datatable.provider.xlsx.library.ExcelLibrarySupplier;
+import net.cumba.datatable.provider.xlsx.testsupport.LoggerCapture;
 import net.cumba.datatable.values.DataValueType;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -144,6 +149,21 @@ class ExcelLibraryTest
         assertNull(provider);
     }
 
+
+    /**
+     * {@code canProvideFor(uri, null)} with a URI that has NO fragment must fall through to
+     * {@code super.canProvideFor}, which resolves by file extension. This exact combination — null
+     * {@link FileInfo}, no fragment — was never exercised by any test: the null-FileInfo test above
+     * uses a URI WITH a fragment (hits the earlier "reject fragment" branch instead), and the
+     * with-fragment test always passes a non-null FileInfo.
+     */
+    @Test
+    void testSupplierCanProvideForNoFragmentDelegatesToExtensionCheck() throws Exception
+    {
+        assertTrue(supplier.canProvideFor(new URI("file:///test.xlsx"), null));
+        assertFalse(supplier.canProvideFor(new URI("file:///test.csv"), null));
+    }
+
     // --- ExcelLibraryProvider tests ---
 
 
@@ -178,6 +198,24 @@ class ExcelLibraryTest
         ExcelLibrary exLib = (ExcelLibrary) library;
         long memberCount = exLib.getMembers().count();
         assertEquals(3, memberCount);
+    }
+
+
+    /**
+     * The two-arg {@code provide(uri, null)} overload — called when the caller has no
+     * {@link FileInfo} at all (e.g. auto-detected purely from extension) — must fall back to
+     * {@code FI_XLSX} for the library's own FileInfo, not merely tolerate a null. Every other test
+     * passes {@code FI_XLSX} explicitly and never observes this fallback.
+     */
+    @Test
+    void testProvideWithNullFileInfoFallsBackToXlsx() throws Exception
+    {
+        URI uri = writeTempXlsx("Sheet1");
+        ExcelLibraryProvider provider = new ExcelLibraryProvider();
+
+        IDataTableLibrary library = provider.provide(uri, null);
+
+        assertEquals(ExcelProviderSupplier.FI_XLSX, library.getFileInfo());
     }
 
 
@@ -235,6 +273,33 @@ class ExcelLibraryTest
     {
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
         assertNull(provider.getLibraryAttribute(null, "anything"));
+    }
+
+
+    @Test
+    void testGetSupportedFileInfosReturnsSupplierFIS()
+    {
+        ExcelLibraryProvider provider = new ExcelLibraryProvider();
+        assertEquals(ExcelLibrarySupplier.FIS, provider.getSupportedFileInfos());
+    }
+
+
+    /**
+     * {@code getProviderProperties} must surface the URI-derived default library name — this
+     * indirectly exercises {@code getLibraryNameFor} (never called directly by any test; it is
+     * {@code protected} in a different package) for both its null-path guard and its
+     * strip-path/strip-extension/uppercase computation.
+     */
+    @Test
+    void testGetProviderPropertiesDefaultsToUriDerivedName() throws Exception
+    {
+        ExcelLibraryProvider provider = new ExcelLibraryProvider();
+        URI uri = new URI("file:///data/demographics.xlsx");
+
+        List<Property> props = provider.getProviderProperties(uri, null);
+
+        assertEquals(1, props.size());
+        assertEquals("DEMOGRAPHICS", props.get(0).defaultValue());
     }
 
     // --- ExcelLibrary tests ---
@@ -400,6 +465,187 @@ class ExcelLibraryTest
         assertEquals("COL1", cols[0].getName());
         // Pin the documented (and quirky) edge-case: no data rows seen → DOUBLE.
         assertEquals(DataValueType.DOUBLE, cols[0].getType());
+    }
+
+    // ==================== one bad sheet must not take the library open down ====================
+
+
+    /**
+     * Patches every worksheet part of a workbook at the raw XML level, replacing one literal
+     * fragment with another and leaving every other byte untouched. Fails the test if the fragment
+     * was not found anywhere, so a POI-version change to the emitted XML reds the fixture instead
+     * of silently producing an unpatched workbook.
+     */
+    private static byte[] patchWorksheetXml(byte[] aXlsxBytes, String aOriginalXml,
+            String aReplacementXml)
+        throws IOException
+    {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        boolean found = false;
+        try (java.util.zip.ZipInputStream zin = new java.util.zip.ZipInputStream(
+                new java.io.ByteArrayInputStream(aXlsxBytes));
+                java.util.zip.ZipOutputStream zout = new java.util.zip.ZipOutputStream(out))
+        {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zin.getNextEntry()) != null)
+            {
+                byte[] data = zin.readAllBytes();
+                if (entry.getName().startsWith("xl/worksheets/"))
+                {
+                    String xml = new String(data, StandardCharsets.UTF_8);
+                    String patched = xml.replace(aOriginalXml, aReplacementXml);
+                    found = found || !patched.equals(xml);
+                    data = patched.getBytes(StandardCharsets.UTF_8);
+                }
+                zout.putNextEntry(new java.util.zip.ZipEntry(entry.getName()));
+                zout.write(data);
+                zout.closeEntry();
+            }
+        }
+        assertTrue(found, "fixture setup: the target XML was not found in any worksheet");
+        return out.toByteArray();
+    }
+
+
+    /**
+     * Column inference that blows up on ONE sheet must not abort the whole library open: that
+     * member still appears (without cached columns, so opening it triggers a full read), every
+     * other sheet keeps its inferred columns, and the failure is logged naming the sheet.
+     * <p>
+     * The failing sheet carries a numeric header cell whose cached {@code <v>} is the non-numeric
+     * text {@code N/A} — the shape a third-party or hand-edited export leaves behind. The streaming
+     * reader throws from {@code getCellType()} itself on such a cell, i.e. from inside
+     * {@code determineColumns}, so the exception escapes {@code inferColumns} as a
+     * {@code RuntimeException} — which is the only thing that reaches this catch.
+     */
+    @Test
+    void testProvideLibraryContinuesWhenOneSheetsColumnInferenceFails() throws Exception
+    {
+        byte[] bytes;
+        try (Workbook wb = new XSSFWorkbook())
+        {
+            Sheet good = wb.createSheet("GOOD");
+            Row gh = good.createRow(0);
+            gh.createCell(0).setCellValue("USUBJID");
+            Row gr = good.createRow(1);
+            gr.createCell(0).setCellValue("S01");
+
+            Sheet bad = wb.createSheet("BAD");
+            Row bh = bad.createRow(0);
+            bh.createCell(0).setCellValue("NAME");
+            bh.createCell(1).setCellValue(987654.0); // corrupted to <v>N/A</v> below
+            Row br = bad.createRow(1);
+            br.createCell(0).setCellValue("Bob");
+            br.createCell(1).setCellValue(2.0);
+
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            wb.write(bos);
+            bytes = bos.toByteArray();
+        }
+        File tmpFile = File.createTempFile("xlsxlibbadsheet", ".xlsx");
+        tmpFile.deleteOnExit();
+        Files.write(tmpFile.toPath(), patchWorksheetXml(bytes, "<v>987654.0</v>", "<v>N/A</v>"));
+
+        ExcelLibraryProvider provider = new ExcelLibraryProvider();
+        ExcelLibrary lib;
+        try (LoggerCapture log = LoggerCapture.attach(ExcelLibraryProvider.class.getName()))
+        {
+            lib = (ExcelLibrary) provider.provide(tmpFile.toURI(), ExcelProviderSupplier.FI_XLSX);
+            assertTrue(log.containsMessageContaining("Column inference failed for sheet 'BAD'"),
+                    "the skipped sheet must be logged by name: " + log.messages());
+        }
+
+        List<ExcelLibraryMember> members = lib.getMembers().toList();
+        assertEquals(2, members.size(), "both sheets must still be listed");
+        ExcelLibraryMember good = members.stream().filter(m -> "GOOD".equals(m.getName()))
+                .findFirst().orElseThrow();
+        ExcelLibraryMember bad = members.stream().filter(m -> "BAD".equals(m.getName())).findFirst()
+                .orElseThrow();
+        assertNotNull(good.getColumns(), "the healthy sheet must keep its inferred columns");
+        assertEquals("USUBJID", good.getColumns()[0].getName());
+        assertNull(bad.getColumns(),
+                "the sheet whose inference failed must carry no cached columns");
+        assertEquals(0, provider.provideLibraryMemberColumns(bad).count());
+    }
+
+
+    /**
+     * Bytes that are not an OOXML package at all must be logged and wrapped as {@code IOException}
+     * by the library open, exactly as they are by the table provider — the streaming reader throws
+     * a {@code RuntimeException} from {@code open()}, which is the outer catch's only input.
+     */
+    @Test
+    void testProvideLibraryNonOoxmlBytesLogsAndWrapsAsIOException() throws Exception
+    {
+        File tmpFile = File.createTempFile("notxlsxlib", ".xlsx");
+        tmpFile.deleteOnExit();
+        Files.write(tmpFile.toPath(),
+                "this is not a zip or OLE2 file at all".getBytes(StandardCharsets.UTF_8));
+        ExcelLibraryProvider provider = new ExcelLibraryProvider();
+
+        try (LoggerCapture log = LoggerCapture.attach(ExcelLibraryProvider.class.getName()))
+        {
+            IOException ex = assertThrows(IOException.class,
+                    () -> provider.provide(tmpFile.toURI(), ExcelProviderSupplier.FI_XLSX));
+            assertNotNull(ex.getCause(),
+                    "the original runtime exception must be preserved as cause");
+            assertFalse(log.records().isEmpty(),
+                    "the runtime exception must be logged before being wrapped");
+        }
+    }
+
+
+    /**
+     * A sheet with no rows at all, and a sheet whose first row is a blank title/spacer row, must
+     * both still be listed as members — with no columns rather than an aborted open — while a
+     * healthy sheet in the same workbook keeps its columns. These are the two early exits of
+     * {@code ExcelTableProvider.inferColumns}, and they must NOT behave like
+     * {@code provide}/{@code buildMeta}, which fail the read outright: a library open that threw
+     * would make every other sheet in the workbook unreachable.
+     */
+    @Test
+    void testProvideLibraryListsEmptyAndSpacerHeaderSheetsWithoutColumns() throws Exception
+    {
+        File tmpFile = File.createTempFile("xlsxlibedge", ".xlsx");
+        tmpFile.deleteOnExit();
+        try (Workbook wb = new XSSFWorkbook())
+        {
+            wb.createSheet("NOROWS"); // no rows at all
+
+            Sheet spacer = wb.createSheet("SPACER");
+            spacer.createRow(0).createCell(0).setCellValue("   "); // whitespace-only title row
+            Row sh = spacer.createRow(1);
+            sh.createCell(0).setCellValue("NAME");
+            Row sr = spacer.createRow(2);
+            sr.createCell(0).setCellValue("Alice");
+
+            Sheet good = wb.createSheet("GOOD");
+            good.createRow(0).createCell(0).setCellValue("USUBJID");
+            good.createRow(1).createCell(0).setCellValue("S01");
+
+            try (FileOutputStream fos = new FileOutputStream(tmpFile))
+            {
+                wb.write(fos);
+            }
+        }
+
+        ExcelLibraryProvider provider = new ExcelLibraryProvider();
+        ExcelLibrary lib = (ExcelLibrary) provider.provide(tmpFile.toURI(),
+                ExcelProviderSupplier.FI_XLSX);
+        List<ExcelLibraryMember> members = lib.getMembers().toList();
+        assertEquals(3, members.size());
+        for (String sheet : List.of("NOROWS", "SPACER"))
+        {
+            ExcelLibraryMember m = members.stream().filter(x -> sheet.equals(x.getName()))
+                    .findFirst().orElseThrow();
+            assertNotNull(m.getColumns(),
+                    sheet + ": inference succeeded, it just found no columns");
+            assertEquals(0, m.getColumns().length, sheet + " must contribute no columns");
+        }
+        ExcelLibraryMember good = members.stream().filter(m -> "GOOD".equals(m.getName()))
+                .findFirst().orElseThrow();
+        assertEquals(1, good.getColumns().length);
+        assertEquals("USUBJID", good.getColumns()[0].getName());
     }
 
 }

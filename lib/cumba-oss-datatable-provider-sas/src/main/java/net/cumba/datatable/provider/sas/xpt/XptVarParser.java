@@ -107,6 +107,17 @@ public class XptVarParser
      */
     public static double ibmToIeee(byte[] aBuffer, int aOffset, int aLength)
     {
+        // F-prov-15: an XPORT numeric is 1..8 bytes. Beyond 8 the loop below accumulates more than
+        // 56 mantissa bits AND the promotion shift is skipped, so a corrupt NAMESTR length decoded
+        // to a plausible-looking but wrong finite number rather than to an error -- the worst
+        // outcome for a clinical value. The sibling decoder BdatVarParser.unpackRaw64 already
+        // range-checks its length; this one did not.
+        if (aLength < 1 || aLength > 8)
+        {
+            throw new IllegalArgumentException(
+                    "XPT numeric length must be 1..8 bytes, was " + aLength);
+        }
+
         // Extract sign bit (bit 0)
         int sign = (aBuffer[aOffset] & 0x80) != 0 ? 1 : 0;
 

@@ -331,18 +331,48 @@ public class DsjTableProvider extends AbstractDataTableProvider
      * per-column-parallel concatenation. Otherwise returns the single parser's completion result.
      */
     private IDataTable assembleResult(Map<Integer, DsjTableDataParser> chunkParsers,
-            DsjTableDataParser singleParser, DataTableMeta meta)
+            @Nullable DsjTableDataParser singleParser, @Nullable DataTableMeta meta)
         throws IOException
     {
         if (!chunkParsers.isEmpty())
         {
-            return mergeChunkParsers(chunkParsers, meta);
+            return mergeChunkParsers(chunkParsers, Objects.requireNonNull(meta,
+                    "a populated chunk map implies handleMetadata " + "already ran"));
         }
         if (singleParser != null)
         {
             return singleParser.completeTable();
         }
+        if (meta != null)
+        {
+            // Dataset-JSON top-level metadata attribute "records" has minimum 0, and "rows" is
+            // an optional member: "records=0 allows for the transfer of metadata without
+            // sending data." DataSetJsonTableParser already treats an absent or empty "rows" the
+            // same way -- it fires the metadata handler and delivers zero rows -- so neither
+            // ingestion handler above ever runs for a legitimate metadata-only document.
+            // Metadata WAS found; this is not a load failure, it's a real (if unusual) empty
+            // table.
+            return emptyTable(meta);
+        }
         throw new IOException("No metadata found in DataSet-JSON file.");
+    }
+
+
+    /**
+     * Builds a zero-row {@link IDataTable} directly from already-captured metadata, for a
+     * Dataset-JSON document that legitimately declares no rows (see {@link #assembleResult}).
+     */
+    private static IDataTable emptyTable(DataTableMeta aMeta)
+    {
+        int colCount = aMeta.getColumnCount();
+        CachedDataTableColumn[] cols = new CachedDataTableColumn[colCount];
+        for (int c = 0; c < colCount; c++)
+        {
+            CachedDataTableColumn col = new CachedDataTableColumn(c, aMeta.getColumn(c).getType());
+            col.complete();
+            cols[c] = col;
+        }
+        return new ColumnCachedDataTable(aMeta, cols);
     }
 
 
@@ -728,12 +758,34 @@ public class DsjTableProvider extends AbstractDataTableProvider
                         {
                             aDataColumn.addElement(num.longValue());
                         }
+                        else if (dvt == DataValueType.STRING)
+                        {
+                            // A raw JSON number in a nominally STRING column (a non-conformant
+                            // document -- the spec's row-data JSON type for a "string" dataType
+                            // is "string", never "number") must be normalised to its text form.
+                            // Storing the raw Number here would give two RAW-VALUE-unequal cells
+                            // for what looks like the same value depending on whether it arrived
+                            // quoted or bare, silently splitting merge/join keys and by-group
+                            // buckets -- the exact raw-identity hazard the null-vs-"" note above
+                            // already documents for this column.
+                            aDataColumn.addElement(num.toString());
+                        }
                         else
                         {
                             double dbl = num.doubleValue();
-                            if (Double.isNaN(dbl))
+                            if (!Double.isFinite(dbl))
                             {
-                                aDataColumn.addElement(MissingValue.MIS);
+                                // NaN and +-Infinity can both reach here: NaN is the sentinel
+                                // several IDataTypeMapper implementations return for "could not
+                                // map this value" (a genuine data ERROR, not the JSON `null` the
+                                // spec defines as missing -- that case is caught above, before
+                                // the mapper even runs), and Infinity is what Jackson silently
+                                // produces for a syntactically valid but out-of-range JSON number
+                                // token (e.g. "1e400"). Neither represents real data, so neither
+                                // may be stored as though it were -- MIS_ERROR ("value present,
+                                // could not be interpreted"), not MIS ("declared missing"), is
+                                // the correct sentinel for both.
+                                aDataColumn.addElement(MissingValue.MIS_ERROR);
                             }
                             else
                             {
@@ -770,7 +822,25 @@ public class DsjTableProvider extends AbstractDataTableProvider
         {
             try
             {
-                aColumn.addElement(Double.parseDouble(aStr));
+                // Dataset-JSON's "dataType" note: "When a thousand separator is used in a
+                // decimal represented as string, the comma is used." This is the lenient
+                // no-targetDataType parsing path (a mapped targetDataType=decimal column never
+                // reaches here -- DataTypeMapperFactory's DecimalMapper converts the string
+                // before this method is called), so the comma is stripped before parsing rather
+                // than rejected as a malformed number.
+                double val = Double.parseDouble(aStr.replace(",", ""));
+                if (!Double.isFinite(val))
+                {
+                    // "NaN" / "Infinity" / "-Infinity" (and any string whose magnitude overflows
+                    // double, e.g. "1e400") parse successfully but do not represent a real
+                    // numeric value -- treat them the same as an unparseable string rather than
+                    // storing a literal non-finite value as though it were real data.
+                    aColumn.addElement(MissingValue.MIS_ERROR);
+                }
+                else
+                {
+                    aColumn.addElement(val);
+                }
             }
             catch (NumberFormatException _)
             {

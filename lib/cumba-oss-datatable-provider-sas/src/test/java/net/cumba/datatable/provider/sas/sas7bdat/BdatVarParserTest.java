@@ -1,6 +1,7 @@
 package net.cumba.datatable.provider.sas.sas7bdat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteOrder;
@@ -254,6 +255,19 @@ class BdatVarParserTest
     {
         VariableBdat vbdat = testVar(VariableType.CHARACTER, length, offset);
         return new BdatVarParser(vbdat, StandardCharsets.UTF_8, bo);
+    }
+
+
+    @Test
+    void unpackRaw64RejectsARangeThatLeavesTheBuffer()
+    {
+        // offset + length, never offset - length: the check exists so a corrupt subheader gives a
+        // named error instead of an ArrayIndexOutOfBoundsException from the accumulation loop.
+        BdatVarParser parser = createNumericParser(0, 8, ByteOrder.LITTLE_ENDIAN);
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+                () -> parser.unpackRaw64(new byte[6], 5, 3));
+        assertEquals("offset/length out of buffer bounds", ex.getMessage(),
+                "the guard must be what fails, not the loop running off the end");
     }
 
 

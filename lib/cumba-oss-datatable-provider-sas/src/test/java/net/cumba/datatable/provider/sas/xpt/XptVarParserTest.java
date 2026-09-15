@@ -229,4 +229,17 @@ class XptVarParserTest
         vxpt.formatDecimals = (short) 0;
         return vxpt;
     }
+
+
+    @Test
+    void aSingleByteNumericIsALegalXportWidth()
+    {
+        // XPORT numerics are 1..8 bytes (the guard's own message says so). With only the exponent
+        // byte present the mantissa is necessarily zero, so 0x00 is a true zero — rejecting length
+        // 1 would fail a legal file rather than decode it.
+        assertEquals(0.0d, XptVarParser.ibmToIeee(new byte[]
+        {
+                0x00
+        }, 0, 1));
+    }
 }

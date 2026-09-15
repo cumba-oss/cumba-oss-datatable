@@ -79,7 +79,17 @@ class CsvRecordTest
         {
                 "a"
         });
-        assertThrows(IndexOutOfBoundsException.class, () -> csvRec.getValue(1));
+        // ⚠ ArrayIndexOutOfBoundsException is ALSO an IndexOutOfBoundsException, so an
+        // assertThrows(IndexOutOfBoundsException.class, ...) alone cannot tell CsvRecord's own
+        // guard from a boundary bug that lets the call fall through into a raw array access
+        // (aColumn > values.length instead of >=, which only misbehaves exactly at this index).
+        // Asserting the exact class -- and the guard's own message -- pins the guard itself.
+        IndexOutOfBoundsException ex = assertThrows(IndexOutOfBoundsException.class,
+                () -> csvRec.getValue(1));
+        assertEquals(IndexOutOfBoundsException.class, ex.getClass(),
+                "must be CsvRecord's own guard, not a raw ArrayIndexOutOfBoundsException");
+        assertTrue(ex.getMessage() != null && ex.getMessage().contains("1"),
+                "message must name the out-of-range index: " + ex.getMessage());
     }
 
 

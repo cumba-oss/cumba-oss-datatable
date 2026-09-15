@@ -154,6 +154,11 @@ public class XptLibraryProvider extends AbstractLibraryProvider
                 .name(columnName)//
                 .type(type)//
                 .nativeType(nativeType)//
+                // F-prov-13: the stored byte length was missing here while BOTH siblings set it --
+                // XptTableProvider.addColumn and CdtLibraryProvider.mapToColumnMeta -- so the
+                // library browser showed no length for an XPT member and opening the very same
+                // dataset showed one. Three parallel copies, one not updated, nothing red.
+                .length(aVariable.getLength())//
                 .label(aVariable.getLabel())//
                 .displayFormat(dispFmt)//
                 .build();

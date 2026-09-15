@@ -307,7 +307,18 @@ public class BdatTableProvider extends AbstractDataTableProvider
             addColumn(dtms, vars.get(i), i, aUri);
         }
 
-        applyTableMetaData(dtms, aDataSet, requireRowCount(aDataSet), charset);
+        // F-prov-14: the LIVE row count, not the header's. DatasetBdat.getRowCount() counts the
+        // rows SAS has marked deleted as well -- which is why provide() has to reconcile them in
+        // checkAllRowsRead and why BdatRowAccountingTest pins header 10 / declared 2 / delivered 8
+        // as agreement. buildMeta() reads no observations, so it cannot count them; it can however
+        // subtract the count the header itself declares, which is exactly the figure provide()
+        // then delivers. Before this, provideMetaData() over-reported by the deleted-row count and
+        // a metadata-only consumer (the library browser's row-count column, a preview, the P21
+        // metadata) disagreed with the table the user went on to open.
+        long liveRows = clampExpectedRows(requireRowCount(aDataSet),
+                deletedObservationCount(aDataSet));
+
+        applyTableMetaData(dtms, aDataSet, liveRows, charset);
 
         return dtms.getTableMeta().build();
     }
@@ -539,7 +550,10 @@ public class BdatTableProvider extends AbstractDataTableProvider
         FormatAndLabelSubHeader flsh = aVariable.getFormatAndLabelSubHeader();
 
         String dispFmt = flsh != null ? flsh.getFormat() : null;
-        if (dispFmt != null)
+        // isBlankOrNull, not != null: an all-blank format slice of non-zero length right-trims to
+        // "" and used to be assembled into a bare "." (or "8."), which is not a format SAS has.
+        // The XPT twin already guarded it this way.
+        if (!CDT.isBlankOrNull(dispFmt))
         {
             // formatDigits/formatDecimals are nullable Short on the wire model; a format without a
             // digit/decimal count is valid and must not NPE the load.
@@ -591,6 +605,20 @@ public class BdatTableProvider extends AbstractDataTableProvider
                     "SAS7BDAT dataset has no row count in its row-size subheader");
         }
         return rowCount;
+    }
+
+
+    /**
+     * The deleted-observation count the BDAT header declares, reading an absent value as 0.
+     *
+     * @param aDataSet
+     *            the parsed dataset descriptor.
+     * @return the declared deleted-row count, never negative-by-absence.
+     */
+    private static long deletedObservationCount(DatasetBdat aDataSet)
+    {
+        Long deleted = aDataSet.getDeletedObservationCount();
+        return deleted == null ? 0L : deleted;
     }
 
 
