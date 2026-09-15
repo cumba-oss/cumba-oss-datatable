@@ -219,6 +219,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
      */
     private void loadExternalColumnMeta(String[] aTableUris, URI aLibraryUri, URI aMemberUri,
             Map<String, DataTableColumnMeta.DataTableColumnMetaBuilder> aColumnMap)
+        throws IOException
     {
         if (CDT.isEmptyOrNull(aTableUris))
         {
@@ -292,7 +293,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
                 DataTableColumnMeta.DataTableColumnMetaBuilder builder = aColumnMap
                         .computeIfAbsent(colName, k -> DataTableColumnMeta.builder().name(k));
-                applyTableRowToColumnBuilder(table, row, uriCol, nameCol, builder);
+                applyTableRowToColumnBuilder(table, tableUri, row, uriCol, nameCol, builder);
             }
         }
     }
@@ -304,6 +305,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
      */
     private void applyInternalColumnMeta(DataBrowserColumnMetaBean[] aColumnMeta, URI aLibraryUri,
             URI aMemberUri, Map<String, DataTableColumnMeta.DataTableColumnMetaBuilder> aColumnMap)
+        throws IOException
     {
         if (CDT.isEmptyOrNull(aColumnMeta))
         {
@@ -335,15 +337,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             }
             if (!CDT.isBlankOrNull(meta.getType()))
             {
-                try
-                {
-                    builder.type(DataValueType.valueOf(meta.getType()));
-                }
-                catch (IllegalArgumentException _)
-                {
-                    LOGGER.log(System.Logger.Level.WARNING, "Unknown data value type: {0}",
-                            meta.getType());
-                }
+                builder.type(parseColumnType(meta.getType(), meta.getName(), aLibraryUri));
             }
 
             Map<String, String> attrs = meta.getAttributes();
@@ -359,11 +353,43 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
 
     /**
+     * Resolves a column type string from a {@code .dblib} (or from a metadata table it points at)
+     * to a {@link DataValueType}.
+     * <p>
+     * ⚠ An unrecognised value RAISES rather than falling back. It used to log a WARNING and leave
+     * the builder's {@code type} unset, which produced a column whose {@code getType()} is
+     * {@code null} - silently wrong data for every consumer downstream, announced only in a log
+     * nobody reads. Owner ruling 2026-09-14 (finding Q42): an unrecognised type string is a corrupt
+     * file and must say so; no default is substituted. This is a behaviour change for files that
+     * already exist, so the message names the offending value, the column and the source that
+     * carried it.
+     *
+     * @throws IOException
+     *             if {@code aType} does not name a {@link DataValueType}.
+     */
+    private static DataValueType parseColumnType(String aType, @Nullable String aColumnName,
+            URI aSource)
+        throws IOException
+    {
+        try
+        {
+            return DataValueType.valueOf(aType);
+        }
+        catch (IllegalArgumentException ex)
+        {
+            throw new IOException("Unknown data value type '" + aType + "' for column '"
+                    + aColumnName + "' in " + aSource, ex);
+        }
+    }
+
+
+    /**
      * Applies column attribute values from a metadata table row to a column builder. Handles known
      * columns (label, format, type, key) explicitly and stores all others as custom metadata.
      */
-    private void applyTableRowToColumnBuilder(IDataTable aTable, long aRow, int aUriCol,
-            int aNameCol, DataTableColumnMeta.DataTableColumnMetaBuilder aBuilder)
+    private void applyTableRowToColumnBuilder(IDataTable aTable, URI aTableUri, long aRow,
+            int aUriCol, int aNameCol, DataTableColumnMeta.DataTableColumnMetaBuilder aBuilder)
+        throws IOException
     {
         int colCount = aTable.getMetaData().getColumnCount();
         for (int col = 0; col < colCount; col++)
@@ -384,17 +410,8 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             {
             case "label" -> aBuilder.label(value);
             case "format" -> aBuilder.displayFormat(value);
-            case "type" ->
-            {
-                try
-                {
-                    aBuilder.type(DataValueType.valueOf(value));
-                }
-                catch (IllegalArgumentException _)
-                {
-                    LOGGER.log(System.Logger.Level.WARNING, "Unknown data value type: {0}", value);
-                }
-            }
+            case "type" -> aBuilder.type(parseColumnType(value,
+                    aTable.getDataValue(aRow, aNameCol).getValueAsString(), aTableUri));
             // "key" handled as custom metadata, same as default
             default -> aBuilder.addMetaData(colName, value);
             }

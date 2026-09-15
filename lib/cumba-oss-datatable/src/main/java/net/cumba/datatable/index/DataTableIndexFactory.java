@@ -55,7 +55,7 @@ public abstract class DataTableIndexFactory
 
         Class<? extends DataTableIndexFactory> clsDtf = cls.asSubclass(DataTableIndexFactory.class);
 
-        Object inst;
+        DataTableIndexFactory inst;
         try
         {
             Constructor<? extends DataTableIndexFactory> c = clsDtf.getDeclaredConstructor();
@@ -77,16 +77,11 @@ public abstract class DataTableIndexFactory
 
         }
 
-        if (!(inst instanceof DataTableIndexFactory factory))
-        {
-            // this should never happen
-            String msg = MessageFormat.format(
-                    "Instance of factory class {0} is not a valid DataTableIndexFactory!", clsName);
-            LOGGER.log(Level.ERROR, msg);
-            throw new IllegalStateException(msg);
-        }
-        return factory;
-
+        // No instanceof re-check here: the constructor came from
+        // clsDtf = cls.asSubclass(DataTableIndexFactory.class), so newInstance() is statically a
+        // DataTableIndexFactory. The former "should never happen" branch was provably dead code
+        // (and its mutants therefore unkillable), so it was removed.
+        return inst;
     }
 
 
