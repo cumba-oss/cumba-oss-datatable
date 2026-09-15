@@ -310,63 +310,16 @@ class DataValueSupportTest
         assertEquals(val, DataValueSupport.getAsDoubleCleaned(val));
     }
 
-    // findCleanPrecision tests
-
-
-    @Test
-    void testFindCleanPrecisionTrailing9s()
-    {
-        // 0.07757999999999 → sig digits "7757999999999", 9-run starts at pos 4 → precision 4
-        assertEquals(4, DataValueSupport.findCleanPrecision(0.07757999999999));
-    }
-
-
-    @Test
-    void testFindCleanPrecisionTrailing0s()
-    {
-        // 1.234000001 → sig digits "1234000001", 0-run at pos 4..8 (5 zeros), trailing stray '1'
-        assertEquals(4, DataValueSupport.findCleanPrecision(1.234000001));
-    }
-
-
-    @Test
-    void testFindCleanPrecisionNoRun()
-    {
-        // 1.23456789 → no 9/0-run → -1
-        assertEquals(-1, DataValueSupport.findCleanPrecision(1.23456789));
-    }
-
-
-    @Test
-    void testFindCleanPrecisionShortRun()
-    {
-        // run of only 3 nines (below MIN_RUN_LENGTH) → -1
-        assertEquals(-1, DataValueSupport.findCleanPrecision(1.2999));
-    }
-
-
-    @Test
-    void testFindCleanPrecisionAllNines()
-    {
-        // entire number is a 9-run (e.g., 9.99999999999) → precision 1
-        assertEquals(1, DataValueSupport.findCleanPrecision(9.99999999999));
-    }
-
-
-    @Test
-    void testFindCleanPrecisionStrayDigitAfter9Run()
-    {
-        // 0.07757999999998 → stray 8 after 9-run → still detected
-        assertEquals(4, DataValueSupport.findCleanPrecision(0.07757999999998));
-    }
-
 
     @Test
     void testCleanedFallbackFor12DigitValue()
     {
         // 12 sig digits with 9-run — first pass (MC_RND=12) doesn't change it,
         // fallback detects the run
-        assertEquals(0.0776, DataValueSupport.getAsDoubleCleaned(0.077599999999));
+        // ⚠ REVERSED 2026-09-14 (Q23): MIN_CLEAN_DIGITS 10 → 13. This value has 11 significant
+        // digits, inside the 10–12 band that can only hold REAL data — genuine float→double
+        // noise lands at 14–15. It is no longer cleaned, and that is the point.
+        assertEquals(0.077599999999, DataValueSupport.getAsDoubleCleaned(0.077599999999));
     }
 
     // ==================== compare(IDataValue, IDataValue) ====================

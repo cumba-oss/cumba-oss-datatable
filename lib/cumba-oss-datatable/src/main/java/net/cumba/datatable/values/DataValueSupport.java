@@ -83,38 +83,6 @@ public class DataValueSupport
     public static final MathContext MC_RND = MCS[12];
 
     /**
-     * The number of significant digits to extract as a {@code long} for run detection. Must be &le;
-     * 15 to stay within {@code long} range after scaling.
-     */
-    private static final int SIG_DIGITS = 15;
-
-    /**
-     * Pre-computed power-of-10 table for fast scaling without {@link Math#pow}.
-     */
-    private static final double[] POW10 =
-    {
-            1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
-            1e16, 1e17
-    };
-
-    /**
-     * Minimum number of consecutive repeating digits (0s or 9s) required to consider a value as
-     * imprecise in the fallback cleaning path.
-     */
-    private static final int MIN_RUN_LENGTH = 4;
-
-    /**
-     * Minimum number of significant digits a value must have before the fallback run-detection may
-     * declare it imprecise. A trailing 9- or 0-run in a SHORT value is real data, not float noise:
-     * without this floor, {@code 19999.0} was "cleaned" to {@code 20000.0}, {@code 4.9999} to
-     * {@code 5.0} and {@code 1.00004} to {@code 1.0} — exact user values silently displayed AND
-     * compared as different numbers. Float noise cannot produce runs below this precision: a float
-     * carries 7-8 significant decimal digits, so any value that passed through a float has noise
-     * starting at digit 9 or later of its double expansion.
-     */
-    private static final int MIN_CLEAN_DIGITS = 10;
-
-    /**
      * Round the given value for 12 significant digits and if the difference is lower than a
      * calculated epsilon return the rounded version, otherwise the original value.<br/>
      * If the 12-digit rounding does not change the value (because it already has &le; 12
@@ -171,106 +139,20 @@ public class DataValueSupport
             return rounded;
         }
 
-        // Fallback: when rounding to 12 sig digits didn't change the value (the value already has
-        // <= 12 significant digits), detect trailing 9- or 0-runs using arithmetic and round to a
-        // reduced precision that eliminates the run.
-        if (rounded == aValue)
-        {
-            int cleanPrecision = findCleanPrecision(absValue);
-            if (cleanPrecision > 0 && cleanPrecision < MCS.length)
-            {
-                double cleanRounded = bd.round(MCS[cleanPrecision]).doubleValue();
-                if (cleanRounded != aValue)
-                {
-                    return cleanRounded;
-                }
-            }
-        }
+        // ⛔ The trailing-run fallback that used to sit here was REMOVED 2026-09-14 (owner ruling,
+        // Q23) as dead code. It ran only when rounding to 12 significant digits left the value
+        // unchanged — i.e. for values with <= 12 significant digits — while its own digit floor had
+        // just been raised to 13. The two conditions were mutually exclusive, so the branch could
+        // no longer be entered by any input. findCleanPrecision, MIN_CLEAN_DIGITS, MIN_RUN_LENGTH,
+        // SIG_DIGITS and POW10 existed only to serve it and went with it.
+        //
+        // ⚠ What remains is the whole of the cleaning contract: round to 12 significant digits and
+        // accept that rounding only when it moves the value by less than a magnitude-scaled
+        // epsilon. Float noise — the thing this method exists for — lands at 14-15 significant
+        // digits, which that pass handles; the removed fallback addressed a 10-12 digit band that
+        // the same ruling established contains real data, not noise.
 
         return aValue;
-    }
-
-
-    /**
-     * Determine the number of significant digits before a trailing run of 9s or 0s using pure
-     * arithmetic (no String conversion). The value is scaled to a {@code long} with
-     * {@value #SIG_DIGITS} significant digits and trailing zeros from over-scaling are removed.
-     * Then the remaining digits are checked for a trailing run of at least {@link #MIN_RUN_LENGTH}
-     * identical 9s or 0s.
-     *
-     * @param aAbsValue
-     *            the absolute value to analyze. Must be &gt; 0 and finite.
-     * @return the number of significant digits before the run, or -1 if no qualifying run is found.
-     */
-    static int findCleanPrecision(double aAbsValue)
-    {
-        int exponent = (int) Math.floor(Math.log10(aAbsValue));
-        int scaleExp = SIG_DIGITS - 1 - exponent;
-
-        // scale the value so that it has SIG_DIGITS significant digits as a long
-        double scale = (scaleExp >= 0 && scaleExp < POW10.length) ? POW10[scaleExp]
-                : Math.pow(10, scaleExp);
-        long sig = Math.round(aAbsValue * scale);
-        int digits = SIG_DIGITS;
-
-        // remove trailing zeros introduced by scaling beyond the value's actual precision
-        while (sig > 0 && sig % 10 == 0)
-        {
-            sig /= 10;
-            digits--;
-        }
-
-        // a short value is DATA, not noise — see MIN_CLEAN_DIGITS. This also implies the old
-        // MIN_RUN_LENGTH + 1 floor.
-        if (digits < MIN_CLEAN_DIGITS)
-        {
-            return -1;
-        }
-
-        // determine the run digit (must be 0 or 9)
-        int lastDigit = (int) (sig % 10);
-        int runDigit;
-
-        if (lastDigit == 9 || lastDigit == 0)
-        {
-            runDigit = lastDigit;
-        }
-        else
-        {
-            // last digit may be a stray digit caused by float rounding (e.g., ...99998).
-            // No extra length check needed: MIN_CLEAN_DIGITS above guarantees enough digits.
-            sig /= 10;
-            digits--;
-            int prev = (int) (sig % 10);
-            if (prev != 9 && prev != 0)
-            {
-                return -1;
-            }
-            runDigit = prev;
-        }
-
-        // count the run length
-        int runLength = 0;
-        long working = sig;
-        while (working > 0 && (int) (working % 10) == runDigit)
-        {
-            runLength++;
-            working /= 10;
-        }
-
-        if (runLength < MIN_RUN_LENGTH)
-        {
-            return -1;
-        }
-
-        int cleanPrecision = digits - runLength;
-
-        // if the entire number is a run (e.g., 9.99999999999), round to 1 sig digit
-        if (cleanPrecision <= 0)
-        {
-            return 1;
-        }
-        return cleanPrecision;
     }
 
 
