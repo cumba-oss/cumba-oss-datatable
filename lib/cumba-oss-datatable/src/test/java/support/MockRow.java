@@ -44,7 +44,7 @@ public class MockRow implements IDataTableRow
     @Override
     public IDataValue getDataValue(int aColumn) throws IndexOutOfBoundsException
     {
-        if (aColumn >= 0 && aColumn <= getColumnCount())
+        if (aColumn >= 0 && aColumn < getColumnCount())
         {
             return columnValues[aColumn];
         }

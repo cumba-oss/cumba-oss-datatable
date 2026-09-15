@@ -234,7 +234,8 @@ public interface IDataTable
      * @return a Stream that contains the requested columns. <br/>
      *         If the same column is referenced multiple times, it is returned as many times as it
      *         is requested.<br/>
-     *         If a name is provided that does not match any column, this name is ignored.
+     *         A name that does not match any column raises {@code NoSuchElementException} (use the
+     *         meta's {@code getOptionalColumns} for ignore-unknown semantics).
      */
     default Stream<IDataTableColumn> getColumns(String... aColumnNames)
     {
@@ -250,7 +251,8 @@ public interface IDataTable
      * @return a Stream that contains the requested columns. <br/>
      *         If the same column is referenced multiple times, it is returned as many times as it
      *         is requested.<br/>
-     *         If a name is provided that does not match any column, this name is ignored.
+     *         A name that does not match any column raises {@code NoSuchElementException} (use the
+     *         meta's {@code getOptionalColumns} for ignore-unknown semantics).
      */
     default Stream<IDataTableColumn> getColumns(Collection<String> aColumnNames)
     {

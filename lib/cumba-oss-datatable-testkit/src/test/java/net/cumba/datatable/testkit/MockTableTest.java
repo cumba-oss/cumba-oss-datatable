@@ -3,9 +3,12 @@ package net.cumba.datatable.testkit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import java.util.NoSuchElementException;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
@@ -209,13 +212,29 @@ class MockTableTest
 
 
     @Test
-    void outOfRangeRowReadsAsBlankRatherThanThrowing()
+    void outOfRangeRowThrowsLikeARealColumn()
     {
+        // ⚠ This test used to be outOfRangeRowReadsAsBlankRatherThanThrowing, and it PINNED a
+        // shape no real column produces. CachedDataTableColumn opens every accessor with
+        // ensureValidRow(aRow) and ColumnCachedDataTable re-checks aRow against getRowCount(),
+        // so a past-the-end read throws IndexOutOfBoundsException -- it does not answer blank.
+        // A downstream test that walked one row too far passed against the mock and would have
+        // failed against every real table. Changed 2026-09-11 with the mock.
         IDataTable t = MockTable.of().col("X", "v").build();
 
-        assertNull(t.getColumn(0).getValue(9));
-        assertTrue(t.getColumn(0).isMissingOrNull(9));
-        assertTrue(t.getColumn(0).isMissingOrNull(-1));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).getValue(9));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).isMissingOrNull(9));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).isEmptyOrMissing(9));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).hashCodeAt(9));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).getDataValue(9));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).getValue(-1));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).isMissingOrNull(-1));
+        // ... and the same through the TABLE view, which in a real table is literally the same
+        // call (ColumnCachedDataTable.getValue(row, col) is getColumn(col).getValue(row)).
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getValue(9, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getDataValue(9, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.hashCodeAt(9, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.isEmptyOrMissing(9, 0));
     }
 
     // ---- column metadata ---------------------------------------------
@@ -280,6 +299,188 @@ class MockTableTest
 
 
     @Test
+    void tableViewAndMetaViewAgreeOnColumnCountAndOnAnUnknownName()
+    {
+        // ⚠ Both are DEFAULT methods on IDataTable, so Mockito answered 0 for getColumnCount()
+        // and 0 -- i.e. "column 0" -- for the index of a name the table does not have, while the
+        // meta view answered 2 and -1. LibraryValidator writes table.getColumnCount() into every
+        // validation-report record, so each one built over a MockTable recorded zero columns.
+        IDataTable t = MockTable.of().col("A", "x").col("B", "y").build();
+
+        assertEquals(2, t.getColumnCount());
+        assertEquals(t.getMetaData().getColumnCount(), t.getColumnCount());
+        assertEquals(1, t.getColumnIndex("B"));
+        assertEquals(-1, t.getColumnIndex("NOPE"));
+        assertEquals(t.getMetaData().getColumnIndex("NOPE"), t.getColumnIndex("NOPE"));
+    }
+
+
+    @Test
+    void tableGetDataValueDelegatesToTheColumnView()
+    {
+        // IDataTable.getDataValue(row, col) is a DEFAULT method, `getColumn(col).getDataValue
+        // (row)`, and Mockito does NOT run an unstubbed default method -- so MockTable stubs the
+        // table view as well, from the SAME cells array as the column view. ⛔ Do not "simplify"
+        // by deleting that stub on the strength of a NO_COVERAGE report against it: that reading
+        // is a pitest lambda-attribution artifact and deleting the stub took 14 tests red
+        // (measured 2026-09-11). This test pins that the two views answer the same INSTANCE, not
+        // merely an equal one, which is what makes the duplication safe.
+        IDataTable t = MockTable.of().col("A", "x").colLong("L", 7L).build();
+
+        for (int c = 0; c < 2; c++)
+        {
+            assertSame(t.getColumn(c).getDataValue(0), t.getDataValue(0, c));
+        }
+        assertEquals("x", t.getDataValue(0, 0).getValue());
+        assertEquals(7L, t.getDataValue(0, 1).getValue());
+        // ... and the bounds of both dimensions still bite through the delegation.
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getDataValue(1, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getDataValue(0, 2));
+    }
+
+
+    @Test
+    void containsColumnAnswersTrueForTheColumnsTheTableActuallyHas()
+    {
+        // The three contains*Column methods are DEFAULT methods on IDataTableMeta implemented
+        // over getOptionalColumn, so an unstubbed mock answered FALSE for every column the table
+        // has -- an affirmatively wrong answer, not merely an empty one.
+        DataTableMeta m = MockTable.of().col("A", "x").col("B", "y").build().getMetaData();
+
+        assertTrue(m.containsColumn("A"));
+        assertTrue(m.containsColumn("B"));
+        assertFalse(m.containsColumn("NOPE"));
+        assertTrue(m.containsAllColumns("A", "B"));
+        assertFalse(m.containsAllColumns("A", "NOPE"));
+        assertTrue(m.containsAllColumns(), "an empty array is vacuously all-present");
+        assertTrue(m.containsAnyColumn("NOPE", "B"));
+        assertFalse(m.containsAnyColumn("NOPE", "ALSO_NOPE"));
+        assertFalse(m.containsAnyColumn(), "an empty array contains nothing");
+    }
+
+
+    @Test
+    void theWholeByNameAccessorFamilyAgreesWithItself()
+    {
+        // ⚠⚠ The inconsistency this pins is worse than a uniformly broken mock: containsColumn
+        // and getOptionalColumn were stubbed while getColumn(String) answered null and
+        // getAllColumns answered an EMPTY Stream, so a production path that checks containsColumn
+        // and then calls getColumn took the happy branch and NPEd. getAllColumns is read at 63
+        // main-code sites and the getColumns overloads at 94.
+        IDataTable t = MockTable.of().col("A", "x").col("B", "y").build();
+        DataTableMeta m = t.getMetaData();
+
+        assertEquals(List.of("A", "B"),
+                m.getAllColumns().map(DataTableColumnMeta::getName).toList());
+        // A FRESH Stream per call -- a cached one would throw IllegalStateException here.
+        assertEquals(2, m.getAllColumns().count());
+        assertEquals(2, m.getAllColumns().count());
+        assertEquals(List.of("A", "B"),
+                java.util.Arrays.stream(m.getColumns()).map(DataTableColumnMeta::getName).toList());
+
+        assertEquals("B", m.getColumn("B").getName());
+        assertSame(m.getOptionalColumn("B"), m.getColumn("B"));
+        assertEquals(NoSuchElementException.class,
+                assertThrows(NoSuchElementException.class, () -> m.getColumn("NOPE")).getClass());
+
+        assertEquals(List.of("B", "A"),
+                m.getColumns("B", "A").map(DataTableColumnMeta::getName).toList());
+        assertEquals(List.of("A", "B"),
+                m.getColumns(List.of("A", "B")).map(DataTableColumnMeta::getName).toList());
+        assertEquals(List.of("B", "B"),
+                m.getColumns(1, 1).map(DataTableColumnMeta::getName).toList());
+        assertEquals(List.of("A", "B"),
+                m.getColumns(0, 1).map(DataTableColumnMeta::getName).toList());
+        assertThrows(NoSuchElementException.class, () -> m.getColumns("A", "NOPE").toList());
+        // ⚠ The MESSAGE again: index == columnCount is the boundary, and past it the raw array
+        // access raises an IndexOutOfBoundsException SUBCLASS that a type-only assertion accepts.
+        assertEquals("column 2 is out of bounds, valid range is [0, 2)",
+                assertThrows(IndexOutOfBoundsException.class, () -> m.getColumns(0, 2).toList())
+                        .getMessage());
+        assertEquals("column -1 is out of bounds, valid range is [0, 2)",
+                assertThrows(IndexOutOfBoundsException.class, () -> m.getColumns(-1).toList())
+                        .getMessage());
+        // getOptionalColumns SKIPS what it cannot resolve rather than throwing.
+        assertEquals(List.of("A"),
+                m.getOptionalColumns("A", "NOPE").map(DataTableColumnMeta::getName).toList());
+
+        // ... and the table view mirrors all of it, onto this table's own columns.
+        assertSame(t.getColumn(0), t.getColumn("A"));
+        assertSame(t.getColumn(1), t.getColumn("B"));
+        assertThrows(NoSuchElementException.class, () -> t.getColumn("NOPE"));
+        assertEquals(List.of(t.getColumn(0), t.getColumn(1)), t.getColumns().toList());
+        assertEquals(List.of(t.getColumn(1), t.getColumn(0)), t.getColumns("B", "A").toList());
+        assertEquals(List.of(t.getColumn(0)), t.getColumns(List.of("A")).toList());
+        assertEquals(List.of(t.getColumn(0), t.getColumn(1)), t.getColumns(0, 1).toList());
+        assertEquals(List.of(t.getColumn(1)), t.getColumns(1).toList());
+        assertThrows(NoSuchElementException.class, () -> t.getColumns("NOPE").toList());
+        assertEquals("column 2 is out of bounds, valid range is [0, 2)",
+                assertThrows(IndexOutOfBoundsException.class, () -> t.getColumns(2).toList())
+                        .getMessage());
+        assertEquals("column -1 is out of bounds, valid range is [0, 2)",
+                assertThrows(IndexOutOfBoundsException.class, () -> t.getColumns(-1).toList())
+                        .getMessage());
+    }
+
+
+    @Test
+    void aBuiltTableIsFrozen_mutatingTheBuilderAfterwardsChangesNothing()
+    {
+        // ⚠ The stub-to-answer conversion made this a real hazard: an answer runs at CALL time,
+        // so an answer that read the builder's caseInsensitiveColumns field would let a later
+        // caseInsensitiveColumnNames() retroactively change an ALREADY BUILT table's name
+        // resolution. The flag is captured once in build() instead.
+        MockTable builder = MockTable.of().col("Abc", "x");
+        IDataTable strict = builder.build();
+        assertEquals(-1, strict.getMetaData().getColumnIndex("ABC"));
+
+        builder.caseInsensitiveColumnNames();
+        IDataTable lenientTable = builder.build();
+
+        assertEquals(-1, strict.getMetaData().getColumnIndex("ABC"),
+                "the already-built table must not have changed");
+        assertNull(strict.getMetaData().getOptionalColumn("ABC"));
+        assertFalse(strict.getMetaData().containsColumn("ABC"));
+        assertEquals(0, lenientTable.getMetaData().getColumnIndex("ABC"),
+                "the newly built one picks the flag up");
+    }
+
+
+    @Test
+    void outOfRangeColumnIndexThrowsLikeARealTable()
+    {
+        // ColumnCachedDataTable.getColumn(int) and DataTableMeta.getColumn(int) both range-check
+        // and raise IndexOutOfBoundsException; the mock answered null, and table.getValue(row,
+        // badCol) answered a plausible-looking null cell.
+        IDataTable t = MockTable.of().col("A", "x").build();
+
+        // ⚠ Assert the MESSAGE, not merely the type. Index == columnCount is the boundary that
+        // separates `idx >= count` from `idx > count`, and under the `>` mutant the index falls
+        // through to colNames[idx] / List.get(idx), which raise IndexOutOfBoundsException
+        // SUBCLASSES -- so a type-only assertion is satisfied by the mutant and proves nothing.
+        assertEquals("column 1 is out of bounds, valid range is [0, 1)",
+                assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(1)).getMessage());
+        assertEquals("column -1 is out of bounds, valid range is [0, 1)",
+                assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(-1)).getMessage());
+        assertEquals("column 1 is out of bounds, valid range is [0, 1)",
+                assertThrows(IndexOutOfBoundsException.class, () -> t.getMetaData().getColumn(1))
+                        .getMessage());
+        assertEquals("column -1 is out of bounds, valid range is [0, 1)",
+                assertThrows(IndexOutOfBoundsException.class, () -> t.getMetaData().getColumn(-1))
+                        .getMessage());
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getValue(0, 1));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.getDataValue(0, 1));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.hashCodeAt(0, 1));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.isMissingOrNull(0, 1));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.isEmptyOrMissing(0, 1));
+        // ... and the index that DOES exist still answers, i.e. the broad default did not
+        // swallow the per-column stubs registered after it.
+        assertEquals("x", t.getValue(0, 0));
+        assertEquals("x", t.getColumn(0).getValue(0));
+    }
+
+
+    @Test
     void columnNamesAreCaseSensitiveByDefault()
     {
         IDataTable t = MockTable.of().col("Abc", "x").build();
@@ -291,14 +492,27 @@ class MockTableTest
 
 
     @Test
-    void caseInsensitiveColumnNames_resolvesBothCasings()
+    void caseInsensitiveColumnNames_resolvesANYCasing_notJustUpperAndLower()
     {
-        IDataTable t = MockTable.of().col("Abc", "x").caseInsensitiveColumnNames().build();
+        // ⚠ The opt-in used to stub exactly two variants, colName.toUpperCase and
+        // .toLowerCase. A real table resolves through CDT.equalsIgnoreCase, so "UsubjId" finds a
+        // USUBJID column -- and here it did not, with the opt-in ON. Mixed case is the common
+        // spelling in a Define-XML ItemDef, so the opt-in's name over-promised.
+        IDataTable t = MockTable.of().caseInsensitiveColumnNames().col("USUBJID", "S1").build();
+        DataTableMeta m = t.getMetaData();
 
-        assertEquals(0, t.getMetaData().getColumnIndex("ABC"));
-        assertEquals(0, t.getMetaData().getColumnIndex("abc"));
-        assertEquals(0, t.getMetaData().getColumnIndex("Abc"));
-        assertEquals("Abc", t.getMetaData().getOptionalColumn("abc").getName());
+        for (String spelling : new String[]
+        {
+                "USUBJID", "usubjid", "UsubjId", "uSuBjId"
+        })
+        {
+            assertEquals(0, m.getColumnIndex(spelling), spelling);
+            assertEquals("USUBJID", m.getOptionalColumn(spelling).getName(), spelling);
+            assertTrue(m.containsColumn(spelling), spelling);
+            assertEquals(0, t.getColumnIndex(spelling), spelling);
+        }
+        assertEquals(-1, m.getColumnIndex("SUBJID"));
+        assertNull(m.getOptionalColumn("SUBJID"));
     }
 
     // ---- table-level metadata ----------------------------------------
@@ -489,16 +703,22 @@ class MockTableTest
 
 
     @Test
-    void plainStringColumn_parsesANumericCellAsADouble()
+    void plainStringColumn_answersNaNForANumericCell_likeDataValueString()
     {
-        // Covers mockDataValue's Double.parseDouble SUCCESS branch, which no other test reached:
-        // every other col(...) value in this class is non-numeric, so only the
-        // NumberFormatException
-        // arm ran and any mutant in the success arm was unkillable.
-        IDataTable t = MockTable.of().col("N", "42", "notnum").build();
+        // ⚠⚠ This test used to be plainStringColumn_parsesANumericCellAsADouble and it PINNED a
+        // shape no real character column produces. DataValueString -- the cell every real
+        // character column hands back -- OVERRIDES getValueAsDouble with a hard
+        // `return Double.NaN`, precisely to stop a Char column being read as numeric. The mock
+        // parsed the text instead, so "42" answered 42.0 and ScalarSemantics' numeric branch
+        // fired on cells where the product falls back to a textual comparison. Changed with the
+        // mock, 2026-09-11.
+        IDataTable t = MockTable.of().col("N", "42", "x").build();
 
-        assertEquals(42.0d, t.getDataValue(0, 0).getValueAsDouble());
+        assertEquals(DataValueType.STRING, t.getDataValue(0, 0).getType());
         assertEquals("42", t.getDataValue(0, 0).getValue());
+        assertEquals("42", t.getDataValue(0, 0).getValueAsString());
+        assertTrue(Double.isNaN(t.getDataValue(0, 0).getValueAsDouble()),
+                "a STRING cell is NaN however numeric its text looks -- see DataValueString");
         assertTrue(Double.isNaN(t.getDataValue(1, 0).getValueAsDouble()));
     }
 
@@ -506,15 +726,103 @@ class MockTableTest
     @Test
     void cellAt_rowExactlyEqualToRowCountIsOutOfRange()
     {
-        // The boundary that separates `row >= length` from `row > length`. The existing
+        // The boundary that separates `row >= length` from `row > length`. The other
         // out-of-range test reads row 9 of a 1-row column, which both forms answer identically;
-        // only row == rowCount distinguishes them, and the mutant throws
-        // ArrayIndexOutOfBoundsException instead of answering null.
+        // only row == rowCount distinguishes them -- under the mutant the last row would be
+        // readable AND row == rowCount would read aCells[rowCount], i.e. a raw
+        // ArrayIndexOutOfBoundsException rather than the IndexOutOfBoundsException a real column
+        // raises. Both are subclasses of RuntimeException, so assert the exact exception type.
         IDataTable t = MockTable.of().col("X", "v").build();
 
         assertEquals("v", t.getColumn(0).getValue(0));
-        assertNull(t.getColumn(0).getValue(1));
-        assertTrue(t.getColumn(0).isMissingOrNull(1));
+        assertEquals(IndexOutOfBoundsException.class,
+                assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).getValue(1))
+                        .getClass(),
+                "row == rowCount must raise IndexOutOfBoundsException itself, not the"
+                        + " ArrayIndexOutOfBoundsException subclass a raw array access raises");
+    }
+
+    // ---- ragged tables are rejected ----------------------------------
+
+
+    @Test
+    void raggedTable_aLongerLaterColumnIsRejectedRatherThanTruncated()
+    {
+        // ⚠⚠ This used to build silently: the row count was taken from the FIRST column and the
+        // second column's extra values were simply never stubbed. The fixture then held less
+        // data than the test declared, and nothing said so. It really happened -- a downstream
+        // rule test in cumba-corej-core declared a two-value partner column beside a one-value
+        // coded column and the second value was dropped for as long as that test existed.
+        MockTable mt = MockTable.of().col("PARAMCD", "ZZZ").col("PARAM", "Albumin", "Bilirubin");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, mt::build);
+        assertTrue(ex.getMessage().contains("PARAM"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("Ragged"), ex.getMessage());
+    }
+
+
+    @Test
+    void raggedTable_aShorterLaterColumnIsRejectedWithANamedError()
+    {
+        // The other direction used to die inside the stubbing loop with a bare
+        // ArrayIndexOutOfBoundsException naming neither the column nor the counts.
+        MockTable mt = MockTable.of().col("A", "1", "2").col("B", "x");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, mt::build);
+        assertTrue(ex.getMessage().contains("'B' has 1 values"), ex.getMessage());
+        assertTrue(ex.getMessage().contains("already has 2 rows"), ex.getMessage());
+    }
+
+
+    @Test
+    void raggedTable_aZeroRowFirstColumnStillFixesTheRowCount()
+    {
+        // ⭐ The case that separates `rowCount < 0` from `rowCount <= 0`: a zero-row first column
+        // has ALREADY fixed the table at 0 rows, so a later column with values is ragged. Under
+        // the boundary mutant the 0 would read as "not yet adopted" and the later column would
+        // silently redefine the table -- which is the very truncation this guard removes.
+        MockTable mt = MockTable.of().col("EMPTY").col("B", "x");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, mt::build);
+        assertTrue(ex.getMessage().contains("already has 0 rows"), ex.getMessage());
+    }
+
+
+    @Test
+    void raggedTable_isCheckedAcrossEVERYColumnKindNotJustStringColumns()
+    {
+        // The row count is adopted in four separate loops (string, sas-missing, long, double),
+        // and the kinds are visited in that order regardless of declaration order. Each loop
+        // must carry the same guard, so drive one disagreement per kind.
+        assertThrows(IllegalStateException.class,
+                () -> MockTable.of().col("A", "1").colSasMissing("S", "1", "2").build());
+        assertThrows(IllegalStateException.class,
+                () -> MockTable.of().col("A", "1").colLong("L", 1L, 2L).build());
+        assertThrows(IllegalStateException.class,
+                () -> MockTable.of().col("A", "1").colDouble("D", 1.0d, 2.0d).build());
+        // ... and a sas-missing FIRST column is what fixes the count for the numeric ones, since
+        // the string loop runs before it and contributes nothing here.
+        assertThrows(IllegalStateException.class,
+                () -> MockTable.of().colSasMissing("S", "1").colLong("L", 1L, 2L).build());
+        assertThrows(IllegalStateException.class,
+                () -> MockTable.of().colLong("L", 1L).colDouble("D", 1.0d, 2.0d).build());
+    }
+
+
+    @Test
+    void raggedCheck_acceptsAUniformTableOfEveryKindIncludingAZeroRowOne()
+    {
+        // The guard must not fire on the shapes that ARE legal, or it would be a gate that
+        // rejects everything. Equal lengths across all four kinds, and an all-empty table.
+        IDataTable t = MockTable.of().col("A", "1", "2").colSasMissing("S", "3", null)
+                .colLong("L", 4L, null).colDouble("D", 5.0d, null).build();
+        assertEquals(2L, t.getRowCount());
+        assertEquals(4, t.getMetaData().getColumnCount());
+
+        IDataTable empty = MockTable.of().col("A").colLong("L").build();
+        assertEquals(0L, empty.getRowCount());
+        assertEquals(2, empty.getMetaData().getColumnCount());
+        assertThrows(IndexOutOfBoundsException.class, () -> empty.getColumn(0).getValue(0));
     }
 
 
@@ -575,7 +883,8 @@ class MockTableTest
 
         assertEquals(DataValueType.STRING, t.getMetaData().getOptionalColumn("D").getType());
         assertEquals("1.5", t.getValue(0, 0));
-        assertEquals(1.5d, t.getDataValue(0, 0).getValueAsDouble());
+        assertTrue(Double.isNaN(t.getDataValue(0, 0).getValueAsDouble()),
+                "a STRING-typed colSasMissing cell answers NaN, exactly as DataValueString does");
         assertEquals(MissingValue.MIS, t.getValue(1, 0));
     }
 

@@ -104,6 +104,17 @@ public class DataValueSupport
     private static final int MIN_RUN_LENGTH = 4;
 
     /**
+     * Minimum number of significant digits a value must have before the fallback run-detection may
+     * declare it imprecise. A trailing 9- or 0-run in a SHORT value is real data, not float noise:
+     * without this floor, {@code 19999.0} was "cleaned" to {@code 20000.0}, {@code 4.9999} to
+     * {@code 5.0} and {@code 1.00004} to {@code 1.0} — exact user values silently displayed AND
+     * compared as different numbers. Float noise cannot produce runs below this precision: a float
+     * carries 7-8 significant decimal digits, so any value that passed through a float has noise
+     * starting at digit 9 or later of its double expansion.
+     */
+    private static final int MIN_CLEAN_DIGITS = 10;
+
+    /**
      * Round the given value for 12 significant digits and if the difference is lower than a
      * calculated epsilon return the rounded version, otherwise the original value.<br/>
      * If the 12-digit rounding does not change the value (because it already has &le; 12
@@ -209,7 +220,9 @@ public class DataValueSupport
             digits--;
         }
 
-        if (digits < MIN_RUN_LENGTH + 1)
+        // a short value is DATA, not noise — see MIN_CLEAN_DIGITS. This also implies the old
+        // MIN_RUN_LENGTH + 1 floor.
+        if (digits < MIN_CLEAN_DIGITS)
         {
             return -1;
         }
@@ -224,11 +237,8 @@ public class DataValueSupport
         }
         else
         {
-            // last digit may be a stray digit caused by float rounding (e.g., ...99998)
-            if (digits < MIN_RUN_LENGTH + 2)
-            {
-                return -1;
-            }
+            // last digit may be a stray digit caused by float rounding (e.g., ...99998).
+            // No extra length check needed: MIN_CLEAN_DIGITS above guarantees enough digits.
             sig /= 10;
             digits--;
             int prev = (int) (sig % 10);

@@ -364,6 +364,26 @@ class TestMetadataFixturesTest
         assertEquals("C49487", e.getConceptId());
     }
 
+
+    @Test
+    void entry_carriesNoMetadataOfItsOwn_asEVERYProductionEntryDoes()
+    {
+        // ⭐ Not an omission: an ICodelistEntry is the one metadata element that carries no meta
+        // map in ANY shipped implementation. CdiscLibraryMetadataLibrary.CdiscCodelistEntry
+        // answers Set.of() / Optional.empty(); DefineMetadataLibrary.DefineCodelistEntry answers
+        // Collections.emptySet() / Optional.empty(); so does MapBackedLibraryMetadataProvider's.
+        // So the fixture must NOT gain a meta setter -- that would let a downstream test build a
+        // term shape no Define-XML or CDISC Library load can produce. This test is what says the
+        // emptiness is a decision rather than an untested accessor.
+        for (ICodelistEntry e : List.of(TestMetadataFixtures.entry("Y", "Yes"),
+                TestMetadataFixtures.entry("N", "No", "C49487")))
+        {
+            assertEquals(Set.of(), e.getMetaKeys());
+            assertTrue(e.getMetaValue("anything").isEmpty());
+            assertThrows(UnsupportedOperationException.class, () -> e.getMetaKeys().add("x"));
+        }
+    }
+
     // ---- builder identity --------------------------------------------
 
 
