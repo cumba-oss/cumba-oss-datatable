@@ -242,6 +242,19 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * ⚠ {@link IDataBuffer#isMissing(int)} is <b>not</b> sufficient on its own: its contract — and
+     * its default implementation — only recognise {@link MissingValue} instances, so a stored
+     * {@code null} answers {@code false} there while this method's contract (and
+     * {@link #isEmptyOrMissing(long)} right below) count it as missing. The general path below
+     * therefore reads the value and applies the interface's own {@code null || MissingValue} test.
+     * {@code DataBuffer0Bit} already pre-computes missingness that way, so this only repairs the
+     * buffers that inherit the default.
+     * </p>
+     */
     @Override
     public boolean isMissingOrNull(long aRow) throws IndexOutOfBoundsException
     {
@@ -250,7 +263,14 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
         {
             return true;
         }
-        return dataBuffer.isMissing(idx);
+        if (type == DataValueType.DOUBLE)
+        {
+            // No null can live in a double buffer, and isMissing reads the primitive storage
+            // without boxing the value the general path below would box (see isEmptyOrMissing).
+            return dataBuffer.isMissing(idx);
+        }
+        Object v = dataBuffer.getValue(idx);
+        return v == null || v instanceof MissingValue;
     }
 
 

@@ -6,7 +6,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
@@ -56,9 +55,6 @@ public class OverlayDataTable extends AbstractDataTable
 
     /** Maps overlay column index → column name (for removed/renamed tracking). */
     private final List<String> columnNames = new ArrayList<>();
-
-    /** Set of removed delegate column indices. */
-    private final Set<Integer> removedDelegateColumns = new java.util.LinkedHashSet<>();
 
     /** Overridden table name (null = use delegate's name). */
     private @Nullable String nameOverride;
@@ -246,11 +242,6 @@ public class OverlayDataTable extends AbstractDataTable
             return false;
         }
 
-        int delegateIdx = columnMapping.get(idx);
-        if (delegateIdx >= 0)
-        {
-            removedDelegateColumns.add(delegateIdx);
-        }
         // columnMapping is a List<Integer>, so remove(int) and remove(Object) are genuinely
         // ambiguous to a reader. idx is an int, so this is index-based removal, matching the
         // other two lines: columnNames drops the same position, and columnMetaOverrides is a

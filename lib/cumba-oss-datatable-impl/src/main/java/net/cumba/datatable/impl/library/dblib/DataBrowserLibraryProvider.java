@@ -241,7 +241,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             IDataTable table;
             try
             {
-                table = DataTableProviderFactory.getFactory().provide(tableUri, null);
+                table = loadMetaTable(tableUri);
             }
             catch (Exception ex)
             {
@@ -264,7 +264,12 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
                 continue;
             }
 
-            long rowCount = table.getMetaData().getRowCount();
+            // The live row count, not DataTableMeta.rowCount: the latter is a snapshot that
+            // defaults to 0 and is documented as "might be -1". A provider that leaves it unset
+            // would make this loop read no rows at all and silently drop every external column
+            // label/type/format; a table view whose meta still carries the *source* count would
+            // read past the end and throw IndexOutOfBoundsException out of this method.
+            long rowCount = table.getRowCount();
             for (long row = 0; row < rowCount; row++)
             {
                 String rowUriStr = table.getDataValue(row, uriCol).getValueAsString();
@@ -426,6 +431,22 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
     private boolean uriMatches(URI aResolvedUri, URI aMemberUri)
     {
         return aResolvedUri.normalize().equals(aMemberUri.normalize());
+    }
+
+
+    /**
+     * Loads an external column-metadata table through the registered data-table providers.
+     *
+     * @param aTableUri
+     *            the absolute URI of the metadata table.
+     * @return the loaded table, or {@code null} when no provider can read the URI.
+     * @throws IOException
+     *             if a provider failed to read the table.
+     */
+    @Nullable
+    IDataTable loadMetaTable(URI aTableUri) throws IOException
+    {
+        return DataTableProviderFactory.getFactory().provide(aTableUri, null);
     }
 
 }

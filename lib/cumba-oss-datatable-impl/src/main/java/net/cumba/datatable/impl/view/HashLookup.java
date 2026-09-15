@@ -76,8 +76,15 @@ public class HashLookup
      * is acutely sensitive to the table capacity. Mixing the bits first spreads such keys uniformly
      * and removes the clustering (and the capacity-dependent cliff). Applied identically on
      * {@link #put} and {@link #get}, so insert and probe always agree on the slot.
+     * <p>
+     * Package-private rather than private so the finalizer's two defining properties can be
+     * asserted directly: it must be injective over a structured key family, and it must avalanche
+     * (every input bit must flip every output bit about half the time). Neither is observable
+     * through {@code put}/{@code get}, which apply the same function on both sides and therefore
+     * agree on the slot no matter how badly it mixes - the damage is a pathological probe chain,
+     * not a wrong answer.
      */
-    private static int mix(int aHash)
+    static int mix(int aHash)
     {
         int h = aHash;
         h ^= h >>> 16;

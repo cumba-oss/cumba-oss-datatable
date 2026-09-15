@@ -84,7 +84,9 @@ class DataTableSupportTest
     @Test
     void isDataEqual_differentColumnCount_returnsFalse()
     {
-        ColumnCachedDataTable t1 = createTable("A");
+        // Same height as createTwoColumnTable() — otherwise the comparison stops at the row-count
+        // check and this test never reaches the column count it is named after.
+        ColumnCachedDataTable t1 = createTable("A", "B", "C", "D", "E");
         ColumnCachedDataTable t2 = createTwoColumnTable();
         DataTableSupport support = new DataTableSupport();
         assertFalse(support.isDataEqual(t1, t2));

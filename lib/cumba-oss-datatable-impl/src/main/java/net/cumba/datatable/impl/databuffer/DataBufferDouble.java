@@ -47,10 +47,13 @@ public class DataBufferDouble extends AbstractNumericDataBuffer
 
         if (aValue instanceof Long)
         {
-            // we can't store all long values so we need to check
-            double dblVal = num.doubleValue();
-            long longVal = num.longValue();
-            return dblVal == longVal;
+            // we can't store all long values so we need to check.
+            // ⚠ The round trip has to come back through long: comparing the double against the
+            // long promotes the long to double first, so `dblVal == longVal` is the tautology
+            // `(double) v == (double) v` and was true for EVERY long - including the ones the
+            // check exists to reject. 2^53+1 was accepted and read back as 2^53. Same predicate
+            // as canStoreLong below, which always had it right.
+            return canStoreLong(num.longValue());
         }
         // we can store all other numbers (expecting only primitive type numbers are used)
         return true;
