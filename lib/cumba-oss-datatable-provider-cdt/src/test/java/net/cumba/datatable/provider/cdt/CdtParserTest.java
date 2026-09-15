@@ -3,6 +3,7 @@ package net.cumba.datatable.provider.cdt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.stream.Stream;
@@ -238,7 +239,33 @@ class CdtParserTest
                 dataset DM
                 ---
                 S001
-                """));
+                """),
+                Arguments.of("noFenceEofRightAfterColumns", "dataset DM\ncol USUBJID type=Char"),
+                Arguments.of("emptyKeyTokenOnDatasetLine", """
+                        dataset DM =foo
+                        col A type=Char
+                        ---
+                        x
+                        ---
+                        """), Arguments.of("emptyKeyTokenOnColLine", """
+                        dataset DM
+                        col A type=Char =foo
+                        ---
+                        x
+                        ---
+                        """), Arguments.of("unterminatedTrailingBackslashInQuotedDataValue", """
+                        dataset T
+                        col A type=Char
+                        ---
+                        "abc\\
+                        ---
+                        """), Arguments.of("unterminatedTrailingBackslashInQuotedMetadataValue", """
+                        dataset T label="abc\\
+                        col A type=Char
+                        ---
+                        x
+                        ---
+                        """));
     }
 
 
@@ -323,7 +350,51 @@ class CdtParserTest
                         ---
                         "."
                         ---
-                        """, "."));
+                        """, "."), Arguments.of("quotedAllWhitespaceValueStripsToEmpty", """
+                        dataset T
+                        col X type=Char
+                        ---
+                        "   "
+                        ---
+                        """, ""));
+    }
+
+
+    /**
+     * A bare trailing pipe with nothing after it (no quotes, no space) is a two-field row whose
+     * second field is empty. Exercises the field-start whitespace-skip and quote-detection at
+     * exactly {@code i == aLine.length()}.
+     */
+    @Test
+    void bareTrailingPipeYieldsEmptyLastField()
+    {
+        String content = """
+                dataset T
+                col A type=Char
+                col B type=Char
+                ---
+                S001|
+                ---
+                """;
+        CdtDataset ds = CdtParser.parseFirst(content, "t");
+        assertEquals(List.of("S001", ""), ds.getDataRows().get(0));
+    }
+
+
+    /** The line number reported in a parse error is 1-based ({@code aLineIdx + 1}), not 0-based. */
+    @Test
+    void errorMessageReportsOneBasedLineNumber()
+    {
+        String content = """
+                dataset DM
+                col A type=Char
+                col B type=Char
+                ---
+                only-one-field
+                """;
+        CdtParseException ex = assertThrows(CdtParseException.class,
+                () -> CdtParser.parseAll(content, "t"));
+        assertTrue(ex.getMessage().startsWith("t:5:"), ex.getMessage());
     }
 
 

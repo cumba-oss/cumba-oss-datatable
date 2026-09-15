@@ -310,7 +310,10 @@ public final class CdtParser
             {
                 String tok = tokens.get(i);
                 int eq = tok.indexOf('=');
-                if (eq < 0)
+                // F-prov-cdt-01: eq == 0 means the token starts with '=' (e.g. "=foo") - an empty
+                // key, just as malformed as no '=' at all. Reject both the same way instead of
+                // silently accepting an attribute with a "" key that no reader-side code expects.
+                if (eq <= 0)
                 {
                     throw error(aLineIdx, "expected key=value after dataset name, got: " + tok);
                 }
@@ -355,7 +358,9 @@ public final class CdtParser
             {
                 String tok = tokens.get(i);
                 int eq = tok.indexOf('=');
-                if (eq < 0)
+                // F-prov-cdt-01: see parseDatasetLine - eq == 0 ("=foo") is an empty key, just as
+                // malformed as a token with no '=' at all.
+                if (eq <= 0)
                 {
                     throw error(aLineIdx, "expected key=value after col name, got: " + tok);
                 }

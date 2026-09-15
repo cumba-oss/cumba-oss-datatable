@@ -114,8 +114,16 @@ public final class CdtTableBuilder
      * Route generic {@code col}-line {@code key=value} attributes onto the column metadata. Keys
      * matching a {@link DataTableColumnMeta} typed field are passed to the matching setter;
      * everything else goes into the column's custom metadata table.
+     *
+     * <p>
+     * F-prov-cdt-06: public (not the package-private a same-repo caller would suffice for) because
+     * {@link net.cumba.datatable.provider.cdt.library.CdtLibraryProvider#provideLibraryMemberColumns}
+     * builds its own, otherwise near-identical, column metadata and used to skip this step entirely
+     * - a column's generic attributes were visible when a dataset was opened directly but silently
+     * missing from the same file's library-member column listing.
+     * </p>
      */
-    private static void applyGenericAttrs(DataTableColumnMetaBuilder aBuilder, CdtColumn aCol)
+    public static void applyGenericAttrs(DataTableColumnMetaBuilder aBuilder, CdtColumn aCol)
     {
         for (Map.Entry<String, String> e : aCol.getAttrs().entrySet())
         {

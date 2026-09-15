@@ -147,6 +147,10 @@ public class CdtLibraryProvider extends AbstractLibraryProvider
             {
                 b.addMetaData(CdtTableBuilder.COLUMN_META_CODELIST, c.getCodelist());
             }
+            // F-prov-cdt-06: without this, a generic col-line attribute (anything beyond the
+            // typed fields above) was visible via CdtTableBuilder.build() but silently absent
+            // from this library-member column listing for the identical file.
+            CdtTableBuilder.applyGenericAttrs(b, c);
             cols[i] = b.build();
         }
         return cols;

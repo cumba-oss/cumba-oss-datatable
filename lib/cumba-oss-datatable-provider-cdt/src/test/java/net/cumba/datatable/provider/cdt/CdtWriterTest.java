@@ -410,9 +410,12 @@ class CdtWriterTest
 
 
     @Test
-    void missingValueRendersEmptyAndAllNullRowUsesDotSentinel()
+    void missingValueRendersEmptyAndMultiColumnAllNullRowNeedsNoSentinel()
     {
-        // A row whose every cell is null collapses to the "." sentinel (multi-column case).
+        // ⭐ CORRECTED with F-prov-cdt-02 (internal 0f8ed3d). This used to assert that a
+        // MULTI-column all-null row collapses to ".", which is the inverted guard: such a row
+        // renders as " | " and is never blank, so it is unambiguous on read and needs no
+        // sentinel. The sentinel is for the single-column case, covered by the test above.
         DataTableMeta meta = DataTableMeta.builder().name("M").label("M").rowCount(2)
                 .totalRowCount(2).tableURI(URI.create("test:m")).columns(new DataTableColumnMeta[]
                 {
@@ -423,18 +426,24 @@ class CdtWriterTest
                 java.util.Arrays.asList((Object) null, null)));
         String out = CdtWriter.toString(t);
         assertTrue(out.contains("\nx | \n"), out); // partial-null row keeps empty field
-        assertTrue(out.contains("\n.\n"), out); // all-null row → dot sentinel
+        assertFalse(out.contains("\n.\n"), out); // multi-column all-null row needs no sentinel
 
-        // Round-trip the all-null row back: a "." in a multi-column table → all empty.
+        // Round-trip it back: the separator alone makes the row unambiguous.
         CdtDataset back = CdtParser.parseFirst(out, "t");
         assertEquals(List.of("", ""), back.getDataRows().get(1));
     }
 
 
     @Test
-    void singleColumnAllNullRowIsNotCollapsedToDot()
+    void singleColumnAllNullRowIsWrittenAsTheDotSentinel()
     {
-        // Single-column tables never collapse (colCount > 1 guard): an empty line is emitted.
+        // ⭐ CORRECTED with F-prov-cdt-02 (internal 0f8ed3d). This test used to assert the
+        // OPPOSITE, and cited the guard it was pinning as its justification: "Single-column
+        // tables never collapse (colCount > 1 guard): an empty line is emitted." That guard was
+        // inverted. A single-column all-missing row renders as "" — there is no second field, so
+        // no " | " separator — and CdtParser.parseAll skips blank lines, so the row VANISHED on
+        // read. The "." sentinel exists for exactly this case; a multi-column all-missing row
+        // always contains a separator and is never blank, so it never needed one.
         DataTableMeta meta = DataTableMeta.builder().name("S").label("S").rowCount(1)
                 .totalRowCount(1).tableURI(URI.create("test:s")).columns(new DataTableColumnMeta[]
                 {
@@ -442,7 +451,7 @@ class CdtWriterTest
                 }).build();
         IDataTable t = directTable(meta, List.of(java.util.Arrays.asList((Object) null)));
         String out = CdtWriter.toString(t);
-        assertFalse(out.contains("\n.\n"), out);
+        assertTrue(out.contains("\n.\n"), out);
     }
 
 

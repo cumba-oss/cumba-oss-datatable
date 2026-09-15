@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -117,7 +118,11 @@ public final class CdtWriter
         }
         catch (IOException ex)
         {
-            // StringBuilder.append doesn't throw, so this is unreachable.
+            // NOT unreachable: StringBuilder.append itself never throws, but writeDataset also
+            // raises IOException from its own validation (checkNoControlChars, the TIME range
+            // check, the header CR/LF check) independent of the Appendable. toString() has no
+            // checked-exception outlet, so those deliberate export failures surface here as an
+            // unchecked wrapper instead.
             throw new IllegalStateException(ex);
         }
         return sb.toString();
@@ -235,6 +240,9 @@ public final class CdtWriter
 
             // Emit every custom metadata entry as a generic key=value attribute.
             // Codelist (stored under COLUMN_META_CODELIST) comes out here too.
+            // F-prov-cdt-04: route the key through safeIdent, matching writeDatasetHeader's own
+            // hygiene - a key is data too, and one containing whitespace or '=' would otherwise
+            // tokenize back into something other than the key it started as.
             for (String key : c.getMetaDataKeys())
             {
                 Object val = c.getMetaData(key);
@@ -242,7 +250,8 @@ public final class CdtWriter
                 {
                     continue;
                 }
-                aOut.append(' ').append(key).append('=').append(quoteIfNeeded(val.toString()));
+                aOut.append(' ').append(safeIdent(key)).append('=')
+                        .append(quoteIfNeeded(val.toString()));
             }
 
             aOut.append('\n');
@@ -275,7 +284,15 @@ public final class CdtWriter
                 }
                 row.append(quoteFieldIfNeeded(rendered));
             }
-            if (allNull && colCount > 1)
+            // F-prov-cdt-02: the "." sentinel exists for exactly one reason - CdtParser.parseAll
+            // splits on line breaks and skips blank lines, so a single-column all-missing row
+            // (whose rendered "row" text is "", since there is no second field to add a " | "
+            // separator) would otherwise be written as an indistinguishable blank line and
+            // silently vanish on read. A multi-column all-missing row's rendered text always
+            // contains at least one " | " separator, so it is never blank and needs no sentinel.
+            // This used to trigger on colCount > 1 (never the case that is actually ambiguous)
+            // and miss colCount == 1 (the only case that is).
+            if (allNull && colCount == 1)
             {
                 aOut.append(".\n");
             }
@@ -289,9 +306,16 @@ public final class CdtWriter
 
     /**
      * Quote a rendered data field when needed so the parser can recover the exact characters: any
-     * field that begins with whitespace, contains {@code |}, contains {@code "} or {@code \}, or is
-     * exactly {@code .} (the all-missing sentinel) is wrapped in double quotes with backslash
-     * escaping.
+     * field that begins with whitespace, contains {@code |}, contains {@code "} or {@code \}, is
+     * exactly {@code .} (the all-missing sentinel), or is itself a fence line (three or more dashes
+     * and nothing else) is wrapped in double quotes with backslash escaping.
+     *
+     * <p>
+     * F-prov-cdt-03: the fence check matters only for a single-column table, where the rendered
+     * data line for that field IS the whole line with no {@code " | "} separator to disambiguate
+     * it. Left unquoted, a literal {@code ---} (or any run of three-plus dashes) value would be
+     * indistinguishable from - and read back as - the fence that closes the data block.
+     * </p>
      */
     private static String quoteFieldIfNeeded(String aValue)
     {
@@ -299,7 +323,7 @@ public final class CdtWriter
         {
             return "";
         }
-        boolean needQuote = ".".equals(aValue);
+        boolean needQuote = ".".equals(aValue) || CdtFence.isFence(aValue);
         if (!needQuote)
         {
             char first = aValue.charAt(0);
@@ -371,9 +395,9 @@ public final class CdtWriter
         CdtKind kind = classifyKind(aType, aFormat);
         return switch (kind)
         {
-        case DATE -> renderDate(aValue);
+        case DATE -> renderDate(aValue, aRowIdx, aColName);
         case TIME -> renderTime(aValue, aRowIdx, aColName);
-        case DATETIME -> renderDateTime(aValue);
+        case DATETIME -> renderDateTime(aValue, aRowIdx, aColName);
         case NUM -> renderNumber(aValue);
         case CHAR -> checkNoControlChars(aValue.toString(), aRowIdx, aColName);
         };
@@ -402,12 +426,27 @@ public final class CdtWriter
     }
 
 
-    private static String renderDate(Object aValue)
+    private static String renderDate(Object aValue, long aRowIdx, String aColName)
+        throws IOException
     {
         if (aValue instanceof Number n)
         {
-            LocalDate d = CdtValues.SAS_EPOCH.plusDays(n.longValue());
-            return d.format(CdtValues.DATE_FMT);
+            // F-prov-cdt-05: mirrors F-prov-04 (renderTime) - an out-of-range value (e.g. a
+            // corrupt or type-confused source feeding a value far outside any real SAS date) must
+            // not escape as an unchecked DateTimeException. LocalDate's representable range is
+            // roughly +/-365 million years; nothing legitimate reaches it.
+            try
+            {
+                LocalDate d = CdtValues.SAS_EPOCH.plusDays(n.longValue());
+                return d.format(CdtValues.DATE_FMT);
+            }
+            catch (DateTimeException ex)
+            {
+                throw new IOException(("CDT export: row %d column %s holds the DATE value %s "
+                        + "which is outside the representable date range: %s").formatted(aRowIdx,
+                                aColName, aValue, ex.getMessage()),
+                        ex);
+            }
         }
         return aValue.toString();
     }
@@ -441,13 +480,24 @@ public final class CdtWriter
     }
 
 
-    private static String renderDateTime(Object aValue)
+    private static String renderDateTime(Object aValue, long aRowIdx, String aColName)
+        throws IOException
     {
         if (aValue instanceof Number n)
         {
             long seconds = n.longValue();
-            LocalDateTime dt = CdtValues.SAS_EPOCH.atStartOfDay().plusSeconds(seconds);
-            return dt.format(CdtValues.DATETIME_FMT);
+            try
+            {
+                LocalDateTime dt = CdtValues.SAS_EPOCH.atStartOfDay().plusSeconds(seconds);
+                return dt.format(CdtValues.DATETIME_FMT);
+            }
+            catch (DateTimeException ex)
+            {
+                throw new IOException(("CDT export: row %d column %s holds the DATETIME value %s "
+                        + "which is outside the representable date range: %s").formatted(aRowIdx,
+                                aColName, aValue, ex.getMessage()),
+                        ex);
+            }
         }
         return aValue.toString();
     }

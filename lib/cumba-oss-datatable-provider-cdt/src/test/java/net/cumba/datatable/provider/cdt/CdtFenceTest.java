@@ -64,4 +64,14 @@ class CdtFenceTest
         assertFalse(CdtFence.matches("---", "----"));
         assertFalse(CdtFence.matches("-----", "---"));
     }
+
+
+    @Test
+    void matchesReturnsFalseWhenEitherSideIsNotAFence()
+    {
+        assertFalse(CdtFence.matches("---", "abc"));
+        assertFalse(CdtFence.matches("abc", "---"));
+        assertFalse(CdtFence.matches(null, "---"));
+        assertFalse(CdtFence.matches("---", null));
+    }
 }
