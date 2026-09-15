@@ -12,8 +12,9 @@ import org.jspecify.annotations.Nullable;
 public class ExcelLibrarySupplier extends AbstractLibrarySupplier
 {
 
-    public static final List<FileInfo> FIS = List.of(ExcelProviderSupplier.FI_XLS,
-            ExcelProviderSupplier.FI_XLSX);
+    // Only OOXML is offered; legacy .xls was removed here and in ExcelProviderSupplier because
+    // excel-streaming-reader cannot read it at all. See ExcelProviderSupplier's javadoc.
+    public static final List<FileInfo> FIS = List.of(ExcelProviderSupplier.FI_XLSX);
 
     public ExcelLibrarySupplier()
     {

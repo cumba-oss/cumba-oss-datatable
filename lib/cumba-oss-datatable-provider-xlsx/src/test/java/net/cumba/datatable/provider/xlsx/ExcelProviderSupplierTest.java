@@ -1,6 +1,7 @@
 package net.cumba.datatable.provider.xlsx;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -33,20 +34,22 @@ class ExcelProviderSupplierTest
     @Test
     void testFileInfoConstants()
     {
-        assertNotNull(ExcelProviderSupplier.FI_XLS);
         assertNotNull(ExcelProviderSupplier.FI_XLSX);
-        assertEquals("xls", ExcelProviderSupplier.FI_XLS.getFileExtension());
         assertEquals("xlsx", ExcelProviderSupplier.FI_XLSX.getFileExtension());
     }
 
 
+    /**
+     * Q37: reversed. This test was {@code testFISListContainsAllFormats} and asserted a two-entry
+     * list containing {@code FI_XLS}, i.e. it pinned the advertisement of a format that could never
+     * be read. OOXML is now the only format offered.
+     */
     @Test
-    void testFISListContainsAllFormats()
+    void testFISListOffersOoxmlOnly()
     {
         List<FileInfo> fis = ExcelProviderSupplier.FIS;
         assertNotNull(fis);
-        assertEquals(2, fis.size());
-        assertTrue(fis.contains(ExcelProviderSupplier.FI_XLS));
+        assertEquals(1, fis.size());
         assertTrue(fis.contains(ExcelProviderSupplier.FI_XLSX));
     }
 
@@ -69,13 +72,20 @@ class ExcelProviderSupplierTest
     }
 
 
+    /**
+     * Q37: reversed. This test was {@code testGetProviderForXls} and asserted that a {@code .xls}
+     * URI yields a provider — a provider that then threw on every read, because
+     * {@code excel-streaming-reader} is OOXML-only. Legacy BIFF is no longer offered, so the
+     * supplier must refuse it both by {@link FileInfo} and by extension sniffing.
+     */
     @Test
-    void testGetProviderForXls() throws Exception
+    void testGetProviderRefusesLegacyXls() throws Exception
     {
         URI uri = new URI("file:///test.xls");
-        IDataTableProvider provider = supplier.getProvider(uri, ExcelProviderSupplier.FI_XLS);
-        assertNotNull(provider);
-        assertInstanceOf(ExcelTableProvider.class, provider);
+        FileInfo legacyXls = FileInfo.createFor("xls", "Microsoft Excel Spreadsheet");
+        assertNull(supplier.getProvider(uri, legacyXls));
+        assertNull(supplier.getProvider(uri, null));
+        assertFalse(supplier.canProvideFor(uri));
     }
 
 
@@ -101,10 +111,15 @@ class ExcelProviderSupplierTest
     }
 
 
+    /**
+     * Q37: retargeted. This guarded {@code FI_XLS}'s description against the trailing space found
+     * by code review CR-XLSX-08; that constant is gone, so the guard moves to the one format that
+     * is still advertised rather than being dropped with it.
+     */
     @Test
-    void testFiXlsDescriptionHasNoTrailingSpace()
+    void testFiXlsxDescriptionHasNoTrailingSpace()
     {
-        String desc = ExcelProviderSupplier.FI_XLS.getDescription();
+        String desc = ExcelProviderSupplier.FI_XLSX.getDescription();
         assertNotNull(desc);
         assertEquals(desc.trim(), desc);
     }

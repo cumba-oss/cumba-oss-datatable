@@ -72,7 +72,10 @@ class ExcelTableProviderTest
     {
         List<FileInfo> fis = provider.getSupportedFileInfos();
         assertNotNull(fis);
-        assertEquals(2, fis.size());
+        // Q37: one, not two — legacy .xls was removed from ExcelProviderSupplier.FIS because
+        // excel-streaming-reader cannot read it. This assertion named no constant, so a grep for
+        // FI_XLS did not find it.
+        assertEquals(1, fis.size());
         assertSame(ExcelProviderSupplier.FIS, fis);
     }
 

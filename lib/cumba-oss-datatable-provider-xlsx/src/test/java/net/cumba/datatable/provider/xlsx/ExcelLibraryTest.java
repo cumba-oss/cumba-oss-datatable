@@ -73,12 +73,15 @@ class ExcelLibraryTest
     // --- ExcelLibrarySupplier tests ---
 
 
+    /**
+     * Q37: reversed. This test was {@code testSupplierFISContainsFormats} and asserted two entries,
+     * the second of which was {@code FI_XLS} — a format the library path could not open either.
+     */
     @Test
-    void testSupplierFISContainsFormats()
+    void testSupplierFISOffersOoxmlOnly()
     {
         List<FileInfo> fis = ExcelLibrarySupplier.FIS;
-        assertEquals(2, fis.size());
-        assertTrue(fis.contains(ExcelProviderSupplier.FI_XLS));
+        assertEquals(1, fis.size());
         assertTrue(fis.contains(ExcelProviderSupplier.FI_XLSX));
     }
 
@@ -99,11 +102,18 @@ class ExcelLibraryTest
     }
 
 
+    /**
+     * Q37: reversed. This test was {@code testSupplierCanProvideForXls} and asserted the library
+     * supplier accepts legacy BIFF. It must now refuse it by {@link FileInfo} and by extension.
+     */
     @Test
-    void testSupplierCanProvideForXls() throws Exception
+    void testSupplierRefusesLegacyXls() throws Exception
     {
         URI uri = new URI("file:///test.xls");
-        assertTrue(supplier.canProvideFor(uri, ExcelProviderSupplier.FI_XLS));
+        FileInfo legacyXls = FileInfo.createFor("xls", "Microsoft Excel Spreadsheet");
+        assertFalse(supplier.canProvideFor(uri, legacyXls));
+        assertFalse(supplier.canProvideFor(uri, null));
+        assertNull(supplier.getProvider(uri, legacyXls));
     }
 
 
