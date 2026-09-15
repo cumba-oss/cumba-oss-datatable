@@ -160,15 +160,27 @@ public final class CdtWriter
         {
             aOut.append(" class=").append(quoteIfNeeded(aClass));
         }
-        // Forward dataset-level metadata keys that the rule engine may read as key=value
-        // header attrs so they round-trip through CdtLoader. Skip built-ins already emitted
-        // above, column-qualified keys (contain '.'), and presentation keys (any uppercase
-        // letter) introduced by SAS / DatasetJSON loaders — the engine does not read them
-        // and emitting them wastes ~10× the file size on large fixtures.
+        // Forward dataset-level metadata keys as key=value header attrs so they round-trip
+        // through CdtLoader, per the README's "any other key=value pair is stored on the dataset
+        // for round-trip". Skip built-ins already emitted above, column-qualified keys (contain
+        // '.'), and the presentation keys the SAS / Dataset-JSON loaders introduce — the engine
+        // does not read those and emitting them wastes ~10x the file size on large fixtures.
+        //
+        // Q31: presentation keys are recognised by a CAPITALISED FIRST character, not by
+        // containing a capital anywhere. The old test dropped every key with an uppercase letter
+        // in it, so a hand-authored `dataset DM studyOID=CDISC01` silently lost studyOID on
+        // write-back, and so did fileOID, itemGroupOID, metaDataVersionOID and
+        // datasetJSONVersion — Dataset-JSON document identifiers, not presentation. The first
+        // character separates them from what the filter is actually aimed at: every presentation
+        // key in the stack is PascalCase or spaced (Comment, Structure, Purpose, Standard, Class,
+        // SASDatasetName, Compression, "Row Length"), while every engine-read key is snake_case
+        // (file_format, dataset_size, transport_version) and the round-trip identifiers are
+        // camelCase.
         for (String key : aMeta.getMetaDataKeys())
         {
             if (key == null || "class".equals(key) || "label".equals(key)
-                    || "dataset_class".equals(key) || key.indexOf('.') >= 0 || hasUpperCase(key))
+                    || "dataset_class".equals(key) || key.indexOf('.') >= 0
+                    || startsWithUpperCase(key))
             {
                 continue;
             }
@@ -567,16 +579,35 @@ public final class CdtWriter
     }
 
 
-    private static boolean hasUpperCase(String aName)
+    /**
+     * Whether a dataset-level metadata key looks like a presentation key rather than one to carry
+     * (Q31). True when the first character is upper case.
+     *
+     * <p>
+     * ⚠ <b>Known residual hole, deliberately left rather than papered over.</b> This is a
+     * capitalisation heuristic, so a hand-authored PascalCase key — {@code StudyOID} rather than
+     * {@code studyOID} — is still dropped, indistinguishable from {@code Comment} or {@code Class}.
+     * Closing it absolutely needs an explicit list of the known presentation keys, which is a
+     * different trade: the list would live here while the keys are introduced in the providers and
+     * in {@code DataTableMetaSupport}, so a new key that nobody added to it would cost the ~10x
+     * file growth this filter exists to avoid. Which side that should fail on is the owner's call
+     * and is filed as open; the heuristic is the fix the ruling evidenced.
+     * </p>
+     *
+     * <p>
+     * ⭐ Note this filter is dataset-level ONLY. {@code writeColumns} emits every column metadata
+     * entry unfiltered, so column attributes already round-trip absolutely — including the
+     * PascalCase presentation ones. The asymmetry is deliberate: it is the dataset header that a
+     * SAS or Dataset-JSON load fills with bulky presentation entries.
+     * </p>
+     *
+     * @param aName
+     *            the metadata key.
+     * @return true when the key should be suppressed as presentation metadata.
+     */
+    private static boolean startsWithUpperCase(String aName)
     {
-        for (int i = 0; i < aName.length(); i++)
-        {
-            if (Character.isUpperCase(aName.charAt(i)))
-            {
-                return true;
-            }
-        }
-        return false;
+        return !aName.isEmpty() && Character.isUpperCase(aName.charAt(0));
     }
 
     // ---- meta helpers -------------------------------------------------------------
