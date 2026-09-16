@@ -12,6 +12,7 @@ import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.provider.sas.xpt.XptProviderSupplier;
+import net.cumba.datatable.provider.sas.xpt.XptTableProvider;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.sasutils.VariableType;
 import net.cumba.sasutils.xpt.VariableXpt;
@@ -438,4 +439,44 @@ class XptLibraryProviderTest
         v.formatDecimals = formatDecimals;
         return v;
     }
+
+
+    /**
+     * F-prov-13: a library member's columns must carry the stored byte length. Both siblings set it
+     * — {@code XptTableProvider.addColumn} and {@code CdtLibraryProvider.mapToColumnMeta} — and
+     * this copy did not, so the library browser showed no length for an XPT member while opening
+     * the very same dataset showed one. The assertion compares the two paths rather than
+     * hard-coding a number, because agreement between them is the actual requirement.
+     */
+    @Test
+    void libraryMemberColumnsCarryTheSameMetadataAsOpeningTheDataset() throws IOException
+    {
+        File f = new File(System.getProperty("repoRoot"), "testdata/xpt/01_plain/adsl.xpt");
+        assertTrue(f.isFile(), f::getAbsolutePath);
+
+        IDataTableLibrary lib = new XptLibraryProvider().provide(f.toURI(),
+                XptProviderSupplier.FI_XPT);
+        assertNotNull(lib);
+        List<XptLibraryMember> members = ((XptLibrary) lib).getMembers().toList();
+        assertEquals(1, members.size());
+
+        DataTableColumnMeta[] viaLibrary = members.get(0).getColumns();
+        var viaOpen = new XptTableProvider().provideMetaData(f.toURI(), XptProviderSupplier.FI_XPT);
+        assertEquals(viaOpen.getColumnCount(), viaLibrary.length);
+
+        for (int c = 0; c < viaLibrary.length; c++)
+        {
+            DataTableColumnMeta lm = viaLibrary[c];
+            DataTableColumnMeta om = viaOpen.getColumn(c);
+            assertEquals(om.getName(), lm.getName());
+            assertEquals(om.getType(), lm.getType());
+            assertEquals(om.getNativeType(), lm.getNativeType());
+            assertEquals(om.getLabel(), lm.getLabel());
+            assertEquals(om.getDisplayFormat(), lm.getDisplayFormat());
+            assertEquals(om.getLength(), lm.getLength(), () -> "length of " + om.getName());
+        }
+        // and it is a real length, not a coincidental pair of zeros
+        assertEquals(12, viaLibrary[0].getLength());
+    }
+
 }

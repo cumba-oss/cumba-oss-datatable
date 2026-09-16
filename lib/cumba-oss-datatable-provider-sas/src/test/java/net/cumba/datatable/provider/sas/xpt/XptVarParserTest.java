@@ -1,6 +1,7 @@
 package net.cumba.datatable.provider.sas.xpt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -242,4 +243,25 @@ class XptVarParserTest
                 0x00
         }, 0, 1));
     }
+
+
+    /**
+     * F-prov-15: a corrupt NAMESTR length must not decode to a plausible number. Beyond 8 bytes the
+     * mantissa loop accumulates more than the 56 bits an IBM double has AND the promotion shift is
+     * skipped, so the old code returned a finite, wrong value — the worst possible outcome for a
+     * clinical measurement. The sibling {@code BdatVarParser.unpackRaw64} already range-checked.
+     */
+    @Test
+    void anImpossibleNumericLengthIsRejectedRatherThanDecoded()
+    {
+        byte[] buf = new byte[16];
+        buf[0] = 0x41;
+        buf[1] = 0x10;
+        assertThrows(IllegalArgumentException.class, () -> XptVarParser.ibmToIeee(buf, 0, 9));
+        assertThrows(IllegalArgumentException.class, () -> XptVarParser.ibmToIeee(buf, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> XptVarParser.ibmToIeee(buf, 0, -1));
+        // 1 and 8 are the inclusive bounds and must still decode
+        assertEquals(1.0, XptVarParser.ibmToIeee(buf, 0, 8), 1e-12);
+    }
+
 }
