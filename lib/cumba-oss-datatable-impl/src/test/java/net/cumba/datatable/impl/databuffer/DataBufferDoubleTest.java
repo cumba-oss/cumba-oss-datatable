@@ -323,4 +323,19 @@ class DataBufferDoubleTest
                 1, 2
         }, buffer.getValuesAsInt(0, 2));
     }
+
+
+    @Test
+    void doubleBuffer_refusesALongThatCannotSurviveTheRoundTrip()
+    {
+        DataBufferDouble buf = new DataBufferDouble();
+
+        assertTrue(buf.canStore(Long.valueOf(1L)));
+        // 2^53 + 1 has no exact double representation, so storing it would silently change the
+        // value; the buffer must refuse it rather than round it
+        assertFalse(buf.canStore(Long.valueOf((1L << 53) + 1L)));
+        assertThrows(IllegalArgumentException.class,
+                () -> buf.setValue(0, Long.valueOf((1L << 53) + 1L)));
+    }
+
 }

@@ -586,4 +586,22 @@ class CachedDataTableColumnTest
         stringColumn.addElement("a");
         assertThrows(IndexOutOfBoundsException.class, () -> stringColumn.isEmptyOrMissing(9));
     }
+
+
+    @Test
+    void isMissingOrNull_nullCellIsMissing()
+    {
+        // IDataTableColumn#isMissingOrNull is contractually "null OR MissingValue" (its interface
+        // default is `v == null || v instanceof MissingValue`). A stored null must therefore
+        // answer true — the buffer's own isMissing only recognises MissingValue instances.
+        CachedDataTableColumn col = new CachedDataTableColumn(0, DataValueType.STRING);
+        col.addElement("x");
+        col.addElement((Object) null);
+
+        assertFalse(col.isMissingOrNull(0));
+        assertTrue(col.isMissingOrNull(1), "a null cell is missing-or-null by contract");
+        // and it must agree with the wider blankness notion, which already handles null
+        assertTrue(col.isEmptyOrMissing(1));
+    }
+
 }
