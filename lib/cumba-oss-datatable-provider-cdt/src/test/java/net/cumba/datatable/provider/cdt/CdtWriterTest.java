@@ -837,4 +837,29 @@ class CdtWriterTest
         return p;
     }
 
+
+    /**
+     * F-prov-cdt-04: a custom column-metadata KEY is routed through {@code safeIdent}, matching
+     * writeDatasetHeader's own hygiene - a key is data too, and one containing whitespace or '='
+     * would otherwise tokenize back into something other than the key it started as. Unguarded on
+     * both sides until now: deleting the safeIdent call passed every existing test.
+     */
+    @Test
+    void customColumnMetadataKeyWithWhitespaceIsQuoted()
+    {
+        DataTableMeta meta = DataTableMeta.builder().name("T").label("T").rowCount(1)
+                .totalRowCount(1).tableURI(URI.create("test:t")).columns(new DataTableColumnMeta[]
+                {
+                        DataTableColumnMeta.builder().index(0).name("A").type(DataValueType.STRING)
+                                .addMetaData("odd key", "v").build()
+                }).build();
+        String out = CdtWriter.toString(directTable(meta, List.of(List.of("x"))));
+
+        assertTrue(out.contains("\"odd key\"=v"),
+                "a key containing whitespace must be quoted so it tokenizes back as one key: "
+                        + out);
+        assertFalse(out.contains(" odd key=v"),
+                "the raw unquoted key must not appear on the col line: " + out);
+    }
+
 }
