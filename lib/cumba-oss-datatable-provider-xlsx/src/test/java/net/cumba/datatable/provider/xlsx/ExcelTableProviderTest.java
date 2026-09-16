@@ -688,4 +688,92 @@ class ExcelTableProviderTest
         }
     }
 
+    // ==================== text-typed numeric-looking cells (fixed defect) ====================
+
+
+    /**
+     * DEFECT FIX: a column whose cells are all Excel-{@code TEXT}-typed but numeric-looking (e.g. a
+     * site/subject ID kept as text specifically to preserve a leading zero) must stay STRING-typed
+     * and must not be reparsed into a double — that would silently destroy the leading zero the
+     * producer's text formatting existed to protect. Confirmed against an independently
+     * (openpyxl-)produced fixture that these are genuinely {@code t="str"} text cells, not merely
+     * numeric-looking; POI is used here only as the test-fixture builder, exactly like every other
+     * test in this class — {@code cell.setCellValue(String)} creates the same STRING cell type
+     * either way.
+     */
+    @Test
+    void testTextTypedNumericLookingColumnStaysStringAndPreservesLeadingZeros() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("SITEID");
+            s.createRow(1).createCell(0).setCellValue("0001");
+            s.createRow(2).createCell(0).setCellValue("0002");
+            s.createRow(3).createCell(0).setCellValue("0010");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.STRING, table.getMetaData().getColumn(0).getType(),
+                "a text-typed numeric-looking column must NOT be promoted to DOUBLE");
+        assertEquals("0001", table.getValue(0, 0));
+        assertEquals("0002", table.getValue(1, 0));
+        assertEquals("0010", table.getValue(2, 0),
+                "leading zero must survive — this is exactly what TEXT formatting was for");
+    }
+
+
+    /**
+     * A single text-typed numeric-looking cell mixed into an otherwise all-numeric column must
+     * still disqualify the WHOLE column from DOUBLE — not just that one cell. This is the
+     * majority-vote type-inference design (one pass decides the column's type for every row), so
+     * the fix has to live in the vote (`isNumberOrMissing`), not in a per-cell special case.
+     */
+    @Test
+    void testOneTextTypedCellKeepsWholeColumnString() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("ID");
+            s.createRow(1).createCell(0).setCellValue(5.0); // real NUMERIC cell
+            s.createRow(2).createCell(0).setCellValue("0007"); // TEXT cell, numeric-looking
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.STRING, table.getMetaData().getColumn(0).getType());
+        assertEquals("5.0", table.getValue(0, 0));
+        assertEquals("0007", table.getValue(1, 0));
+    }
+
+
+    /**
+     * The {@code getDoubleValue} text-parse fallback (distinct from the type-inference fix above)
+     * still exists for a column that WAS correctly inferred DOUBLE from its sample, when a text
+     * cell beyond the {@code guessingRowCount} window happens to parse as a number — the sample
+     * can't see every row in a streamed sheet, so this keeps such a row's real value rather than
+     * losing it.
+     */
+    @Test
+    void testTextCellBeyondSampleThatParsesIsStillReadAsItsNumericValue() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("VAL");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+            s.createRow(2).createCell(0).setCellValue(2.0);
+            // Beyond the 2-row sample: a TEXT cell whose content parses cleanly.
+            s.createRow(3).createCell(0).setCellValue("42");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(0).getType());
+        assertEquals(42.0, (double) table.getValue(2, 0), 0.0001);
+    }
+
 }
