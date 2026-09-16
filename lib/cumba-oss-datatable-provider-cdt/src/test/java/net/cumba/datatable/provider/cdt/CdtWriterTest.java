@@ -713,4 +713,128 @@ class CdtWriterTest
         assertTrue(out.contains("label=\"My Label\""), out);
         assertTrue(out.contains("class=EVENTS"), out);
     }
+
+    // ---- ported guards for shipped fixes (Q31, F-prov-cdt-03, F-prov-cdt-06) -------
+
+
+    /**
+     * F-prov-cdt-03: a single-column value that is itself a fence line (three or more dashes and
+     * nothing else) must be quoted - unquoted, it is byte-identical to the line that closes the
+     * data block, and {@link CdtFence#matches} would treat it as the closer on read.
+     */
+    @Test
+    void singleColumnFenceLookalikeValueIsQuoted()
+    {
+        DataTableMeta meta = DataTableMeta.builder().name("T").label("T").rowCount(1)
+                .totalRowCount(1).tableURI(URI.create("test:t")).columns(new DataTableColumnMeta[]
+                {
+                        col(0, "X", DataValueType.STRING, null)
+                }).build();
+
+        String out = CdtWriter.toString(directTable(meta, List.of(List.of("---"))));
+        assertTrue(out.contains("\n\"---\"\n"), out);
+        out = CdtWriter.toString(directTable(meta, List.of(List.of("-----"))));
+        assertTrue(out.contains("\n\"-----\"\n"), out);
+        // Two dashes is not a fence (README: minimum length three) - no reason to quote it.
+        out = CdtWriter.toString(directTable(meta, List.of(List.of("--"))));
+        assertTrue(out.contains("\n--\n"), out);
+    }
+
+
+    /**
+     * Q31: the header-attribute filter suppresses keys that START with an upper-case letter, no
+     * longer every key merely CONTAINING one - a camelCase attribute is real data a loader put on
+     * the table (the Dataset-JSON document identifiers are exactly this shape) and was silently
+     * dropped on every save.
+     */
+    @Test
+    void camelCaseAttributesRoundTripThroughTheWriter()
+    {
+        IDataTable t = buildFromCdt("""
+                dataset DM studyOID=CDISC01 fileOID=F1 itemGroupOID=IG.DM datasetJSONVersion=1.1
+                col A type=Char
+                ---
+                x
+                ---
+                """);
+        String headerLine = CdtWriter.toString(t).split("\n", -1)[0];
+
+        assertTrue(headerLine.contains("studyOID=CDISC01"), headerLine);
+        assertTrue(headerLine.contains("fileOID=F1"), headerLine);
+        assertTrue(headerLine.contains("itemGroupOID=IG.DM"), headerLine);
+        assertTrue(headerLine.contains("datasetJSONVersion=1.1"), headerLine);
+    }
+
+
+    /**
+     * The other half of Q31's rule, and the reason it is a FIRST-character test rather than no test
+     * at all: the presentation keys the SAS and Dataset-JSON loaders put on a dataset are still
+     * suppressed, so the fix did not trade a silent data loss for a 10x file.
+     *
+     * <p>
+     * {@code StudyOID} is in the suppressed list on purpose. It is the residual hole the ruling
+     * names: a hand-authored PascalCase key is indistinguishable from {@code Comment} under a
+     * capitalisation rule and is still dropped. Pinned as MEASURED, not as intended - if the filter
+     * is ever given an explicit presentation-key list this assertion is the one that must flip, and
+     * it should flip deliberately.
+     * </p>
+     */
+    @Test
+    void presentationKeysAreStillSuppressedAndPascalCaseIsTheResidualHole()
+    {
+        IDataTable t = buildFromCdt("""
+                dataset DM Comment=c Standard=SDTM Purpose=Tabulation SASDatasetName=DM StudyOID=S1
+                col A type=Char
+                ---
+                x
+                ---
+                """);
+        String headerLine = CdtWriter.toString(t).split("\n", -1)[0];
+
+        assertFalse(headerLine.contains("Comment="), headerLine);
+        assertFalse(headerLine.contains("Standard="), headerLine);
+        assertFalse(headerLine.contains("Purpose="), headerLine);
+        assertFalse(headerLine.contains("SASDatasetName="), headerLine);
+        assertFalse(headerLine.contains("StudyOID="),
+                headerLine + " -- Q31's known residual hole, pinned as measured");
+    }
+
+
+    /**
+     * F-prov-cdt-06: a generic {@code col}-line attribute must be visible the same way regardless
+     * of whether the file is opened as a single dataset ({@link CdtTableBuilder}) or as a library
+     * ({@link net.cumba.datatable.provider.cdt.library.CdtLibraryProvider}) - both map the same
+     * parsed {@link CdtDataset} and must agree. {@code displayFormat} is a typed-field route;
+     * {@code role} has no typed field and must land in custom metadata.
+     */
+    @Test
+    void libraryProviderColumnsCarryGenericAttrsLikeTheTableBuilderDoes(@TempDir Path tmp)
+        throws IOException
+    {
+        Path file = write(tmp, "lib.cdt", """
+                dataset T
+                col AGE type=Num displayFormat=BEST8. role=Covariate
+                ---
+                5
+                ---
+                """);
+        net.cumba.datatable.provider.cdt.library.CdtLibraryProvider p = new net.cumba.datatable.provider.cdt.library.CdtLibraryProvider();
+        net.cumba.datatable.library.IDataTableLibrary lib = p.provide(file.toUri(),
+                CdtProviderSupplier.FI_CDT,
+                java.util.Map.<net.cumba.datatable.io.Property, String> of());
+        net.cumba.datatable.library.ILibraryMember m = p.provideLibraryMembers(lib).findFirst()
+                .orElseThrow();
+        DataTableColumnMeta col = p.provideLibraryMemberColumns(m).findFirst().orElseThrow();
+        assertEquals("BEST8.", col.getDisplayFormat(), "displayFormat is a typed field");
+        assertEquals("Covariate", col.getMetaData("role"), "unrecognised keys land in metadata");
+    }
+
+
+    private static Path write(Path aDir, String aName, String aContent) throws IOException
+    {
+        Path p = aDir.resolve(aName);
+        Files.writeString(p, aContent, StandardCharsets.UTF_8);
+        return p;
+    }
+
 }
