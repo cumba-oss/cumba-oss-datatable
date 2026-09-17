@@ -106,6 +106,8 @@ public final class LoggerCapture implements AutoCloseable
 
 
     /**
+     * The records captured so far.
+     *
      * @return the captured records, in the order they were logged.
      */
     public List<LogRecord> records()
@@ -115,6 +117,8 @@ public final class LoggerCapture implements AutoCloseable
 
 
     /**
+     * The raw messages of the captured records.
+     *
      * @return the raw message of every captured record - the pattern, not the formatted text, so a
      *         parameterised message reads as {@code "took {0}ms"}.
      */
@@ -125,6 +129,8 @@ public final class LoggerCapture implements AutoCloseable
 
 
     /**
+     * Whether any captured message contains the given fragment.
+     *
      * @param aFragment
      *            the text to look for.
      * @return true when any captured message contains the given fragment.
