@@ -116,7 +116,7 @@ public final class SyntheticDataTable implements IDataTable
         rowCount = aRows;
         int n = aColumnTypes.size();
         DataTableColumnMeta[] colMetas = new DataTableColumnMeta[n];
-        data = new Object[n][aRows];
+        data = newGrid(n, aRows);
         int c = 0;
         for (Map.Entry<String, DataValueType> e : aColumnTypes.entrySet())
         {
@@ -144,6 +144,32 @@ public final class SyntheticDataTable implements IDataTable
         }
         meta = DataTableMeta.builder().name(aName).label(aName).rowCount(aRows).totalRowCount(aRows)
                 .columns(colMetas).build();
+    }
+
+
+    /**
+     * Allocate the [column][row] value grid.
+     * <p>
+     * ⚠ [NullAway] is suppressed here, and only here, for a measured tool limitation rather than a
+     * code problem: NullAway 0.14.1 in JSpecify mode does not carry element nullness through a
+     * <em>two-dimensional</em> array creation. Measured 2026-09-17 — it types
+     * {@code new @Nullable Object[cols][rows]} as {@code @Nullable Object[]} (one dimension short)
+     * and then rejects the assignment to a {@code @Nullable Object[][]} target; allocating
+     * column-by-column instead fails the same way, because the component type of a
+     * {@code @Nullable Object[][]} local is read back as a non-null {@code Object[]}. The cells of
+     * this grid genuinely do hold {@code null} (a missing value), which is what the field's
+     * annotation states and what {@link #getValue} returns. ⛔ Re-check at the next NullAway bump.
+     *
+     * @param aCols
+     *            the column count.
+     * @param aRows
+     *            the row count.
+     * @return a {@code [aCols][aRows]} grid whose cells may hold {@code null}.
+     */
+    @SuppressWarnings("NullAway")
+    private static @Nullable Object[][] newGrid(int aCols, int aRows)
+    {
+        return new @Nullable Object[aCols][aRows];
     }
 
 
@@ -209,7 +235,11 @@ public final class SyntheticDataTable implements IDataTable
     }
 
 
-    /** @return the column names, in declaration order. */
+    /**
+     * The names of this table's columns.
+     *
+     * @return the column names, in declaration order.
+     */
     public List<String> columnNames()
     {
         List<String> names = new ArrayList<>();

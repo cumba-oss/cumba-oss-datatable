@@ -568,7 +568,10 @@ public final class MockTable
         DataTableColumnMeta[] colMetaArr = new DataTableColumnMeta[colNames.length];
         for (int c = 0; c < colNames.length; c++)
         {
-            colMetaArr[c] = colMetaByName.get(colNames[c]);
+            // requireNonNull, not @Nullable: colMetaByName was filled from colNames in the loop
+            // above, one entry per name, so a miss here is a broken invariant rather than an
+            // absent column -- and a null in this array would be answered to getAllColumns().
+            colMetaArr[c] = java.util.Objects.requireNonNull(colMetaByName.get(colNames[c]));
         }
         // ⚠ A FRESH Stream per call -- a Stream is single-use, so answering one cached instance
         // would work once and throw IllegalStateException on the second reader.

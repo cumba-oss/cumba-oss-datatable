@@ -43,8 +43,6 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      */
     public static final int DEFAULT_GUESS_ROW_COUNT = 10_240;
 
-    private static final String MSG_BLANK_HEADER_FALLBACK = "Excel column %s of sheet '%s' has a blank name; using fallback '%s' (uri=%s)";
-
     /**
      * The displayFormat token that marks a column as a date/datetime column (Excel-serial values
      * converted to SAS-datetime-seconds). Shared between {@link #inferDateFormats} (which decides
@@ -417,9 +415,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         }
         String fallback = "V" + (aIndex + 1);
         LOGGER.log(Level.WARNING,
-                MSG_BLANK_HEADER_FALLBACK.formatted(
-                        CellReference.convertNumToColString(aSheetColumnIndex), aSheetName,
-                        fallback, aUri));
+                "Excel column %s of sheet '%s' has a blank name; using fallback '%s' (uri=%s)"
+                        .formatted(CellReference.convertNumToColString(aSheetColumnIndex),
+                                aSheetName, fallback, aUri));
         return fallback;
     }
 
@@ -690,12 +688,15 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * earlier, where the constructor's own probe catch takes it. Re-check both if that call
          * order ever changes.
          */
+        // [JavaUtilDate] suppressed for the whole method, not the declaration: POI's
+        // Cell.getDateCellValue() returns a java.util.Date and there is no java.time overload, so
+        // both the call AND the getTime() that reads it are forced. The suppression used to sit on
+        // the local variable, which left the getTime() on the next line reported.
+        @SuppressWarnings("JavaUtilDate")
         private static double dateSecondsOf(Cell aCell)
         {
             try
             {
-                @SuppressWarnings("JavaUtilDate") // POI's Cell.getDateCellValue() returns
-                                                  // java.util.Date
                 java.util.Date d = aCell.getDateCellValue();
                 return d != null ? (d.getTime() - SAS_DATETIME_EPOCH_MILLIS) / 1000.0 : Double.NaN;
             }

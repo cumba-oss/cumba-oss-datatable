@@ -480,7 +480,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
      *            the number of deleted observations identified during the scan.
      * @return {@code max(0, rowCount - deleted)}.
      */
-    static long clampExpectedRows(Long aRowCount, long aDeleted)
+    static long clampExpectedRows(@Nullable Long aRowCount, long aDeleted)
     {
         long rows = aRowCount == null ? 0L : aRowCount;
         return Math.max(0L, rows - aDeleted);
