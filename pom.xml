@@ -113,7 +113,7 @@
 
         <dependency.plexus-compiler.version>2.17.0</dependency.plexus-compiler.version>
 
-        <!-- Error Prone — only consumed by the opt-in ErrPrn profile. -->
+        <!-- Error Prone — consumed by the ErrPrn profile, on by default. -->
         <dependency.error-prone.version>2.50.0</dependency.error-prone.version>
 
         <!-- NullAway null-safety (JSpecify mode). Layers on Error Prone, so it
@@ -167,9 +167,9 @@
              fills this with the JSpecify-mode ERROR config. -->
         <nullaway.extraArgs></nullaway.extraArgs>
 
-        <!-- Whether the ErrPrn profile (opt-in, `-P ErrPrn`) breaks the
-             build on findings. Default true; relax locally with
-             `-Derrprn.failOnWarning=false`. -->
+        <!-- Whether the ErrPrn profile (active by default, disable with
+             `-DskipErrPrn`) breaks the build on findings. Default true; relax
+             locally with `-Derrprn.failOnWarning=false`. -->
         <errprn.failOnWarning>true</errprn.failOnWarning>
 
         <!-- Whether the PMD profile (active by default) breaks the
@@ -438,13 +438,24 @@
         </profile>
 
         <!--                                                                   -->
-        <!-- Opt-in: Google Error Prone, run as a javac plugin attached to     -->
-        <!-- the regular default-compile execution. Activate with `-P ErrPrn`. -->
+        <!-- Google Error Prone, run as a javac plugin attached to the regular -->
+        <!-- default-compile execution. ON BY DEFAULT since 2026-09-17: it     -->
+        <!-- is a gate, not a lint sweep, and `errprn.failOnWarning` defaults  -->
+        <!-- to true. Disable with `-DskipErrPrn` (any value). NullAway stays  -->
+        <!-- OFF for test sources; see the default-testCompile override below. -->
         <!--                                                                   -->
         <profile>
             <id>ErrPrn</id>
             <activation>
-                <activeByDefault>false</activeByDefault>
+                <!--
+                    Property-based activation (not activeByDefault) so the
+                    profile survives an explicit `-P <something>` selection,
+                    which would otherwise deactivate it. Same idiom as the PMD
+                    and SpotBugs profiles. Disable with `-DskipErrPrn`.
+                -->
+                <property>
+                    <name>!skipErrPrn</name>
+                </property>
             </activation>
             <build>
                 <pluginManagement>
@@ -838,7 +849,7 @@
         <!-- nullaway.extraArgs (injected into the Error Prone -Xplugin line)  -->
         <!-- and adds the NullAway processor to the compiler path. Because it  -->
         <!-- layers on Error Prone, it only has an effect when the ErrPrn      -->
-        <!-- profile is active (e.g. -P ErrPrn, or the CI gates).              -->
+        <!-- profile is active, which since 2026-09-17 it is by default.       -->
         <!--                                                                   -->
         <!-- JSpecifyMode + AnnotatedPackages=net.cumba: every package under -->
         <!-- the project group is null-checked. ERROR severity for unambiguous -->
