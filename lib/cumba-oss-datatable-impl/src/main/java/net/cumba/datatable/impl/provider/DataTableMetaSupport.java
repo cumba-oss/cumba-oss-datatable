@@ -243,7 +243,8 @@ public class DataTableMetaSupport
      * table-metadata keys. Unlike a filename-extension heuristic this is authoritative — the
      * provider that actually parsed the bytes states its format — and backs the rule-engine
      * {@code extract_metadata("file_format")} accessor (CX-2,
-     * {@code plans/PLAN-engine-enhancements-CX.md}). Call after {@link #setTable(URI, String)}.
+     * {@code plans/done/PLAN-engine-enhancements-CX.md}). Call after
+     * {@link #setTable(URI, String)}.
      *
      * @param aFormat
      *            the format token, e.g. {@code "XPORT"}, {@code "SAS7BDAT"},

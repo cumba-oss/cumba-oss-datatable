@@ -262,7 +262,7 @@ class MetadataCacheLocatorTest
     /**
      * ⚠ The pin exists in two places on purpose — a build-time record beside the rules-corpus pin
      * in the root pom, and the runtime literal the dialog defaults to — and this is the guard that
-     * keeps them from drifting apart (plans/PLAN-core-check-followups.md §3.5).
+     * keeps them from drifting apart (plans/done/PLAN-core-check-followups.md §3.5).
      *
      * <p>
      * Read straight from the pom file rather than a filtered test resource, because this module's
