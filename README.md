@@ -195,7 +195,9 @@ already includes the `initialize` phase, e.g.
   the multi-module root read them from system properties Surefire
   exposes per fork: `System.getProperty("projectBasedir")` (the
   module's `${project.basedir}`) and `System.getProperty("repoRoot")`
-  (`${maven.multiModuleProjectDirectory}`, i.e. the reactor root).
+  (`${repo.root.dir}`, i.e. the root of THIS repository — every pom
+  declares it relative to its own depth, so it is the repo root and
+  never the reactor root).
 - **JaCoCo** enforces a per-module line-coverage minimum.
   `<jacoco.line.coverage>` defaults to `0.80` (80%). Override
   per-module by setting the property in the module's pom, or globally

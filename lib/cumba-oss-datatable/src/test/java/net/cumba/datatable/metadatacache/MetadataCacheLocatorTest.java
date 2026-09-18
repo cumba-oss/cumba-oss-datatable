@@ -271,9 +271,9 @@ class MetadataCacheLocatorTest
      * </p>
      *
      * <p>
-     * ⚠ The repo root is taken from the {@code repoRoot} system property
-     * ({@code maven.multiModuleProjectDirectory}), which surefire exports in this tree <em>and</em>
-     * in the split repositories — <b>not</b> from a CWD-relative path. Surefire's
+     * ⚠ The repo root is taken from the {@code repoRoot} system property ({@code repo.root.dir},
+     * each pom's own {@code project.basedir}-relative anchor), which surefire exports in this tree
+     * <em>and</em> in the split repositories — <b>not</b> from a CWD-relative path. Surefire's
      * {@code workingDirectory} is not the module directory everywhere: the split roots redirect it
      * to {@code target/test-cwd}, where {@code ../../pom.xml} silently resolves to the module pom
      * instead of the repo root and the guard then checks the wrong file. Outside surefire (a bare

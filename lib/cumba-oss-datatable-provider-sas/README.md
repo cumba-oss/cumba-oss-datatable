@@ -67,6 +67,6 @@ way this one did.
 - No exporter and no SAS7BCAT format-catalog support are included.
 - Three test classes read fixtures from the repository-root `testdata/`
   directory, resolved through the `repoRoot` system property that Surefire
-  sets to `${maven.multiModuleProjectDirectory}`.
+  sets to `${repo.root.dir}`, the root of THIS repository.
 
 See the root [README](../../README.md) for project-wide context.
