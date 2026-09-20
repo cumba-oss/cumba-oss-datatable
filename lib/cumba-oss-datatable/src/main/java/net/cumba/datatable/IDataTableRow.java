@@ -1,8 +1,10 @@
 package net.cumba.datatable;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.stream.Stream;
+import net.cumba.datatable.help.GenericListView;
 import net.cumba.datatable.values.IDataValue;
 import org.jspecify.annotations.Nullable;
 
@@ -157,6 +159,51 @@ public interface IDataTableRow
     {
         return Arrays.stream(aColumnNames)//
                 .map(this::getDataValue);
+    }
+
+    // ⭐ The List-returning views, ported 2026-09-20 with GenericListView itself.
+    // They were withheld only because that ONE JDK-only helper class was absent here --
+    // not because of any feature. A single helper is not a feature, so it travels and
+    // these travel with it. ⚑ The port also forced a real fix: GenericListView's type
+    // variable had no @Nullable upper bound, so GenericListView<@Nullable Object> was an
+    // illegal instantiation under JSpecify. THIS repository's NullAway caught it; the
+    // internal one did not. The bound was added in BOTH trees.
+    // The getFormattedDataValue family stays withheld: it reaches values.DataValueFormatted,
+    // which belongs to the formats feature and is genuinely out.
+
+
+    /**
+     * Retrieve a virtual list view over the values of this row.
+     *
+     * <p>
+     * ⚠ The element type is {@code @Nullable Object} because {@link #getValue(int)}, the provider
+     * this view is built on, is itself {@code @Nullable}. The declaration used to read
+     * {@code List<Object>} — a NON-null element type over a nullable provider, which NullAway
+     * cannot flag because it does not check a method reference's return against a generic type
+     * argument. Nothing about the runtime answer changed. The typed channel,
+     * {@link #getDataValue(int)}, is where the value-or-missing contract lives.
+     * </p>
+     *
+     * @return a virtual list that can be used to access the values of this row. The resulting list
+     *         is just a view into this row, not a copy.
+     */
+    default List<@Nullable Object> getValues()
+    {
+        int colCount = getColumnCount();
+        return new GenericListView<@Nullable Object>(this::getValue, colCount);
+    }
+
+
+    /**
+     * Retrieve a virtual list view over the values of this row as IDataValue.
+     *
+     * @return a virtual list that can be used to access the values of this row as IDataValue. The
+     *         resulting list is just a view into this row, not a copy.
+     */
+    default List<IDataValue> getDataValues()
+    {
+        int colCount = getColumnCount();
+        return new GenericListView<>(this::getDataValue, colCount);
     }
 
 }
