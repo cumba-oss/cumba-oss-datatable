@@ -39,8 +39,12 @@ public class CdtDataset
     List<CdtColumn> columns;
 
     /**
-     * Raw data rows as strings. Each row has one entry per declared column; empty strings represent
-     * null fields.
+     * Data rows, one entry per declared column, in the encoding
+     * {@link CdtValues#encodeField(String, boolean)} produces: the field's literal text, except
+     * that an unquoted missing sentinel is kept verbatim ({@code .}, {@code ._}, {@code .A}) and a
+     * literal whose text would read back as one is backslash-escaped. An empty string is a blank
+     * field. {@link CdtValues#parseValue(String, CdtType)} is the decoder — read a field through it
+     * rather than interpreting the text directly.
      */
     @Singular
     List<List<String>> dataRows;

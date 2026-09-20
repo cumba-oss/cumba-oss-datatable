@@ -12,6 +12,7 @@ import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
+import net.cumba.datatable.values.MissingValue;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -23,6 +24,13 @@ import org.junit.jupiter.api.Test;
 class CdtTableBuilderTest
 {
 
+    /** Runtime copy with equal content but a distinct identity (never the constant-pool one). */
+    private static String copyOf(String aValue)
+    {
+        return String.valueOf(aValue.toCharArray());
+    }
+
+
     private static CdtDataset buildDataset(List<List<String>> aRows)
     {
         return CdtDataset.builder()//
@@ -32,6 +40,26 @@ class CdtTableBuilderTest
                 .dataRows(aRows)//
                 .fence("---")//
                 .build();
+    }
+
+
+    /** String cells are canonicalised against the app-global pool ({@code CDT.intern}). */
+    @Test
+    void stringCellsAreCanonicalised()
+    {
+        // Distinct equal-content instances built at runtime — sharing must come from the pool.
+        CdtDataset ds = buildDataset(List.of(//
+                List.of(copyOf("S001"), "42"), //
+                List.of(copyOf("S001"), "37")));
+
+        IDataTable table = CdtTableBuilder.build(ds, URI.create("test:dm"));
+        Object a = table.getValue(0, 0);
+        Object b = table.getValue(1, 0);
+        assertEquals("S001", a);
+        org.junit.jupiter.api.Assertions.assertSame(a, b,
+                "equal-content cells must share one canonical instance");
+        org.junit.jupiter.api.Assertions.assertSame(a, net.cumba.datatable.help.CDT.intern("S001"),
+                "the shared instance must be the CDT-pool one");
     }
 
 
@@ -47,6 +75,60 @@ class CdtTableBuilderTest
         assertNotNull(table);
         assertEquals(2L, table.getRowCount());
         assertEquals(2, table.getMetaData().getColumnCount());
+    }
+
+
+    /**
+     * A built table never exposes {@code null} through {@link IDataTable#getValue(long, int)}: a
+     * missing Char cell is {@code ""} and a missing numeric cell is {@link MissingValue#MIS}, which
+     * is how every other provider represents missing (see {@code DataValueSupport.defaultForType}).
+     */
+    @Test
+    void missingCellsAreNeverNull()
+    {
+        CdtDataset ds = buildDataset(List.of(//
+                List.of("", ""), //
+                List.of("S002", ".")));
+
+        IDataTable table = CdtTableBuilder.build(ds, URI.create("test:dm"));
+
+        assertEquals("", table.getValue(0, 0));
+        assertEquals(MissingValue.MIS, table.getValue(0, 1));
+        assertEquals("S002", table.getValue(1, 0));
+        assertEquals(MissingValue.MIS, table.getValue(1, 1));
+
+        for (long r = 0; r < table.getRowCount(); r++)
+        {
+            for (int c = 0; c < table.getMetaData().getColumnCount(); c++)
+            {
+                assertNotNull(table.getValue(r, c), "cell (" + r + "," + c + ") must not be null");
+            }
+        }
+    }
+
+
+    /**
+     * A missing numeric cell decodes back to {@link MissingValue#MIS} — i.e. it renders as
+     * {@code "."}. Storing a raw {@code null} used to land a payload-free {@link Double#NaN} in the
+     * buffer, which decoded to {@code MIS_UNKNOWN} and surfaced as {@code <UKN>}.
+     */
+    @Test
+    void missingNumericDecodesToMisNotUnknown()
+    {
+        CdtDataset ds = buildDataset(List.of(//
+                List.of("S001", "."), //
+                List.of("S002", "37")));
+
+        IDataTable table = CdtTableBuilder.build(ds, URI.create("test:dm"));
+
+        IDataValue dv = table.getDataValue(0, 1);
+        assertTrue(dv.isMissingOrInvalid(), "a missing numeric must report as missing");
+        assertEquals(MissingValue.MIS, dv.getValue());
+        assertEquals(".", dv.getValue().toString());
+        assertTrue(table.isMissingOrNull(0, 1));
+
+        // The populated cell is unaffected.
+        assertEquals(37.0, table.getDataValue(1, 1).getValueAsDouble());
     }
 
 
@@ -100,6 +182,60 @@ class CdtTableBuilderTest
         CdtParseException ex = org.junit.jupiter.api.Assertions.assertThrows(
                 CdtParseException.class, () -> CdtTableBuilder.build(ds, URI.create("test:dm")));
         assertTrue(ex.getMessage().contains("row 2"), ex.getMessage());
+    }
+
+
+    /**
+     * {@code reconcileLengths} widens the declared length of a {@code Char} column when the actual
+     * data is longer, leaves a matching or shorter column untouched, and never touches a non-Char
+     * column (a declared {@code length} on a numeric column is not a string-truncation guard, so
+     * there is nothing to widen). Also exercises the dataset/column label fallback
+     * ({@code label ?? name}) in both directions, and the codelist attribute propagation.
+     */
+    @Test
+    void reconcileLengthsWidensOnlyOverflowingCharColumns()
+    {
+        CdtDataset ds = CdtParser.parseFirst("""
+                dataset DM label="Demographics"
+                col USUBJID type=Char length=2 codelist=C1
+                col AGE type=Num length=2
+                col SITE type=Char length=10 label="Site ID"
+                ---
+                ABCDE | 12345 | X
+                ---
+                """, "t");
+
+        IDataTable table = CdtTableBuilder.build(ds, URI.create("test:dm"));
+        var meta = table.getMetaData();
+
+        assertEquals("Demographics", meta.getLabel());
+
+        assertEquals("USUBJID", meta.getColumn(0).getLabel(), "label falls back to the name");
+        assertEquals(5, meta.getColumn(0).getLength(), "ABCDE (5 chars) must widen the declared 2");
+        assertEquals("C1", meta.getColumn(0).getMetaData(CdtTableBuilder.COLUMN_META_CODELIST));
+
+        assertEquals(2, meta.getColumn(1).getLength(),
+                "a Num column's declared length is never reconciled against string width");
+
+        assertEquals("Site ID", meta.getColumn(2).getLabel(), "explicit label is used as-is");
+        assertEquals(10, meta.getColumn(2).getLength(),
+                "1-char value does not exceed the declared 10, so it is left untouched");
+    }
+
+
+    /** The dataset label falls back to the dataset name when no {@code label=...} was declared. */
+    @Test
+    void datasetLabelFallsBackToNameWhenAbsent()
+    {
+        CdtDataset ds = CdtParser.parseFirst("""
+                dataset DM
+                col X type=Char
+                ---
+                v
+                ---
+                """, "t");
+        IDataTable table = CdtTableBuilder.build(ds, URI.create("test:dm"));
+        assertEquals("DM", table.getMetaData().getLabel());
     }
 
 

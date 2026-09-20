@@ -268,7 +268,7 @@ public interface IDataTable
      * @return a Stream that contains the requested columns.<br/>
      *         If the same column is referenced multiple times, it is returned as many times as it
      *         is requested.<br/>
-     *         If an invalid index is provided, this is ignored.
+     *         An invalid index raises {@code IndexOutOfBoundsException}.
      */
     default Stream<IDataTableColumn> getColumns(int... aColumnIndices)
     {

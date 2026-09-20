@@ -46,14 +46,25 @@ public enum PropertyType
     ANY_OF,
 
     /**
-     * A file reference. The value is a URI string pointing to a file. A file chooser should be
-     * provided to allow the user to select the file.
+     * A file reference. The value is a URI string <b>or</b> a local filesystem path pointing to a
+     * file; consumers must accept both. A file chooser should be provided to allow the user to
+     * select the file.
+     *
+     * <p>
+     * ⚠ Both forms stay legal deliberately. These values cross the JSON-RPC wire and are persisted
+     * in {@code coreCheck.history}, where a Windows {@code Path.toString()} is meaningless to a
+     * Linux peer — so the URI form cannot be dropped. Equally, a consumer that hands the value to
+     * {@code Path.of(...)} must convert a {@code file:} URI first: {@code Path.of("file:///x")}
+     * raises {@code InvalidPathException} on Windows and silently yields a relative, non-existent
+     * path elsewhere.
+     * </p>
      */
     FILE,
 
     /**
-     * A directory reference. The value is a URI string pointing to a directory. A directory chooser
-     * should be provided to allow the user to select the directory.
+     * A directory reference. The value is a URI string <b>or</b> a local filesystem path pointing
+     * to a directory; consumers must accept both — see {@link #FILE}. A directory chooser should be
+     * provided to allow the user to select the directory.
      */
     DIRECTORY,
 
@@ -64,9 +75,11 @@ public enum PropertyType
     PASSWORD,
 
     /**
-     * An ordered list of file references. The value is a comma-separated list of URI strings, each
-     * pointing to a file. The UI should provide a dialog that lets the user add files via a file
-     * chooser (with multi-selection) and remove previously added entries.
+     * An ordered list of file references. The value is a comma-separated list of entries, each a
+     * URI string <b>or</b> a local filesystem path pointing to a file; consumers must accept both
+     * and must convert <b>per element</b> — see {@link #FILE}. The UI should provide a dialog that
+     * lets the user add files via a file chooser (with multi-selection) and remove previously added
+     * entries.
      */
     FILES,
 

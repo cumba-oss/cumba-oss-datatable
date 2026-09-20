@@ -11,7 +11,10 @@ import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import lombok.CustomLog;
 import lombok.Getter;
 import lombok.NonNull;
@@ -91,10 +94,11 @@ public class CsvTableProvider extends AbstractDataTableProvider
             CsvParserSettings ps = buildParserSettings(bin);
 
             CsvParser parser = new CsvParser(ps);
-            parser.beginParsing(new InputStreamReader(bin, getCharset()));
 
             try
             {
+                parser.beginParsing(new InputStreamReader(bin, getCharset()));
+
                 String[] firstRow = parser.parseNext();
                 if (firstRow == null)
                 {
@@ -102,7 +106,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 }
                 CsvRecord headRow = new CsvRecord(firstRow);
 
-                List<CsvRecord> headRowBlock = new ArrayList<>(guessingRowCount);
+                List<CsvRecord> headRowBlock = new ArrayList<>(
+                        Math.min(guessingRowCount, DEFAULT_GUESS_ROW_COUNT));
                 String[] row;
                 while ((row = parser.parseNext()) != null)
                 {
@@ -121,17 +126,10 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 int colCount = headRow.getColumnCount();
                 DataValueType[] dataTypes = determineTypes(headRowBlock, colCount);
 
+                Set<String> usedNames = new HashSet<>();
                 for (int i = 0; i < colCount; i++)
                 {
-                    String name = headRow.getValue(i);
-                    if (name.isBlank())
-                    {
-                        String fallback = "V" + (i + 1);
-                        LOGGER.log(System.Logger.Level.WARNING,
-                                "CSV column %d has blank header; using fallback '%s' (uri=%s)"
-                                        .formatted(i, fallback, aURI));
-                        name = fallback;
-                    }
+                    String name = resolveColumnName(headRow.getValue(i), i, usedNames, aURI);
                     DataValueType type = dataTypes[i];
                     dtms.addColumn(name, type);
                 }
@@ -156,11 +154,11 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
             CsvParser parser = new CsvParser(ps);
 
-            parser.beginParsing(new InputStreamReader(bin, getCharset()));
-
             CsvTableDataParser tblParser;
             try
             {
+                parser.beginParsing(new InputStreamReader(bin, getCharset()));
+
                 // head row contains column names
                 String[] firstRow = parser.parseNext();
                 if (firstRow == null)
@@ -171,7 +169,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
                 // the first #guessingRowCount# rows are used to determine column types
 
-                List<CsvRecord> headRowBlock = new ArrayList<>(guessingRowCount);
+                List<CsvRecord> headRowBlock = new ArrayList<>(
+                        Math.min(guessingRowCount, DEFAULT_GUESS_ROW_COUNT));
 
                 String[] row;
                 while ((row = parser.parseNext()) != null)
@@ -193,17 +192,10 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
                 DataValueType[] dataTypes = determineTypes(headRowBlock, colCount);
 
+                Set<String> usedNames = new HashSet<>();
                 for (int i = 0; i < colCount; i++)
                 {
-                    String name = headRow.getValue(i);
-                    if (name.isBlank())
-                    {
-                        String fallback = "V" + (i + 1);
-                        LOGGER.log(System.Logger.Level.WARNING,
-                                "CSV column %d has blank header; using fallback '%s' (uri=%s)"
-                                        .formatted(i, fallback, aURI));
-                        name = fallback;
-                    }
+                    String name = resolveColumnName(headRow.getValue(i), i, usedNames, aURI);
                     DataValueType type = dataTypes[i];
                     dtms.addColumn(name, type);
                 }
@@ -242,7 +234,17 @@ public class CsvTableProvider extends AbstractDataTableProvider
     {
         CsvParserSettings ps = new CsvParserSettings();
 
-        if (CDT.isBlankOrNull(getDelimiter()))
+        // ⚠⚠ Deliberately NOT CDT.isBlankOrNull(): a tab or a newline is a legitimate,
+        // explicitly-configured delimiter / line separator (TSV, explicit CRLF), and
+        // isBlankOrNull's String.isBlank() treats both as "unset". Only genuine absence means
+        // "auto-detect".
+        // ⚠ Read ONCE into a local. Null-checking one call and dereferencing a second is
+        // NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE: nothing guarantees the second call returns the
+        // same non-null value, so the check would protect nothing. This repository does NOT
+        // suppress that pattern, while the internal twin does suppress it project-wide -- so the
+        // upstream spelling passes there and reds here. Keep the locals.
+        String configuredDelimiter = getDelimiter();
+        if (configuredDelimiter == null || configuredDelimiter.isEmpty())
         {
             // we allow a first line of up to 1MB
             aStream.mark(1_048_576);
@@ -253,22 +255,76 @@ public class CsvTableProvider extends AbstractDataTableProvider
         }
         else
         {
-            ps.getFormat().setDelimiter(getDelimiter());
+            ps.getFormat().setDelimiter(configuredDelimiter);
         }
 
-        if (CDT.isBlankOrNull(getLineSeparator()))
+        String configuredLineSeparator = getLineSeparator();
+        if (configuredLineSeparator == null || configuredLineSeparator.isEmpty())
         {
             ps.setLineSeparatorDetectionEnabled(true);
         }
         else
         {
-            ps.getFormat().setLineSeparator(getLineSeparator());
+            ps.getFormat().setLineSeparator(configuredLineSeparator);
         }
 
         ps.getFormat().setQuote(getQuote());
         ps.getFormat().setQuoteEscape(getQuoteEscape());
 
+        // univocity's defaults (4096 chars/field, 512 columns) are comfortably exceeded by real
+        // clinical exports: a free-text comment column longer than 4096 characters, or an
+        // ADaM/EDC-style wide export with more than 512 variables, would otherwise fail the whole
+        // load with an unchecked TextParsingException instead of a normal parse. Field length has
+        // no natural CSV-imposed bound, so it is disabled outright; column count is raised
+        // generously rather than disabled, since it also bounds an internal array allocation.
+        ps.setMaxCharsPerColumn(-1);
+        ps.setMaxColumns(4096);
+
         return ps;
+    }
+
+
+    /**
+     * Resolve the display name for header column {@code aColumnIndex}: substitute the positional
+     * fallback {@code "V" + (aColumnIndex + 1)} for a blank cell (logging a warning), then
+     * disambiguate the result — fallback or real — against every name already assigned earlier in
+     * this same header, case-insensitively, matching {@link DataTableMetaSupport#addColumn}'s own
+     * comparison. Without this, a duplicate header (two real columns sharing a name, or a real
+     * column colliding with an earlier fallback) escaped as an undocumented
+     * {@link IllegalStateException} from a method whose contract promises only {@link IOException}.
+     *
+     * @param aRawName
+     *            the header cell as read from the file.
+     * @param aColumnIndex
+     *            the (0-based) column index, used for the fallback name and the log message.
+     * @param aUsedLowerCase
+     *            the lower-cased names already assigned in this header; updated with the name this
+     *            call resolves to.
+     * @param aURI
+     *            the table's source, for the blank-header log message.
+     * @return a name that is guaranteed unique (case-insensitively) among everything added to
+     *         {@code aUsedLowerCase} so far.
+     */
+    private String resolveColumnName(String aRawName, int aColumnIndex, Set<String> aUsedLowerCase,
+            URI aURI)
+    {
+        String name = aRawName;
+        if (name.isBlank())
+        {
+            name = "V" + (aColumnIndex + 1);
+            LOGGER.log(System.Logger.Level.WARNING,
+                    "CSV column %d has blank header; using fallback '%s' (uri=%s)"
+                            .formatted(aColumnIndex + 1, name, aURI));
+        }
+
+        String candidate = name;
+        int suffix = 2;
+        while (!aUsedLowerCase.add(candidate.toLowerCase(Locale.ROOT)))
+        {
+            candidate = name + "_" + suffix;
+            suffix++;
+        }
+        return candidate;
     }
 
 
@@ -293,7 +349,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
             try
             {
                 boolean possiblyDouble = true;
-                boolean sawCell = false;
+                boolean sawNumericEvidence = false;
                 for (int rowIdx = 0; rowIdx < aRowBlock.size(); rowIdx++)
                 {
                     CsvRecord row = aRowBlock.get(rowIdx);
@@ -312,10 +368,22 @@ public class CsvTableProvider extends AbstractDataTableProvider
                         // thousands of rows were.
                         continue;
                     }
-                    sawCell = true;
-                    if (possiblyDouble && !row.isDoubleOrMissing(i))
+                    String cell = row.getValue(i);
+                    // ⚠⚠ A blank cell or a "." is evidence of NOTHING, exactly like an absent
+                    // (ragged-row) cell above — isDoubleOrMissing answers true for all three, so
+                    // relying on mere PRESENCE (the former `sawCell`) let a column that is
+                    // present-but-empty in every sampled row be typed DOUBLE on zero real
+                    // evidence. Only a cell that is neither absent, blank nor "." counts as real
+                    // numeric evidence; such a column stays at the STRING default, exactly like a
+                    // column no sampled row reaches at all.
+                    boolean blankOrDot = CDT.isBlankOrNull(cell) || ".".equals(cell);
+                    if (!blankOrDot)
                     {
-                        possiblyDouble = false;
+                        sawNumericEvidence = true;
+                        if (possiblyDouble && !row.isDoubleOrMissing(i))
+                        {
+                            possiblyDouble = false;
+                        }
                     }
                     if (!possiblyDouble)
                     {
@@ -323,17 +391,13 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     }
                 }
 
-                // ⚠ `sawCell` guards a column NO sampled row reaches. Skipping absent cells (above)
-                // would otherwise leave possiblyDouble untouched and type such a column DOUBLE on
-                // zero evidence — and a later row's text would then be destroyed: addData2Column
-                // parses it as a double, gets NaN, and stores MissingValue.MIS. Types are fixed
-                // before the parser runs and never revised, so the text is gone with no warning.
-                //
-                // Concretely: a header declaring STUDYID,USUBJID,COMMENT whose first
-                // `guessingRowCount` rows omit the trailing field entirely, with a comment
-                // appearing only later. With no evidence either way, keep the STRING default —
-                // which is also what this column got before absent cells were skipped at all.
-                if (possiblyDouble && sawCell)
+                // ⚠ Concretely: a header declaring STUDYID,USUBJID,COMMENT whose first
+                // `guessingRowCount` rows omit the trailing field entirely OR carry it
+                // present-but-empty, with a comment appearing only later. Typing such a column
+                // DOUBLE destroys that text with no warning: addData2Column parses it as a
+                // double, gets NaN, and stores MissingValue.MIS. Types are fixed before the parser
+                // runs and never revised. With no evidence either way, keep the STRING default.
+                if (possiblyDouble && sawNumericEvidence)
                 {
                     dt = DataValueType.DOUBLE;
                 }

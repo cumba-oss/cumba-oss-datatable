@@ -1,6 +1,7 @@
 package net.cumba.datatable.provider.parquet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -225,9 +226,9 @@ class ParquetTableProviderCoverageTest
         // 35-digit value: well beyond the ~15-16 significant digits a double can hold.
         java.math.BigDecimal bd = new java.math.BigDecimal("12345678901234567890123456789012345");
         double d = bd.doubleValue();
-        // Mirrors the production check in Parquet2TableDataParser:
-        // if (BigDecimal.valueOf(d).compareTo(bd) != 0) throw ...
-        assertTrue(java.math.BigDecimal.valueOf(d).compareTo(bd) != 0,
+        // Mirrors the production check in Parquet2TableDataParser, which rejects a DECIMAL whose
+        // double round-trip is not value-equal to the original BigDecimal.
+        assertNotEquals(0, java.math.BigDecimal.valueOf(d).compareTo(bd),
                 "BigDecimal " + bd + " unexpectedly round-trips through double; "
                         + "the F-E15 guard would not trigger.");
     }

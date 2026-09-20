@@ -279,10 +279,23 @@ public class DsjTableProvider extends AbstractDataTableProvider
 
         IDataTable table = assembleResult(chunkParsers, singleParser[0], metaHolder[0]);
 
-        // F-prov-01: a declared-vs-parsed row-count mismatch means the document is
-        // corrupt (typically a truncated upload); returning the short table as a
-        // successful load would feed silently incomplete data into every downstream
-        // verdict and export. Both SAS providers throw for the identical condition.
+        // Delivery-vs-assembly consistency -- NOT the document-corruption guard this
+        // once was.
+        //
+        // F-prov-01 (a declared-vs-parsed row-count mismatch must not be returned as a
+        // successful load) is enforced one layer down since cumba-oss-cdisc-dsj gained
+        // DataSetJsonTableParser.verifyRecordCount: every parseDataSet route -- the
+        // single-threaded one, the rows-less one and the parallel NDJSON one -- ends in
+        // that verification, reading the same declared "records" value handleMetadata
+        // sees. No corrupt document can therefore reach this line.
+        //
+        // What remains is a cross-layer assertion the parser cannot make: rows it
+        // delivered to our handlers versus rows this provider actually assembled. The
+        // parallel path fans out into a chunk-parser map keyed by chunkIdx and
+        // concatenates it in assembleResult; a chunk lost or double-counted there is
+        // invisible to the parser's own tally. It is kept deliberately for that, and no
+        // test covers it -- assembleResult is private, so a test has no seam to inject an
+        // assembly shortfall.
         //
         // The declared count must be taken from the document's "records" attribute as
         // captured PRE-parse (declaredRows[0]; -1 means the document does not declare
@@ -407,6 +420,11 @@ public class DsjTableProvider extends AbstractDataTableProvider
             totalRows += chunkTables[i].getRowCount();
         }
         final long total = totalRows;
+        if (total > Integer.MAX_VALUE)
+        {
+            LOGGER.log(Level.DEBUG, "Total row count " + total + " exceeds Integer.MAX_VALUE; "
+                    + "clamping the expected-size hint.");
+        }
         int colCount = meta.getColumnCount();
         CachedDataTableColumn[] outCols = new CachedDataTableColumn[colCount];
 
@@ -414,6 +432,8 @@ public class DsjTableProvider extends AbstractDataTableProvider
         {
             DataValueType type = meta.getColumn(c).getType();
             CachedDataTableColumn out = new CachedDataTableColumn(c, type);
+            // setExpectedSize is a sizing hint only — the column still grows beyond it,
+            // so clamping to Integer.MAX_VALUE does not lose any rows.
             out.setExpectedSize((int) Math.min(total, Integer.MAX_VALUE));
             for (IDataTable t : chunkTables)
             {

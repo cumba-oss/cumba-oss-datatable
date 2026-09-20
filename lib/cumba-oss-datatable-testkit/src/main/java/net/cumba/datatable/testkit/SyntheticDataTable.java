@@ -236,7 +236,7 @@ public final class SyntheticDataTable implements IDataTable
 
 
     /**
-     * The names of this table's columns.
+     * The column names of this table.
      *
      * @return the column names, in declaration order.
      */

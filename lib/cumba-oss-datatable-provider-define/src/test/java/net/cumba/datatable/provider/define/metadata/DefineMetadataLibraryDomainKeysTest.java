@@ -194,10 +194,12 @@ class DefineMetadataLibraryDomainKeysTest
     {
         List<ItemDef> defs = Arrays.asList(//
                 itemDef("IT.STUDYID", "STUDYID"), //
-                itemDef("IT.ARMCD", "ARMCD"));
+                itemDef("IT.ARMCD", "ARMCD"), //
+                itemDef("IT.VISIT", "VISIT"));
         List<ItemRef> refs = Arrays.asList(//
                 itemRef("IT.STUDYID", 1), //
-                itemRef("IT.ARMCD", 2));
+                itemRef("IT.ARMCD", 2), //
+                itemRef("IT.VISIT", 3));
         ItemGroupDef group = ItemGroupDef.builder().oid("IG.TA").name("TA").domain("TA")
                 .domainKeys("STUDYID, ARMCD").itemRefs(refs).build();
 
@@ -212,6 +214,13 @@ class DefineMetadataLibraryDomainKeysTest
         IColumnMetadata armcd = columnByName(table, "ARMCD");
         assertEquals(2,
                 armcd.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE).orElseThrow());
+
+        // VISIT is not a domain key (derivedKeySequence == 0): the metaMap must NOT stamp a
+        // KeySequence for it. Kills a ConditionalsBoundaryMutator on "derivedKeySequence > 0"
+        // (>= 0 would put KeySequence=0 into every non-key column's metaMap).
+        IColumnMetadata visit = columnByName(table, "VISIT");
+        assertTrue(visit.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE).isEmpty(),
+                "non-key column must not carry a KeySequence");
     }
 
 }

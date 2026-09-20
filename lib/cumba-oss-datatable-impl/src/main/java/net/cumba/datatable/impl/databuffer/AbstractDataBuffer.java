@@ -125,8 +125,25 @@ public abstract class AbstractDataBuffer implements IDataBuffer
             // missing is already handled before so if we are here this is an error
             return new DataValueMissing(MissingValue.MIS_ERROR);
         case STRING:
-            // for STRING we map from null to empty string
-            return new DataValueString(val != null ? val.toString() : "");
+            if (val == null)
+            {
+                // ⭐ Owner ruling 2026-09-18: "null char cell is MissingValue.MIS". A null cell
+                // carries no value, and whether a cell is missing cannot depend on the column's
+                // type — the same principle as the MissingValue check above this switch. This arm
+                // used to answer DataValueString(""), so the SAME null read as missing through
+                // IDataTable's default wrap (DataValueSupport.getAsDataValue(null, STRING) ->
+                // DataValueMissing(MIS)) and as a blank non-missing string through a buffer-backed
+                // column.
+                //
+                // ⚠ This is NOT "a blank character cell is missing". A stored "" stays
+                // DataValueString("") and stays non-missing: the formats that cannot express a
+                // character null — CSV, CDT, XLSX, SAS7BDAT, XPT — deliberately store "" for a
+                // blank field, and those providers are unchanged. Only a raw null is affected,
+                // and the formats that CAN express one (Dataset-JSON, Parquet) already store
+                // MissingValue.MIS themselves.
+                return new DataValueMissing(MissingValue.MIS);
+            }
+            return new DataValueString(val.toString());
         case OTHER:
         default:
             return val != null ? new DataValueOther(val)

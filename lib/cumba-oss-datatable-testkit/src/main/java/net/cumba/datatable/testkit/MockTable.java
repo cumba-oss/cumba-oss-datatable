@@ -91,6 +91,31 @@ public final class MockTable
     }
 
 
+    /**
+     * Adds a character column. Its cells report {@link DataValueType#STRING} from {@code getType()}
+     * and answer the {@code String} verbatim from both {@code getValue()} and
+     * {@code getValueAsString()}; {@code getValueAsDouble()} is always {@code NaN}, because
+     * {@code DataValueString} — the cell every real character column hands back — overrides it with
+     * a hard {@code return Double.NaN}.
+     *
+     * <p>
+     * ⭐ A {@code null} entry models a <b>missing character cell</b>, which under the owner's
+     * 2026-09-18 ruling is that cell's own {@link net.cumba.datatable.values.MissingValue}:
+     * {@code isMissingOrInvalid() == true}, {@code getValue()} answers
+     * {@link net.cumba.datatable.values.MissingValue#MIS}, {@code getValueAsString()} renders
+     * {@code "."} and {@code getType()} is {@link DataValueType#MISSING} — the same answer
+     * {@link #colLong} and {@link #colSasMissing} give, and the same one
+     * {@code DataValueSupport.getAsDataValue(null, STRING)} and
+     * {@code AbstractDataBuffer.createDataValue}'s STRING arm both give.
+     * </p>
+     *
+     * <p>
+     * ⛔ It is <b>not</b> the empty string. {@code ""} is a <em>present</em> value — a character
+     * cell the source genuinely contained as blank — and stays {@code DataValueType#STRING},
+     * non-missing. Write {@code ""} for that case and {@code null} for a missing one; the two are
+     * distinguishable here precisely because they are distinguishable in the product.
+     * </p>
+     */
     public MockTable col(String name, String... values)
     {
         columns.put(name, values);
@@ -912,9 +937,35 @@ public final class MockTable
         IDataValue dv = mock(IDataValue.class);
         if (raw == null)
         {
+            // ⛔⛔ Until 2026-09-18 this arm stubbed getValue() -> null and getValueAsString()
+            // -> "", i.e. BOTH halves of the doctrine the owner retired that day: a value
+            // channel may never carry a null, and a missing character cell is that cell's own
+            // MissingValue -- NOT the empty string. Its two sibling factories,
+            // mockSasMissingDataValue and mockNumericDataValue, were corrected earlier and
+            // already answer MissingValue.MIS / "."; this one was missed, and NO COMPILER
+            // CHECKS A MOCK, which is why it survived every gate and every NullAway pass.
+            //
+            // ⭐ The answer below is what a real character column now hands back for a null
+            // cell, through BOTH wrap paths: DataValueSupport.getAsDataValue(null, STRING) and
+            // AbstractDataBuffer.createDataValue's STRING arm both mint
+            // DataValueMissing(MissingValue.MIS), whose getValueAsString() is MIS.toString(),
+            // the SAS missing dot.
+            //
+            // ⚠ The pin lives UPSTREAM only: NullCharCellIsMissingTest is a
+            // cumba-datatable-impl test and this repository does not carry it, because the
+            // seam it drives (SimpleDatatableFactory) is not part of the reduced impl module.
+            // So the STRING arm of AbstractDataBuffer.createDataValue is unpinned HERE -- the
+            // shipped providers reach the same answer by storing MissingValue.MIS themselves,
+            // which is why nothing downstream observes the difference.
+            //
+            // ⚠ getValue() moving null -> MIS also moves everything build() derives from the
+            // raw cell: table.getValue / column.getValue (via cellAt) and hashCodeAt (via
+            // hashOf, 0 -> MIS.hashCodeStable()). isMissingOrNull and isEmptyOrMissing do NOT
+            // move -- both already answered true for a null AND for a MissingValue -- which is
+            // exactly why a green suite was never evidence that this stub was faithful.
             lenient().when(dv.isMissingOrInvalid()).thenReturn(true);
-            lenient().when(dv.getValue()).thenReturn(null);
-            lenient().when(dv.getValueAsString()).thenReturn("");
+            lenient().when(dv.getValue()).thenReturn(MissingValue.MIS);
+            lenient().when(dv.getValueAsString()).thenReturn(MissingValue.MIS.toString());
             lenient().when(dv.getValueAsDouble()).thenReturn(Double.NaN);
             lenient().when(dv.getType()).thenReturn(DataValueType.MISSING);
             return dv;

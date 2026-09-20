@@ -435,15 +435,20 @@ class CdtWriterTest
 
 
     @Test
-    void singleColumnAllNullRowIsWrittenAsTheDotSentinel()
+    void singleColumnEmptyCharRowIsWrittenAsQuotedEmptyNotTheDotSentinel()
     {
-        // ⭐ CORRECTED with F-prov-cdt-02 (internal 0f8ed3d). This test used to assert the
-        // OPPOSITE, and cited the guard it was pinning as its justification: "Single-column
-        // tables never collapse (colCount > 1 guard): an empty line is emitted." That guard was
-        // inverted. A single-column all-missing row renders as "" — there is no second field, so
-        // no " | " separator — and CdtParser.parseAll skips blank lines, so the row VANISHED on
-        // read. The "." sentinel exists for exactly this case; a multi-column all-missing row
-        // always contains a separator and is never blank, so it never needed one.
+        // ⛔ RE-BASED with the missing-sentinel port (ledger 0c-4). This test was named
+        // singleColumnAllNullRowIsWrittenAsTheDotSentinel and asserted out.contains("\n.\n").
+        // That is now wrong: "." means MissingValue.MIS in EVERY column type, character columns
+        // included, so writing it for a row whose single CHAR field is the EMPTY STRING would
+        // turn "" into missing on read — a round-trip corruption. The marker is now a quoted
+        // empty field, which says "one field, empty" without claiming anything about
+        // missingness. A genuinely missing single-column cell needs no marker at all: it renders
+        // as its own bare sentinel, which is already a non-blank line.
+        //
+        // ⚠ The reason the row needs a marker has NOT changed: CdtParser.parseAll skips blank
+        // lines, and a one-field row whose field renders empty has no " | " separator to make it
+        // non-blank, so it would vanish on read. A multi-column row always carries a separator.
         DataTableMeta meta = DataTableMeta.builder().name("S").label("S").rowCount(1)
                 .totalRowCount(1).tableURI(URI.create("test:s")).columns(new DataTableColumnMeta[]
                 {
@@ -451,14 +456,23 @@ class CdtWriterTest
                 }).build();
         IDataTable t = directTable(meta, List.of(java.util.Arrays.asList((Object) null)));
         String out = CdtWriter.toString(t);
-        assertTrue(out.contains("\n.\n"), out);
+        assertTrue(out.contains("\n\"\"\n"), out);
+        assertFalse(out.contains("\n.\n"), out);
     }
 
 
     @Test
-    void missingValueInstanceRendersEmpty()
+    void missingValueInstanceRendersItsSentinel()
     {
-        // A MissingValue object (not plain null) must also render as empty via extractRaw.
+        // ⛔ RE-BASED with the missing-sentinel port (ledger 0c-4). This test was named
+        // missingValueInstanceRendersEmpty and asserted out.contains("\n | keep\n"): a
+        // MissingValue cell used to be flattened to null by extractRaw and written as a blank
+        // field, which on a character column read back as the EMPTY STRING rather than as
+        // missing. It is now kept and rendered by renderMissing as the .cdt sentinel.
+        //
+        // ⚠ MIS_UNKNOWN's display string is "<UKN>", which the format has no spelling for
+        // (and must not borrow: "NA" and friends are legitimate character DATA), so it degrades
+        // to the generic "." — the flavour is lost, the missingness is not.
         DataTableMeta meta = DataTableMeta.builder().name("M").label("M").rowCount(1)
                 .totalRowCount(1).tableURI(URI.create("test:m")).columns(new DataTableColumnMeta[]
                 {
@@ -468,7 +482,7 @@ class CdtWriterTest
         IDataTable t = directTable(meta, List
                 .of(java.util.Arrays.asList((Object) MissingValue.MIS_UNKNOWN), List.of("keep")));
         String out = CdtWriter.toString(t);
-        assertTrue(out.contains("\n | keep\n"), out);
+        assertTrue(out.contains("\n. | keep\n"), out);
     }
 
     // ---- quoting -------------------------------------------------------------------
@@ -518,7 +532,14 @@ class CdtWriterTest
         assertTrue(out.contains("\".\" | x"), out);
 
         CdtDataset back = CdtParser.parseFirst(out, "t");
-        assertEquals(List.of(".", "x"), back.getDataRows().get(0));
+        // ⛔ RE-BASED with the missing-sentinel port (ledger 0c-4). This asserted
+        // List.of(".", "x") on the RAW stored row. Since the sentinel exists, the stored row is
+        // the ENCODED form: a quoted literal whose text would read back as a sentinel is
+        // backslash-escaped, so "." is stored as "\\.". Read a field through
+        // CdtValues.parseValue rather than interpreting the stored text - that is the decoder,
+        // and it is what gives the literal "." back.
+        assertEquals(List.of("\\.", "x"), back.getDataRows().get(0));
+        assertEquals(".", CdtValues.parseValue(back.getDataRows().get(0).get(0), CdtType.CHAR));
     }
 
 

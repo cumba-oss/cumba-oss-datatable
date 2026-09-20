@@ -2,13 +2,14 @@ package net.cumba.datatable.metadata;
 
 import java.util.List;
 import java.util.Optional;
+
+import net.cumba.datatable.library.IDataTableLibrary;
 import org.jspecify.annotations.Nullable;
 
 /**
  * This interface describes a metadata library. A metadata library contains metadata information
- * about a {@link net.cumba.datatable.library.IDataTableLibrary}.
+ * about a {@link IDataTableLibrary}.
  */
-
 public interface IMetadataLibrary extends IMetadataElement
 {
 

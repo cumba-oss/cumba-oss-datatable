@@ -8,11 +8,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.values.DataValueType;
-import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.DataFormat;
 import org.apache.poi.ss.usermodel.Row;
@@ -181,60 +182,91 @@ class ExcelTableProviderMetaDataTest
     }
 
 
+    /**
+     * {@code provideMetaData()} goes through {@link ExcelTableProvider#buildMeta}, a separate code
+     * path from {@code provide()}'s inline metadata build — its own {@code setFileFormat} /
+     * {@code setDatasetSize} calls were previously unasserted anywhere (survived mutants).
+     */
+    @Test
+    void provideMetaData_recordsFileFormatAndDatasetSize() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("A");
+            s.createRow(1).createCell(0).setCellValue("v");
+        });
+        long actualSize = Files.size(new File(uri).toPath());
+
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals("XLSX", meta.getMetaData(DataTableMetaSupport.META_KEY_FILE_FORMAT));
+        Object size = meta.getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE);
+        assertNotNull(size);
+        assertEquals(actualSize, ((Number) size).longValue());
+    }
+
+
+    /**
+     * The metadata-only path must also carry the {@code E8601DT.} displayFormat for a
+     * date-formatted column — {@code buildMeta}'s own {@code inferDateFormats} call, exercised
+     * separately from {@code provide()}'s.
+     */
+    @Test
+    void provideMetaData_dateFormattedColumnGetsIsoDisplayFormat() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            DataFormat df = wb.createDataFormat();
+            CellStyle dateStyle = wb.createCellStyle();
+            dateStyle.setDataFormat(df.getFormat("yyyy-mm-dd"));
+
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("DT");
+            Row r1 = s.createRow(1);
+            org.apache.poi.ss.usermodel.Cell cell = r1.createCell(0);
+            cell.setCellValue(java.util.Date.from(java.time.LocalDate.of(2024, 1, 15)
+                    .atStartOfDay(java.time.ZoneOffset.UTC).toInstant()));
+            cell.setCellStyle(dateStyle);
+        });
+
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.DOUBLE, meta.getColumn(0).getType());
+        assertEquals("E8601DT.", meta.getColumn(0).getDisplayFormat());
+    }
+
+
+    /**
+     * A {@code guessingRowCount} smaller than the sheet's row count must still cap
+     * {@code buildMeta}'s own sampling loop — the boundary/negation mutants there are distinct
+     * bytecode from {@code provide()}'s equivalent loop.
+     */
+    @Test
+    void provideMetaData_guessingRowCountCapsSample() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("VAL");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+            s.createRow(2).createCell(0).setCellValue(2.0);
+        });
+
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.DOUBLE, meta.getColumn(0).getType());
+    }
+
+
     @Test
     void provideMetaData_emptySheetThrows() throws Exception
     {
         URI uri = writeTempXlsx(wb -> wb.createSheet("EMPTY"));
         assertThrows(IOException.class,
                 () -> provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX));
-    }
-
-
-    @Test
-    @SuppressWarnings("JavaUtilDate") // POI's Cell.setCellValue works in java.util.Date
-    void provideMetaData_dateColumnCarriesDisplayFormat() throws Exception
-    {
-        URI uri = writeTempXlsx(wb ->
-        {
-            CellStyle dateStyle = wb.createCellStyle();
-            DataFormat fmt = wb.createDataFormat();
-            dateStyle.setDataFormat(fmt.getFormat("yyyy-mm-dd"));
-
-            Sheet s = wb.createSheet("DATA");
-            s.createRow(0).createCell(0).setCellValue("WHEN");
-            for (int r = 1; r <= 2; r++)
-            {
-                Cell c = s.createRow(r).createCell(0);
-                c.setCellValue(new java.util.Date(86_400_000L * r));
-                c.setCellStyle(dateStyle);
-            }
-        });
-
-        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
-        assertEquals(1, meta.getColumnCount());
-        assertNotNull(meta.getColumn(0).getDisplayFormat(),
-                "a date-formatted column should carry a displayFormat");
-    }
-
-
-    @Test
-    void provideMetaData_honoursSmallGuessingRowCount() throws Exception
-    {
-        URI uri = writeTempXlsx(wb ->
-        {
-            Sheet s = wb.createSheet("DATA");
-            s.createRow(0).createCell(0).setCellValue("V");
-            for (int r = 1; r <= 5; r++)
-            {
-                s.createRow(r).createCell(0).setCellValue(r);
-            }
-        });
-
-        // Only one row is sampled for type inference; the rest are skipped (exercises the
-        // guessing-row-count break).
-        provider.setGuessingRowCount(1);
-        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
-        assertEquals(1, meta.getColumnCount());
     }
 
 }

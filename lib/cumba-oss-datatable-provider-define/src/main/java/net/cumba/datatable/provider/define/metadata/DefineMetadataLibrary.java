@@ -322,6 +322,8 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         {
             if (columns == null)
             {
+                // Wrapped so the lazily-built list cannot be mutated through the accessor
+                // (SpotBugs EI_EXPOSE_REP).
                 columns = Collections.unmodifiableList(buildColumns());
             }
             return columns;
@@ -340,12 +342,15 @@ public class DefineMetadataLibrary implements IMetadataLibrary
 
 
         @Override
-        public String getClassName()
+        public @Nullable String getClassName()
         {
             // Effective form: the Define-XML 2.1 <def:Class Name="…"> element when present, else
             // the 2.0 def:Class attribute — before this unification a native-2.1 define yielded a
             // null class for every dataset (the element form was silently dropped by the
             // attribute-only binding).
+            //
+            // @Nullable matches both sides: IDataTableMetadata.getClassName() declares it, and a
+            // define.xml need not state a class at all.
             return itemGroup.getEffectiveClassName();
         }
 
@@ -386,7 +391,7 @@ public class DefineMetadataLibrary implements IMetadataLibrary
                 // dereference the @Nullable field.
                 Map<String, Object> m = new HashMap<>();
                 metaMap = m;
-                putIfNotBlank(m, DataTableMetaSupport.META_KEY_COMMENT, getComment(itemGroup));
+                putIfNotBlank(m, DataTableMetaSupport.META_KEY_COMMENT, getComment());
                 putIfNotBlank(m, DataTableMetaSupport.META_KEY_STRUCTURE, itemGroup.getStructure());
                 putIfNotBlank(m, DataTableMetaSupport.META_KEY_REPEATING, itemGroup.getRepeating());
                 putIfNotBlank(m, DataTableMetaSupport.META_KEY_PURPOSE, itemGroup.getPurpose());
@@ -452,18 +457,18 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         }
 
 
-        private @Nullable String getComment(ItemGroupDef aItemGrp)
+        // Uses the enclosing field directly (its only caller, above) rather than taking a
+        // parameter: the previous "aItemGrp == null" branch was unreachable in practice (itemGroup
+        // is Objects.requireNonNull'd in the constructor) and pitest reported it as an untestable
+        // NO_COVERAGE mutant. Deleting the dead branch closes it outright.
+        private @Nullable String getComment()
         {
-            if (aItemGrp == null)
-            {
-                return null;
-            }
-            String comment = aItemGrp.getComment();
+            String comment = itemGroup.getComment();
             if (comment != null)
             {
                 return comment;
             }
-            CommentDef cdef = define.getCommentDefByOID(aItemGrp.getCommentOID()).orElse(null);
+            CommentDef cdef = define.getCommentDefByOID(itemGroup.getCommentOID()).orElse(null);
             return DefineSupport.getDescriptionString(cdef);
         }
     }
@@ -497,7 +502,11 @@ public class DefineMetadataLibrary implements IMetadataLibrary
                 int aDerivedKeySequence)
         {
             itemDef = Objects.requireNonNull(aItemDef, "itemDef");
-            itemRef = aItemRef;
+            // Enforce what was previously an assumed invariant (the sole construction site,
+            // buildColumns() above, always passes a non-null ItemRef): closes four now-dead
+            // "itemRef == null" branches that pitest reported as NO_COVERAGE, and were only
+            // reachable in principle, never in practice.
+            itemRef = Objects.requireNonNull(aItemRef, "itemRef");
             index = aIndex;
             derivedKeySequence = aDerivedKeySequence;
 
@@ -566,13 +575,10 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         @Override
         public int getKeySequence()
         {
-            if (itemRef != null)
+            Integer ks = itemRef.getKeySequence();
+            if (ks != null)
             {
-                Integer ks = itemRef.getKeySequence();
-                if (ks != null)
-                {
-                    return ks;
-                }
+                return ks;
             }
             return derivedKeySequence;
         }
@@ -588,10 +594,6 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         @Override
         public @Nullable String getCore()
         {
-            if (itemRef == null)
-            {
-                return null;
-            }
             String mandatory = itemRef.getMandatory();
             if ("Yes".equalsIgnoreCase(mandatory))
             {
@@ -608,7 +610,7 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         @Override
         public @Nullable String getRole()
         {
-            return itemRef != null ? itemRef.getRole() : null;
+            return itemRef.getRole();
         }
 
 
@@ -640,31 +642,26 @@ public class DefineMetadataLibrary implements IMetadataLibrary
                 metaMap = new HashMap<>();
 
                 // from ItemDef
-                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_COMMENT, getComment(itemDef));
-                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_ORIGIN,
-                        getOrigin(itemDef));
+                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_COMMENT, getComment());
+                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_ORIGIN, getOrigin());
                 putIfNotNull(metaMap, DataTableMetaSupport.META_KEY_ITEM_SIGNIFICANT_DIGITS,
                         itemDef.getSignificantDigits());
                 putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_SAS_FIELD_NAME,
                         itemDef.getSasFieldName());
 
-                // from ItemRef
-                if (itemRef != null)
-                {
-                    MethodDef md = define.getMethodDefByOID(itemRef.getMethodOID()).orElse(null);
-                    putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_METHOD,
-                            DefineSupport.getDescriptionString(md));
-                    putIfNotNull(metaMap, DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE,
-                            itemRef.getKeySequence());
-                    putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_MANDATORY,
-                            itemRef.getMandatory());
-                    putIfNotNull(metaMap, DataTableMetaSupport.META_KEY_ITEM_ORDER_NUMBER,
-                            itemRef.getOrderNumber());
-                    putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_NO_DATA,
-                            itemRef.getHasNoData());
-                    putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_ROLE,
-                            itemRef.getRole());
-                }
+                // from ItemRef (never null: the sole construction site always supplies one)
+                MethodDef md = define.getMethodDefByOID(itemRef.getMethodOID()).orElse(null);
+                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_METHOD,
+                        DefineSupport.getDescriptionString(md));
+                putIfNotNull(metaMap, DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE,
+                        itemRef.getKeySequence());
+                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_MANDATORY,
+                        itemRef.getMandatory());
+                putIfNotNull(metaMap, DataTableMetaSupport.META_KEY_ITEM_ORDER_NUMBER,
+                        itemRef.getOrderNumber());
+                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_NO_DATA,
+                        itemRef.getHasNoData());
+                putIfNotBlank(metaMap, DataTableMetaSupport.META_KEY_ITEM_ROLE, itemRef.getRole());
                 if (!metaMap.containsKey(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE)
                         && derivedKeySequence > 0)
                 {
@@ -714,34 +711,30 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         }
 
 
-        private @Nullable String getComment(ItemDef aItem)
+        // Uses the enclosing field directly (its only caller, in getMetaMap()) rather than taking
+        // a parameter: the previous "aItem == null" branch was unreachable in practice (itemDef is
+        // Objects.requireNonNull'd in the constructor) and pitest reported it as an untestable
+        // NO_COVERAGE mutant. Deleting the dead branch closes it outright.
+        private @Nullable String getComment()
         {
-            if (aItem == null)
-            {
-                return null;
-            }
-            String comment = aItem.getComment();
+            String comment = itemDef.getComment();
             if (comment != null)
             {
                 return comment;
             }
-            CommentDef cdef = define.getCommentDefByOID(aItem.getCommentOID()).orElse(null);
+            CommentDef cdef = define.getCommentDefByOID(itemDef.getCommentOID()).orElse(null);
             return DefineSupport.getDescriptionString(cdef);
         }
 
 
-        private @Nullable String getOrigin(ItemDef aItem)
+        private @Nullable String getOrigin()
         {
-            if (aItem == null)
-            {
-                return null;
-            }
-            String res = aItem.getOrigin();
+            String res = itemDef.getOrigin();
             if (!CDT.isBlankOrNull(res))
             {
                 return res;
             }
-            return DefineSupport.getDescriptionString(aItem.getOriginElement());
+            return DefineSupport.getDescriptionString(itemDef.getOriginElement());
         }
     }
 
@@ -804,6 +797,8 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         {
             if (entries == null)
             {
+                // Wrapped so the lazily-built list cannot be mutated through the accessor
+                // (SpotBugs EI_EXPOSE_REP).
                 entries = Collections.unmodifiableList(buildEntries());
             }
             return entries;

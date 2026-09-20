@@ -83,7 +83,7 @@ class ParquetProviderSupplierTest
 
 
     @Test
-    void testGetProviderReturnsParquet2TableProviderForParquetFile()
+    void testGetProviderReturnsParquetTableProviderForParquetFile()
     {
         URI uri = URI.create("file:///data/test.parquet");
         IDataTableProvider provider = supplier.getProvider(uri, ParquetProviderSupplier.FI_PARQUET);

@@ -1,6 +1,7 @@
 package net.cumba.cdisc.define;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -380,6 +381,21 @@ class NamespaceAgnosticAttrFactoryTest
         assertSame(value, got);
         assertTrue(supported);
         verify(delegate, times(1)).setProperty("p", value);
+    }
+
+
+    /**
+     * The negative half of the same delegation. A wrapper that answers "supported" to everything
+     * makes a caller set a property the underlying factory will then reject at use time, and the
+     * capability probe -- the whole point of the call -- stops being a probe.
+     */
+    @Test
+    void property_isSupported_reportsTheDelegatesRefusal()
+    {
+        when(delegate.isPropertySupported("javax.xml.stream.isValidating")).thenReturn(false);
+
+        assertFalse(factory.isPropertySupported("javax.xml.stream.isValidating"));
+        verify(delegate, times(1)).isPropertySupported("javax.xml.stream.isValidating");
     }
 
 

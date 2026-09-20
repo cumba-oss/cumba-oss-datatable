@@ -2,6 +2,7 @@ package net.cumba.datatable.values;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -17,6 +18,8 @@ class MissingValueTest
     void testGetValue()
     {
         assertEquals(64, MissingValue.MIS.getValue());
+        assertEquals(65, MissingValue.MIS_A.getValue());
+        assertEquals(10, MissingValue.NA.getValue());
     }
 
 
@@ -24,6 +27,10 @@ class MissingValueTest
     void testGetDisplayString()
     {
         assertEquals(".", MissingValue.MIS.getDisplayString());
+        assertEquals(".A", MissingValue.MIS_A.getDisplayString());
+        assertEquals("NA", MissingValue.NA.getDisplayString());
+        assertEquals("None", MissingValue.None.getDisplayString());
+        assertEquals("._", MissingValue.MIS__.getDisplayString());
     }
 
 
@@ -31,6 +38,8 @@ class MissingValueTest
     void testGetDescription()
     {
         assertEquals("SAS Missing .", MissingValue.MIS.getDescription());
+        assertEquals("R NA (Not Available)", MissingValue.NA.getDescription());
+        assertEquals("Python None", MissingValue.None.getDescription());
     }
 
 
@@ -38,6 +47,8 @@ class MissingValueTest
     void testToString()
     {
         assertEquals(".", MissingValue.MIS.toString());
+        assertEquals(".Z", MissingValue.MIS_Z.toString());
+        assertEquals("NA", MissingValue.NA.toString());
     }
 
 
@@ -46,6 +57,14 @@ class MissingValueTest
     {
         double misDouble = MissingValue.MIS.asDouble();
         assertTrue(Double.isNaN(misDouble));
+
+        double misADouble = MissingValue.MIS_A.asDouble();
+        assertTrue(Double.isNaN(misADouble));
+
+        // Different missing values should produce different NaN bit patterns
+        long misBits = Double.doubleToRawLongBits(misDouble);
+        long misABits = Double.doubleToRawLongBits(misADouble);
+        assertNotEquals(misBits, misABits);
     }
 
 
@@ -53,6 +72,9 @@ class MissingValueTest
     void testForValueInt()
     {
         assertSame(MissingValue.MIS, MissingValue.forValue(64));
+        assertSame(MissingValue.MIS_A, MissingValue.forValue(65));
+        assertSame(MissingValue.NA, MissingValue.forValue(10));
+        assertSame(MissingValue.MIS_Z, MissingValue.forValue(90));
     }
 
 
@@ -75,6 +97,20 @@ class MissingValueTest
 
 
     @Test
+    void testForValueDouble()
+    {
+        // Convert to double and back
+        double misDouble = MissingValue.MIS.asDouble();
+        MissingValue recovered = MissingValue.forValue(misDouble, null);
+        assertSame(MissingValue.MIS, recovered);
+
+        double misADouble = MissingValue.MIS_A.asDouble();
+        MissingValue recoveredA = MissingValue.forValue(misADouble, null);
+        assertSame(MissingValue.MIS_A, recoveredA);
+    }
+
+
+    @Test
     void testForValueDoubleWithNonNaN()
     {
         // Non-NaN values should return the default
@@ -82,6 +118,25 @@ class MissingValueTest
         assertSame(MissingValue.MIS_ERROR, MissingValue.forValue(0.0, MissingValue.MIS_ERROR));
         assertSame(MissingValue.MIS_ERROR, MissingValue.forValue(-123.456, MissingValue.MIS_ERROR));
         assertNull(MissingValue.forValue(42.0, null));
+    }
+
+
+    @Test
+    void testAllSasMissingValues()
+    {
+        // Verify all SAS A-Z missing values exist
+        String[] letters =
+        {
+                "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
+                "R", "S", "T", "U", "V", "W", "X", "Y", "Z"
+        };
+
+        for (int i = 0; i < letters.length; i++)
+        {
+            MissingValue mv = MissingValue.forValue(65 + i);
+            assertNotNull(mv);
+            assertEquals("." + letters[i], mv.getDisplayString());
+        }
     }
 
 
@@ -141,6 +196,9 @@ class MissingValueTest
     void testForValueString()
     {
         assertSame(MissingValue.MIS, MissingValue.forValue("."));
+        assertSame(MissingValue.MIS_A, MissingValue.forValue(".A"));
+        assertSame(MissingValue.NA, MissingValue.forValue("NA"));
+        assertSame(MissingValue.None, MissingValue.forValue("None"));
     }
 
 

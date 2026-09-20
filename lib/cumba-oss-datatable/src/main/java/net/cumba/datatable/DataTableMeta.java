@@ -108,8 +108,13 @@ public class DataTableMeta implements IDataTableMeta
         {
             String key = keys.get(i);
             res[i * 2] = key;
-            // key came from getMetaDataKeys(), so getMetaData(key) cannot be null.
-            res[(i * 2) + 1] = Objects.requireNonNull(aMeta.getMetaData(key));
+            // The metaTable is a flat [key, value, …] array with non-null elements (the
+            // `Object @Nullable []` field's @Nullable qualifies the array ref, not the elements).
+            // `key` came from getMetaDataKeys(); a well-formed IDataTableMeta therefore has a
+            // non-null value for it. Assert that so a foreign impl listing a key with a null value
+            // fails loud rather than silently breaking the non-null-element invariant.
+            res[(i * 2) + 1] = Objects.requireNonNull(aMeta.getMetaData(key),
+                    "IDataTableMeta listed key '" + key + "' but returned a null value");
         }
         return res;
     }

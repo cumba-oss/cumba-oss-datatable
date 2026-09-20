@@ -92,7 +92,7 @@ public final class LoggerCapture implements AutoCloseable
 
 
     /**
-     * The records captured so far.
+     * The captured log records.
      *
      * @return the captured records, in the order they were logged.
      */
@@ -115,7 +115,7 @@ public final class LoggerCapture implements AutoCloseable
 
 
     /**
-     * Whether any captured message contains the given fragment.
+     * Whether any captured message contains the given text fragment.
      *
      * @param aFragment
      *            the text to look for.

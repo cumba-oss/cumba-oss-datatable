@@ -42,21 +42,17 @@ class DataValueSupportMissingOrderTest
     }
 
 
-    /**
-     * Missings order among themselves by their missing-value byte. (The internal twin of this test
-     * exercises the full SAS special-missing sequence {@code ._ < . < .A < ... < .Z}; this variant
-     * of {@link MissingValue} carries only {@code MIS}, {@code MIS_UNKNOWN} and {@code MIS_ERROR},
-     * so the byte order is pinned on those.)
-     */
     @Test
-    void missingsOrderAmongThemselvesByTheirByte()
+    void specialMissingsOrderByTheSasCollatingSequence()
     {
+        IDataValue misUnderscore = new DataValueMissing(MissingValue.MIS__);
         IDataValue mis = new DataValueMissing(MissingValue.MIS);
-        IDataValue misUnknown = new DataValueMissing(MissingValue.MIS_UNKNOWN);
-        IDataValue misError = new DataValueMissing(MissingValue.MIS_ERROR);
+        IDataValue misA = new DataValueMissing(MissingValue.MIS_A);
+        IDataValue misZ = new DataValueMissing(MissingValue.MIS_Z);
 
-        assertTrue(dvs.compare(mis, misUnknown) < 0, ". (64) < <UKN> (101)");
-        assertTrue(dvs.compare(misUnknown, misError) < 0, "<UKN> (101) < <ERR> (102)");
+        assertTrue(dvs.compare(misUnderscore, mis) < 0, "._ < .");
+        assertTrue(dvs.compare(mis, misA) < 0, ". < .A");
+        assertTrue(dvs.compare(misA, misZ) < 0, ".A < .Z");
         assertEquals(0, dvs.compare(mis, new DataValueMissing(MissingValue.MIS)));
     }
 
@@ -64,17 +60,19 @@ class DataValueSupportMissingOrderTest
     /**
      * A DOUBLE-typed value can carry a missing encoded as a NaN payload. Java's
      * {@code Double.compare} sorts every NaN LAST and calls all of them equal — losing both the
-     * position and the byte order among missings. The payload byte must decide instead.
+     * position and the {@code ._ < . < .A} order. The payload byte must decide instead.
      */
     @Test
     void encodedNanPayloadsOrderLikeExplicitMissings()
     {
         IDataValue encodedMis = new DataValueDouble(MissingValue.MIS.asDouble());
-        IDataValue encodedMisUnknown = new DataValueDouble(MissingValue.MIS_UNKNOWN.asDouble());
+        IDataValue encodedMisUnderscore = new DataValueDouble(MissingValue.MIS__.asDouble());
+        IDataValue encodedMisA = new DataValueDouble(MissingValue.MIS_A.asDouble());
 
         assertTrue(dvs.compare(encodedMis, new DataValueDouble(1.0)) < 0,
                 "an encoded missing sorts below any real number, not last");
-        assertTrue(dvs.compare(encodedMis, encodedMisUnknown) < 0, ". < <UKN> survives encoding");
+        assertTrue(dvs.compare(encodedMisUnderscore, encodedMis) < 0, "._ < . survives encoding");
+        assertTrue(dvs.compare(encodedMis, encodedMisA) < 0, ". < .A survives encoding");
         assertEquals(0, dvs.compare(encodedMis, new DataValueMissing(MissingValue.MIS)),
                 "encoded and explicit spellings of the same missing are the same value");
     }
@@ -83,10 +81,10 @@ class DataValueSupportMissingOrderTest
     @Test
     void getMissingValueRecognisesBothSpellingsAndNothingElse()
     {
-        assertSame(MissingValue.MIS,
-                DataValueSupport.getMissingValue(new DataValueMissing(MissingValue.MIS)));
-        assertSame(MissingValue.MIS,
-                DataValueSupport.getMissingValue(new DataValueDouble(MissingValue.MIS.asDouble())));
+        assertSame(MissingValue.MIS_A,
+                DataValueSupport.getMissingValue(new DataValueMissing(MissingValue.MIS_A)));
+        assertSame(MissingValue.MIS_A, DataValueSupport
+                .getMissingValue(new DataValueDouble(MissingValue.MIS_A.asDouble())));
         assertSame(MissingValue.MIS_UNKNOWN,
                 DataValueSupport.getMissingValue(new DataValueDouble(Double.NaN)),
                 "a plain NaN has no known payload");

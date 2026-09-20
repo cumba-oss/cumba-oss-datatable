@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -20,11 +21,13 @@ import java.util.List;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.provider.xlsx.testsupport.LoggerCapture;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
 import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormat;
 import org.apache.poi.ss.usermodel.FormulaError;
 import org.apache.poi.ss.usermodel.FormulaEvaluator;
@@ -572,131 +575,6 @@ class ExcelTableProviderTest
                 "ERROR cell must round-trip as the actual Excel error code (e.g. #DIV/0!)");
     }
 
-
-    @Test
-    @SuppressWarnings("JavaUtilDate") // POI's Cell.setCellValue/getDateCellValue work in
-                                      // java.util.Date
-    void testProvideHandlesDateBooleanAndFormulaCells() throws Exception
-    {
-        URI uri = writeTempXlsx(wb ->
-        {
-            Sheet s = wb.createSheet("DATA");
-            CellStyle dateStyle = wb.createCellStyle();
-            DataFormat fmt = wb.createDataFormat();
-            dateStyle.setDataFormat(fmt.getFormat("yyyy-mm-dd"));
-
-            Row h = s.createRow(0);
-            h.createCell(0).setCellValue("DT");
-            h.createCell(1).setCellValue("FLAG");
-            h.createCell(2).setCellValue("CALC");
-            h.createCell(3).setCellValue("TXTCALC");
-
-            for (int r = 1; r <= 2; r++)
-            {
-                Row row = s.createRow(r);
-                org.apache.poi.ss.usermodel.Cell dc = row.createCell(0);
-                dc.setCellValue(new java.util.Date(86_400_000L * r));
-                dc.setCellStyle(dateStyle);
-                row.createCell(1).setCellValue(r % 2 == 0);
-                row.createCell(2).setCellFormula("1+" + r);
-                row.createCell(3).setCellFormula("\"x\"&" + r);
-            }
-            // Populate cached formula results so the streaming reader returns them.
-            wb.getCreationHelper().createFormulaEvaluator().evaluateAll();
-        });
-
-        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
-        assertEquals(4, table.getColumnCount());
-        assertEquals(2, table.getRowCount());
-
-        // Boolean column surfaces as its string form.
-        assertEquals("false", table.getValue(0, 1), "row 0 FLAG should be boolean false");
-        // Numeric formula 1+1 = 2 surfaces as a double.
-        assertEquals(2.0, ((Number) table.getValue(0, 2)).doubleValue(), 1e-9);
-        // String formula "x"&1 surfaces as text.
-        assertEquals("x1", table.getValue(0, 3));
-        // Date column is present and non-null (encoded as a numeric SAS-epoch value).
-        assertNotNull(table.getValue(0, 0), "date cell must not be null");
-    }
-
-
-    @Test
-    void inferColumns_emptySheetReturnsNoColumns()
-    {
-        try (Workbook wb = new XSSFWorkbook())
-        {
-            Sheet s = wb.createSheet("E");
-            assertEquals(0,
-                    ExcelTableProvider.inferColumns(s, URI.create("file:///e.xlsx"), 10).length);
-        }
-        catch (IOException ex)
-        {
-            throw new AssertionError(ex);
-        }
-    }
-
-
-    @Test
-    void inferColumns_headerRowWithNoCellsReturnsNoColumns() throws IOException
-    {
-        try (Workbook wb = new XSSFWorkbook())
-        {
-            Sheet s = wb.createSheet("H");
-            s.createRow(0); // header row with no cells
-            s.createRow(1).createCell(0).setCellValue("data");
-            assertEquals(0,
-                    ExcelTableProvider.inferColumns(s, URI.create("file:///h.xlsx"), 10).length);
-        }
-    }
-
-
-    @Test
-    void inferColumns_nullCellTerminatesHeaderRange() throws IOException
-    {
-        try (Workbook wb = new XSSFWorkbook())
-        {
-            Sheet s = wb.createSheet("G");
-            Row h = s.createRow(0);
-            h.createCell(0).setCellValue("A");
-            // index 1 left as a gap (no cell) -> terminates the contiguous header range
-            h.createCell(2).setCellValue("C");
-            s.createRow(1).createCell(0).setCellValue(1.0);
-
-            DataTableColumnMeta[] cols = ExcelTableProvider.inferColumns(s,
-                    URI.create("file:///g.xlsx"), 10);
-            assertEquals(1, cols.length);
-            assertEquals("A", cols[0].getName());
-        }
-    }
-
-
-    @Test
-    void inferColumns_acceptsNumericAndFormulaHeadersAndStopsAtError() throws IOException
-    {
-        try (Workbook wb = new XSSFWorkbook())
-        {
-            Sheet s = wb.createSheet("F");
-            Row h = s.createRow(0);
-            h.createCell(0).setCellValue("STR");
-            h.createCell(1).setCellValue(42.0); // numeric header cell
-            h.createCell(2).setCellFormula("1+1"); // numeric-formula header cell
-            h.createCell(3).setCellErrorValue(FormulaError.NA.getCode()); // ERROR terminates
-            h.createCell(4).setCellValue("AFTER"); // excluded (after the terminator)
-
-            Row d = s.createRow(1);
-            d.createCell(0).setCellValue("x");
-            d.createCell(1).setCellValue(1.0);
-            d.createCell(2).setCellValue(2.0);
-
-            wb.getCreationHelper().createFormulaEvaluator().evaluateAll();
-
-            DataTableColumnMeta[] cols = ExcelTableProvider.inferColumns(s,
-                    URI.create("file:///f.xlsx"), 10);
-            assertEquals(3, cols.length);
-            assertEquals("STR", cols[0].getName());
-        }
-    }
-
     // ==================== text-typed numeric-looking cells (fixed defect) ====================
 
 
@@ -1033,12 +911,384 @@ class ExcelTableProviderTest
                 "the corrupted cell's OWN row-sibling must still read correctly");
     }
 
+    // ==================== metadata: file_format / dataset_size (provide) ====================
+
+
+    /**
+     * {@code provide()} must record the physical source format as table metadata — this backs the
+     * rule-engine {@code extract_metadata("file_format")} accessor. Was previously asserted
+     * nowhere, so a pitest mutant removing the {@code setFileFormat} call survived.
+     */
+    @Test
+    void testProvideRecordsFileFormatMetadata() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("A");
+            s.createRow(1).createCell(0).setCellValue("v");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals("XLSX",
+                table.getMetaData().getMetaData(DataTableMetaSupport.META_KEY_FILE_FORMAT));
+    }
+
+
+    /**
+     * {@code provide()} must record the size of the file it parsed, for a {@code file:} URI.
+     */
+    @Test
+    void testProvideRecordsDatasetSizeMetadata() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("A");
+            s.createRow(1).createCell(0).setCellValue("v");
+        });
+        long actualSize = Files.size(new File(uri).toPath());
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        Object size = table.getMetaData().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE);
+        assertEquals(actualSize, ((Number) size).longValue());
+    }
+
+    // ==================== guessingRowCount actually caps the sample ====================
+
+
+    /**
+     * With a small {@code guessingRowCount}, type inference must be based ONLY on the sampled rows
+     * — rows beyond the cap must not influence the inferred type, even though they are still read
+     * as data. Here the sampled rows are all-numeric (⇒ column inferred DOUBLE) while a later,
+     * unsampled row holds genuinely non-numeric text; that later row must still be *read* as data
+     * (falling back to NaN via {@code getDoubleValue}'s parse-failure path) rather than the column
+     * falling back to STRING.
+     */
+    @Test
+    void testGuessingRowCountCapsTypeInferenceSample() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("VAL");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+            s.createRow(2).createCell(0).setCellValue(2.0);
+            // Beyond the 2-row sample: a non-numeric text cell.
+            s.createRow(3).createCell(0).setCellValue("not-a-number");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(0).getType(),
+                "type inference must be based on the capped sample, not the whole column");
+        assertEquals(3, table.getRowCount());
+        assertInstanceOf(MissingValue.class, table.getValue(2, 0),
+                "a non-numeric value outside the sample must fail to parse as a missing double");
+    }
+
+
+    /**
+     * A {@code guessingRowCount} exactly equal to the number of available data rows must still
+     * sample every row (the {@code >=} boundary in the collection loop) — pins the
+     * {@code changed conditional boundary} / {@code negated conditional} mutants on that check.
+     */
+    @Test
+    void testGuessingRowCountExactBoundary() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("VAL");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+            s.createRow(2).createCell(0).setCellValue(2.0);
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(0).getType());
+        assertEquals(2, table.getRowCount());
+    }
+
+    // ==================== isDate() false path / null displayFormat ====================
+
+
+    /**
+     * A non-date-formatted numeric column must NOT carry an {@code E8601DT.} displayFormat. Pins
+     * the {@code isDate} "replaced boolean return with true" mutant — without this assertion a test
+     * exercising only date columns cannot tell {@code isDate()} apart from a stub that always
+     * returns {@code true}.
+     */
+    @Test
+    void testNonDateColumnHasNullDisplayFormat() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("N");
+            s.createRow(1).createCell(0).setCellValue(42.5);
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertNull(table.getMetaData().getColumn(0).getDisplayFormat(),
+                "a plain numeric column must not be tagged with the date displayFormat");
+    }
+
+    // ==================== outer catch(Exception): non-OOXML bytes ====================
+
+
+    /**
+     * A file that is not a valid OOXML/zip container at all (a corrupted download, a
+     * mislabelled/renamed file) makes {@code StreamingReader.open} throw a runtime exception (not
+     * an {@link IOException}) — POI's {@code NotOfficeXmlFileException}. {@code provide()}'s outer
+     * {@code catch (Exception ex)} must log it and wrap it as an {@link IOException} rather than
+     * letting the raw runtime exception escape. This REACH scenario — a real corrupted or
+     * mislabelled upload — had zero coverage (the log call is a survived mutant).
+     */
+    @Test
+    void testProvideNonOoxmlBytesLogsAndWrapsAsIOException() throws Exception
+    {
+        File tmpFile = File.createTempFile("notxlsx", ".xlsx");
+        tmpFile.deleteOnExit();
+        Files.write(tmpFile.toPath(), "this is not a zip or OLE2 file at all"
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        URI uri = tmpFile.toURI();
+
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            IOException ex = assertThrows(IOException.class,
+                    () -> provider.provide(uri, ExcelProviderSupplier.FI_XLSX));
+            assertNotNull(ex.getCause(),
+                    "the original runtime exception must be preserved as cause");
+            assertFalse(log.records().isEmpty(),
+                    "the runtime exception must be logged before being wrapped");
+        }
+    }
+
+
+    /**
+     * Same outer-catch behaviour, exercised through {@code provideMetaData()}.
+     */
+    @Test
+    void testProvideMetaDataNonOoxmlBytesLogsAndWrapsAsIOException() throws Exception
+    {
+        File tmpFile = File.createTempFile("notxlsxmeta", ".xlsx");
+        tmpFile.deleteOnExit();
+        Files.write(tmpFile.toPath(),
+                "also not a real workbook".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        URI uri = tmpFile.toURI();
+
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            IOException ex = assertThrows(IOException.class,
+                    () -> provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX));
+            assertNotNull(ex.getCause());
+            assertFalse(log.records().isEmpty());
+        }
+    }
+
+    // ==================== isHeaderCell: FORMULA and ERROR/BLANK/gap header cells
+    // ====================
+
 
     private static void evaluateAllFormulas(Workbook wb)
     {
         FormulaEvaluator ev = wb.getCreationHelper().createFormulaEvaluator();
         ev.evaluateAll();
     }
+
+
+    /**
+     * A formula header cell whose cached result is a non-blank STRING is a valid header — a real
+     * spreadsheet author can build column headers from a formula (e.g. concatenating a prefix).
+     * Nothing previously exercised the FORMULA branch of {@code isHeaderCell} at all.
+     */
+    @Test
+    void testHeaderFormulaCellWithStringResultIsValidHeader() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("NAME");
+            h.createCell(1).setCellFormula("\"SC\"&\"ORE\"");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue("Alice");
+            r1.createCell(1).setCellValue(1.0);
+            evaluateAllFormulas(wb);
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(2, table.getColumnCount());
+        assertEquals("SCORE", table.getMetaData().getColumn(1).getName());
+    }
+
+
+    /**
+     * A formula header cell whose cached result is a numeric value is a valid header (mirrors the
+     * direct-numeric-header case, but through the FORMULA/cached-type branch).
+     */
+    @Test
+    void testHeaderFormulaCellWithNumericResultIsValidHeader() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("NAME");
+            h.createCell(1).setCellFormula("1+1");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue("Alice");
+            r1.createCell(1).setCellValue(1.0);
+            evaluateAllFormulas(wb);
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(2, table.getColumnCount());
+    }
+
+
+    /**
+     * A formula header cell whose cached result is blank text (e.g. {@code =""}) terminates the
+     * header range, exactly like a genuinely blank cell — a real spreadsheet can easily have such a
+     * formula left over from a template.
+     */
+    @Test
+    void testHeaderFormulaCellWithBlankStringResultTerminatesRange() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("NAME");
+            h.createCell(1).setCellFormula("\"\"");
+            h.createCell(2).setCellValue("SCORE");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue("Alice");
+            evaluateAllFormulas(wb);
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(1, table.getColumnCount(),
+                "a formula header cell whose cached result is blank text must terminate the range");
+    }
+
+
+    /**
+     * A formula header cell whose cached result is an ERROR (e.g. {@code =1/0}) terminates the
+     * header range — a completely realistic case when a header formula references a column that has
+     * since been deleted or divides by a now-empty cell.
+     */
+    @Test
+    void testHeaderFormulaCellWithErrorResultTerminatesRange() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("NAME");
+            h.createCell(1).setCellFormula("1/0");
+            h.createCell(2).setCellValue("SCORE");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue("Alice");
+            evaluateAllFormulas(wb);
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(1, table.getColumnCount(),
+                "a formula header cell whose cached result is an error must terminate the range");
+    }
+
+
+    /**
+     * A directly ERROR-typed header cell (e.g. {@code #REF!} left behind after deleting a column
+     * that a header formula/reference used to point at) terminates the header range. Distinct from
+     * the FORMULA-cached-error case above: this is a plain {@code CellType.ERROR} cell, not a
+     * formula.
+     */
+    @Test
+    void testHeaderDirectErrorCellTerminatesRange() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("NAME");
+            h.createCell(1).setCellErrorValue(FormulaError.REF.getCode());
+            h.createCell(2).setCellValue("SCORE");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue("Alice");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(1, table.getColumnCount());
+        assertEquals("NAME", table.getMetaData().getColumn(0).getName());
+    }
+
+
+    /**
+     * A genuinely {@code CellType.BLANK} header cell (a cell object exists — e.g. it carries
+     * formatting — but no value was ever set) terminates the header range, distinct from a
+     * whitespace-only STRING cell (already covered) and from a missing cell object entirely
+     * (covered below).
+     */
+    @Test
+    void testHeaderBlankTypeCellTerminatesRange() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("NAME");
+            h.createCell(1, CellType.BLANK); // present cell, BLANK type, no value ever set
+            h.createCell(2).setCellValue("SCORE");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue("Alice");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(1, table.getColumnCount());
+    }
+
+
+    /**
+     * A header row with a genuine gap — no {@link org.apache.poi.ss.usermodel.Cell} object at all
+     * at an index within the row's cell range (sparse row), as opposed to a present-but-blank cell
+     * — also terminates the header range. {@code Row.getCell(idx)} returns {@code null} for such a
+     * gap, which {@code isHeaderCell} must treat the same as a present blank cell.
+     */
+    @Test
+    void testHeaderMissingCellObjectTerminatesRange() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("NAME");
+            // Deliberately skip index 1 — no cell object created there at all.
+            h.createCell(2).setCellValue("SCORE");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue("Alice");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(1, table.getColumnCount());
+        assertEquals("NAME", table.getMetaData().getColumn(0).getName());
+    }
+
+    // ============ the blank-header-name fallback is LIVE code, and the header-row guard ========
 
 
     /**
@@ -1386,6 +1636,76 @@ class ExcelTableProviderTest
         assertEquals("#ERROR", table.getValue(0, 1));
     }
 
+    // ==================== the type-inference sample really is capped ====================
+
+
+    /**
+     * {@code provideMetaData()} must sample exactly {@code guessingRowCount} data rows — no more,
+     * no fewer — because the sample decides the column TYPE. Two columns pin the cap from both
+     * sides with one fixture: column A turns text in the LAST sampled row (so a sample one row too
+     * short would call it DOUBLE) and column B turns text in the FIRST row past the cap (so a
+     * sample one row too long would call it STRING).
+     * <p>
+     * {@code provide()}'s copy of the same loop is pinned by
+     * {@link #testGuessingRowCountExactBoundary()}; this is the metadata-only path, whose answer
+     * must agree with it.
+     */
+    @Test
+    void testProvideMetaDataSamplesExactlyGuessingRowCountRows() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("A");
+            h.createCell(1).setCellValue("B");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue(1.0);
+            r1.createCell(1).setCellValue(10.0);
+            Row r2 = s.createRow(2);
+            r2.createCell(0).setCellValue("text-in-row-2"); // inside the 2-row sample
+            r2.createCell(1).setCellValue(20.0);
+            Row r3 = s.createRow(3);
+            r3.createCell(0).setCellValue(3.0);
+            r3.createCell(1).setCellValue("text-in-row-3"); // one row PAST the 2-row sample
+        });
+        provider.setGuessingRowCount(2);
+
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.STRING, meta.getColumn(0).getType(),
+                "a text cell inside the sample must keep the column STRING");
+        assertEquals(DataValueType.DOUBLE, meta.getColumn(1).getType(),
+                "a text cell past the sample must not be seen: the sample is capped");
+    }
+
+
+    /**
+     * The same cap, for {@code inferColumns()}'s own sample loop (the library-tree path) — called
+     * here with a sample of 2 so a loop that ran one row too long would see the text cell in row 3
+     * and type the column STRING.
+     */
+    @Test
+    void testInferColumnsSamplesExactlyTheRequestedRowCount() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("B");
+            s.createRow(1).createCell(0).setCellValue(10.0);
+            s.createRow(2).createCell(0).setCellValue(20.0);
+            s.createRow(3).createCell(0).setCellValue("text-in-row-3");
+        });
+
+        DataTableColumnMeta[] cols = ExcelTableProvider.inferColumns(openSheet(uri), uri, 2);
+
+        assertEquals(1, cols.length);
+        assertEquals(DataValueType.DOUBLE, cols[0].getType(),
+                "a text cell past the requested sample size must not be sampled");
+    }
+
+    // ============ H7: a COMPUTED date is a date too (formula cell, cached numeric) =============
+
 
     /**
      * DEFECT FIX (H7): a {@code FORMULA} cell whose cached result is numeric must go through the
@@ -1513,6 +1833,131 @@ class ExcelTableProviderTest
             assertTrue(ex.getMessage().contains("Sheet 'DATA' header row could not be read"),
                     "the error must name the sheet and the header row: " + ex.getMessage());
             assertNotNull(ex.getCause(), "the underlying reader failure must be preserved");
+        }
+    }
+
+
+    @Test
+    @SuppressWarnings("JavaUtilDate") // POI's Cell.setCellValue/getDateCellValue work in
+                                      // java.util.Date
+    void testProvideHandlesDateBooleanAndFormulaCells() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            CellStyle dateStyle = wb.createCellStyle();
+            DataFormat fmt = wb.createDataFormat();
+            dateStyle.setDataFormat(fmt.getFormat("yyyy-mm-dd"));
+
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("DT");
+            h.createCell(1).setCellValue("FLAG");
+            h.createCell(2).setCellValue("CALC");
+            h.createCell(3).setCellValue("TXTCALC");
+
+            for (int r = 1; r <= 2; r++)
+            {
+                Row row = s.createRow(r);
+                org.apache.poi.ss.usermodel.Cell dc = row.createCell(0);
+                dc.setCellValue(new java.util.Date(86_400_000L * r));
+                dc.setCellStyle(dateStyle);
+                row.createCell(1).setCellValue(r % 2 == 0);
+                row.createCell(2).setCellFormula("1+" + r);
+                row.createCell(3).setCellFormula("\"x\"&" + r);
+            }
+            // Populate cached formula results so the streaming reader returns them.
+            wb.getCreationHelper().createFormulaEvaluator().evaluateAll();
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        assertEquals(4, table.getColumnCount());
+        assertEquals(2, table.getRowCount());
+
+        // Boolean column surfaces as its string form.
+        assertEquals("false", table.getValue(0, 1), "row 0 FLAG should be boolean false");
+        // Numeric formula 1+1 = 2 surfaces as a double.
+        assertEquals(2.0, ((Number) table.getValue(0, 2)).doubleValue(), 1e-9);
+        // String formula "x"&1 surfaces as text.
+        assertEquals("x1", table.getValue(0, 3));
+        // Date column is present and non-null (encoded as a numeric SAS-epoch value).
+        assertNotNull(table.getValue(0, 0), "date cell must not be null");
+    }
+
+
+    @Test
+    void inferColumns_emptySheetReturnsNoColumns()
+    {
+        try (Workbook wb = new XSSFWorkbook())
+        {
+            Sheet s = wb.createSheet("E");
+            assertEquals(0,
+                    ExcelTableProvider.inferColumns(s, URI.create("file:///e.xlsx"), 10).length);
+        }
+        catch (IOException ex)
+        {
+            throw new AssertionError(ex);
+        }
+    }
+
+
+    @Test
+    void inferColumns_headerRowWithNoCellsReturnsNoColumns() throws IOException
+    {
+        try (Workbook wb = new XSSFWorkbook())
+        {
+            Sheet s = wb.createSheet("H");
+            s.createRow(0); // header row with no cells
+            s.createRow(1).createCell(0).setCellValue("data");
+            assertEquals(0,
+                    ExcelTableProvider.inferColumns(s, URI.create("file:///h.xlsx"), 10).length);
+        }
+    }
+
+
+    @Test
+    void inferColumns_nullCellTerminatesHeaderRange() throws IOException
+    {
+        try (Workbook wb = new XSSFWorkbook())
+        {
+            Sheet s = wb.createSheet("G");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("A");
+            // index 1 left as a gap (no cell) -> terminates the contiguous header range
+            h.createCell(2).setCellValue("C");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+
+            DataTableColumnMeta[] cols = ExcelTableProvider.inferColumns(s,
+                    URI.create("file:///g.xlsx"), 10);
+            assertEquals(1, cols.length);
+            assertEquals("A", cols[0].getName());
+        }
+    }
+
+
+    @Test
+    void inferColumns_acceptsNumericAndFormulaHeadersAndStopsAtError() throws IOException
+    {
+        try (Workbook wb = new XSSFWorkbook())
+        {
+            Sheet s = wb.createSheet("F");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("STR");
+            h.createCell(1).setCellValue(42.0); // numeric header cell
+            h.createCell(2).setCellFormula("1+1"); // numeric-formula header cell
+            h.createCell(3).setCellErrorValue(FormulaError.NA.getCode()); // ERROR terminates
+            h.createCell(4).setCellValue("AFTER"); // excluded (after the terminator)
+
+            Row d = s.createRow(1);
+            d.createCell(0).setCellValue("x");
+            d.createCell(1).setCellValue(1.0);
+            d.createCell(2).setCellValue(2.0);
+
+            wb.getCreationHelper().createFormulaEvaluator().evaluateAll();
+
+            DataTableColumnMeta[] cols = ExcelTableProvider.inferColumns(s,
+                    URI.create("file:///f.xlsx"), 10);
+            assertEquals(3, cols.length);
+            assertEquals("STR", cols[0].getName());
         }
     }
 

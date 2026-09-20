@@ -323,7 +323,7 @@ public final class DataTableLibraryMetadataAdapter implements IMetadataLibrary
 
 
         @Override
-        public String getNativeType()
+        public @Nullable String getNativeType()
         {
             return src.getNativeType();
         }

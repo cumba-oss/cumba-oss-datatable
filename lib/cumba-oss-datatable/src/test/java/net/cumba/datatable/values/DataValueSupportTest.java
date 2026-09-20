@@ -1,6 +1,7 @@
 package net.cumba.datatable.values;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -150,11 +151,28 @@ class DataValueSupportTest
     }
 
 
+    // getAsDataValueMissing tests
+    @Test
+    void testGetAsDataValueMissingWithMissingValue()
+    {
+        DataValueMissing result = DataValueSupport.getAsDataValueMissing(MissingValue.MIS_Z);
+        assertSame(MissingValue.MIS_Z, result.getValue());
+    }
+
+
     @Test
     void testGetAsDataValueMissingWithNumber()
     {
         DataValueMissing result = DataValueSupport.getAsDataValueMissing(64); // MIS = 64
         assertSame(MissingValue.MIS, result.getValue());
+    }
+
+
+    @Test
+    void testGetAsDataValueMissingWithString()
+    {
+        DataValueMissing result = DataValueSupport.getAsDataValueMissing("NA");
+        assertSame(MissingValue.NA, result.getValue());
     }
 
 
@@ -231,6 +249,23 @@ class DataValueSupportTest
         IDataValue result = DataValueSupport.getAsDataValue(MissingValue.MIS,
                 DataValueType.MISSING);
         assertInstanceOf(DataValueMissing.class, result);
+    }
+
+
+    @Test
+    void testGetAsDataValueWithMissingValueObject()
+    {
+        IDataValue result = DataValueSupport.getAsDataValue(MissingValue.NA, DataValueType.OTHER);
+        // ⭐ Rewritten, not deleted (PLAN-cdt-char-missing-contract phase 6). It used to assert
+        // DataValueOther, because OTHER wrapped any non-null value before the fallback could see
+        // that it was a MissingValue — its own comment ("the fallback handles MissingValue")
+        // recorded that the ordering was odd. The missing-value check is now resolved ABOVE the
+        // type switch, so a MissingValue keeps its identity whatever type was asked for. The
+        // ANSWER never moved here: DataValueOther wrapping a MissingValue already reported
+        // isMissingOrInvalid() true; only the class does.
+        assertInstanceOf(DataValueMissing.class, result);
+        assertSame(MissingValue.NA, result.getValue());
+        assertTrue(result.isMissingOrInvalid());
     }
 
 
@@ -464,7 +499,7 @@ class DataValueSupportTest
     void testGetAsDataValueMissingValue_keepsMissing()
     {
         IDataValue v = DataValueSupport.getAsDataValue(MissingValue.MIS, DataValueType.LONG);
-        // failure to convert to long -> fallback: it's a MissingValue → keep as missing
+        // a MissingValue is resolved above the type switch and keeps its identity for every type
         assertTrue(v instanceof DataValueMissing);
     }
 
@@ -484,5 +519,117 @@ class DataValueSupportTest
         IDataValue v = DataValueSupport.getAsDataValue("MIS", DataValueType.LONG);
         // "MIS" can be parsed as MissingValue → DataValueMissing
         assertTrue(v instanceof DataValueMissing);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // ⭐ PLAN-cdt-char-missing-contract phase 6 — a stored MissingValue is missing on EVERY column
+    // type. Before the hoist the STRING arm of the type switch stringified it via toString(), so a
+    // missing character cell answered isMissingOrInvalid() == false — the whole defect. These are
+    // the contract tests the class never had; they red if the null-check / instanceof-MissingValue
+    // blocks are moved back below the switch.
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * The flavours worth spanning: the plain SAS dot, the underscore form, a lettered special
+     * missing, the R null, and the two internal sentinels.
+     */
+    private static final MissingValue[] MISSING_FLAVOURS =
+    {
+            MissingValue.MIS, MissingValue.MIS__, MissingValue.MIS_A, MissingValue.MIS_Z,
+            MissingValue.NA, MissingValue.MIS_UNKNOWN, MissingValue.MIS_ERROR
+    };
+
+    @Test
+    void missingValueKeepsItsIdentityForEveryTargetType()
+    {
+        for (MissingValue mv : MISSING_FLAVOURS)
+        {
+            for (DataValueType type : DataValueType.values())
+            {
+                IDataValue v = DataValueSupport.getAsDataValue(mv, type);
+                String where = mv + " as " + type;
+                assertInstanceOf(DataValueMissing.class, v, where);
+                assertSame(mv, v.getValue(), where);
+                assertTrue(v.isMissingOrInvalid(), where);
+            }
+        }
+    }
+
+
+    /**
+     * The no-visible-change pin. Nothing displayed or exported may move: the rendering of a missing
+     * cell is its {@link MissingValue#toString()} either way, which is what it was when the STRING
+     * arm produced a {@link DataValueString} of the same text.
+     */
+    @Test
+    void missingValueRenderingIsUnchangedForEveryTargetType()
+    {
+        for (MissingValue mv : MISSING_FLAVOURS)
+        {
+            for (DataValueType type : DataValueType.values())
+            {
+                IDataValue v = DataValueSupport.getAsDataValue(mv, type);
+                assertEquals(mv.toString(), v.getValueAsString(), mv + " as " + type);
+            }
+        }
+    }
+
+
+    /**
+     * ⛔ The {@code MissingValue.valueOf(str)} rescue below the switch is a DIFFERENT mechanism and
+     * must stay where it is: it converts an enum NAME that arrived as parsed text, never a display
+     * string, and only when the requested type could not be produced. A STRING column asking for
+     * the text "NA" still gets the text.
+     */
+    @Test
+    void enumNameRescueForParsedTextIsUnaffectedByTheHoist()
+    {
+        IDataValue rescued = DataValueSupport.getAsDataValue("NA", DataValueType.LONG);
+        assertInstanceOf(DataValueMissing.class, rescued);
+        assertSame(MissingValue.NA, rescued.getValue());
+
+        IDataValue asText = DataValueSupport.getAsDataValue("NA", DataValueType.STRING);
+        assertInstanceOf(DataValueString.class, asText);
+        assertEquals("NA", asText.getValueAsString());
+
+        // A DISPLAY string is not a name, and never was: ".A" stays ordinary text.
+        IDataValue display = DataValueSupport.getAsDataValue(".A", DataValueType.STRING);
+        assertInstanceOf(DataValueString.class, display);
+        assertFalse(display.isMissingOrInvalid());
+    }
+
+
+    /**
+     * The parse side of the helper is untouched: a String never matches
+     * {@code instanceof MissingValue}, so every caller that turns user or parser text into a typed
+     * value answers exactly as before.
+     */
+    @Test
+    void parsedTextStillResolvesThroughTheTypeSwitch()
+    {
+        assertInstanceOf(DataValueLong.class,
+                DataValueSupport.getAsDataValue("42", DataValueType.LONG));
+        assertInstanceOf(DataValueDouble.class,
+                DataValueSupport.getAsDataValue("1.5", DataValueType.DOUBLE));
+        assertInstanceOf(DataValueString.class,
+                DataValueSupport.getAsDataValue("abc", DataValueType.STRING));
+        assertInstanceOf(DataValueOther.class,
+                DataValueSupport.getAsDataValue(new Object(), DataValueType.OTHER));
+    }
+
+
+    /**
+     * null keeps its own answer, and it is resolved above the switch for the same reason: the
+     * STRING arm already returned null for it, so this is a hoist with no behaviour change at all.
+     */
+    @Test
+    void nullIsMissingForEveryTargetType()
+    {
+        for (DataValueType type : DataValueType.values())
+        {
+            IDataValue v = DataValueSupport.getAsDataValue(null, type);
+            assertInstanceOf(DataValueMissing.class, v, "null as " + type);
+            assertSame(MissingValue.MIS, v.getValue(), "null as " + type);
+        }
     }
 }

@@ -42,7 +42,7 @@ public abstract class AbstractTableDataParser<T>
      * Handle the given String by performing the following tasks:
      * <ol>
      * <li>Call {@link CDT#trimRight(String)}
-     * <li>Call {@link String#intern()}
+     * <li>Call {@link CDT#intern(String)} (application-global string canonicalisation)
      * </ol>
      * This should be called for all Strings parsed from a data table to reduce space consumption.
      *
@@ -57,8 +57,11 @@ public abstract class AbstractTableDataParser<T>
 
 
     /**
-     * Handle the given String by calling {@link CDT#tri(String)} if the given string is not null,
-     * otherwise return default.
+     * Handle the given String by performing the following tasks:
+     * <ol>
+     * <li>Call {@link CDT#trimRight(String)}
+     * <li>Call {@link CDT#intern(String)} (application-global string canonicalisation)
+     * </ol>
      *
      * @param aString
      *            the String to handle, this might be null.
@@ -73,7 +76,7 @@ public abstract class AbstractTableDataParser<T>
         {
             return aDefault;
         }
-        return CDT.tri(aString);
+        return CDT.intern(CDT.trimRight(aString));
     }
 
     /**

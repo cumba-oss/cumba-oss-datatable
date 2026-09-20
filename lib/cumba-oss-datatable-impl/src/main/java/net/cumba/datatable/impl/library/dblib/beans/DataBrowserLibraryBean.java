@@ -1,7 +1,6 @@
 package net.cumba.datatable.impl.library.dblib.beans;
 
 import java.util.Map;
-
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Value;

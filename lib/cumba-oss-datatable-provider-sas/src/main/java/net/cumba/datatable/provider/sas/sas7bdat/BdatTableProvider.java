@@ -708,11 +708,17 @@ public class BdatTableProvider extends AbstractDataTableProvider
                 switch (val)
                 {
                 // F-RS9: explicit null arm so the pattern switch doesn't throw NPE on a null
-                // cell value (which the underlying parser can legitimately produce for sparse
-                // SAS rows). For STRING columns, SAS character missing is empty string by
-                // convention; everything else is treated as MIS.
-                case null -> aDataColumn.addElement(
-                        aMetaColumn.getType() == DataValueType.STRING ? "" : MissingValue.MIS);
+                // cell value. Defensive on both paths -- BdatVarParser.getValue cannot return
+                // null today (it yields a boxed Double or a String, or throws), which corrects
+                // the earlier note here claiming sparse SAS rows produce one.
+                //
+                // For STRING columns, SAS character missing is empty string by convention.
+                // Non-STRING columns resolve to MIS_UNKNOWN, not MIS: a null cell is an
+                // unexpected state and should read as one, rather than as an ordinary SAS '.'
+                // missing that the file deliberately contained.
+                case null -> aDataColumn
+                        .addElement(aMetaColumn.getType() == DataValueType.STRING ? ""
+                                : MissingValue.MIS_UNKNOWN);
                 // CDT.tri is poly-null: a non-null argument yields a non-null result, but NullAway
                 // cannot express that contract, so capture and assert non-null here.
                 case String str -> aDataColumn.addElement(Objects.requireNonNull(tri(str)));

@@ -125,15 +125,16 @@ public class XptTableProvider extends AbstractDataTableProvider
 
         if ("file".equalsIgnoreCase(aUri.getScheme()))
         {
+            // F-prov-16: strip the fragment for BOTH arms. new File(URI) rejects any URI that has
+            // a fragment component at all, so a blank-but-present one ("...adsl.xpt#") classified
+            // as "no fragment" here used to reach it and die with an IllegalArgumentException
+            // instead of opening the file's first dataset.
+            URI noFragment = URIHelper.replaceFragment(aUri, null);
             if (CDT.isBlankOrNull(fragment))
             {
-                return provide(aUri, new File(aUri));
+                return provide(aUri, new File(noFragment));
             }
-            else
-            {
-                URI uri = URIHelper.replaceFragment(aUri, null);
-                return provide(aUri, new File(uri), fragment);
-            }
+            return provide(aUri, new File(noFragment), fragment);
         }
 
         File f = downloadToFile(aUri);
@@ -173,7 +174,9 @@ public class XptTableProvider extends AbstractDataTableProvider
         {
             // ⚠ The caller's own file — NOT ours to delete. This path returns before the cleanup
             // below is even reachable, which is the whole point: see the note on that finally.
-            URI uri = CDT.isBlankOrNull(fragment) ? aUri : URIHelper.replaceFragment(aUri, null);
+            // F-prov-16: unconditionally fragment-free, because new File(URI) rejects a URI with
+            // any fragment component, a blank one included.
+            URI uri = URIHelper.replaceFragment(aUri, null);
             return buildMetaFrom(new File(uri), aUri, fragment);
         }
 
@@ -569,6 +572,14 @@ public class XptTableProvider extends AbstractDataTableProvider
                 Object val = aRowSlice.get(ridx).getValue(aColumnIndex);
                 switch (val)
                 {
+                // Explicit null arm so the pattern switch cannot throw NPE on a null cell, and so
+                // this method answers the same way its BDAT twin does -- which was given this arm
+                // under F-RS9 while this copy was left without one. Unreachable today
+                // (XptVarParser.getValue yields a boxed Double or a String, or throws); the point
+                // is that the two mirrored methods no longer disagree about what a null cell means.
+                case null -> aDataColumn
+                        .addElement(aMetaColumn.getType() == DataValueType.STRING ? ""
+                                : MissingValue.MIS_UNKNOWN);
                 // CDT.tri is poly-null: a non-null argument yields a non-null result, but NullAway
                 // cannot express that contract, so capture and assert non-null here.
                 case String str -> aDataColumn.addElement(Objects.requireNonNull(tri(str)));

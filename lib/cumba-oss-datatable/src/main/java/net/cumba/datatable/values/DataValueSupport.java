@@ -83,12 +83,24 @@ public class DataValueSupport
     public static final MathContext MC_RND = MCS[12];
 
     /**
-     * Round the given value for 12 significant digits and if the difference is lower than a
-     * calculated epsilon return the rounded version, otherwise the original value.<br/>
-     * If the 12-digit rounding does not change the value (because it already has &le; 12
-     * significant digits), a fallback detects trailing 9- or 0-runs using arithmetic and rounds to
-     * the precision before the run, cleaning values like {@code -0.07757999999999} &rarr;
-     * {@code -0.07758}.
+     * Round the given value to 12 significant digits and return the rounded version when it differs
+     * from the original by less than a magnitude-scaled epsilon; otherwise return the value
+     * untouched.
+     *
+     * <p>
+     * ⚠ That single pass is now the WHOLE contract. A second pass used to sit behind it, detecting
+     * trailing 9- or 0-runs in values of &le; 12 significant digits; it was removed 2026-09-14 as
+     * dead code (owner ruling Q23 raised its digit floor to 13, which its own entry condition made
+     * unreachable). See the note at the removal site.
+     * </p>
+     * <p>
+     * ⭐ Why one pass suffices for the stated purpose, measured 2026-09-14: genuine
+     * float&rarr;double widening noise — what this method exists to hide — lands at <b>14-15</b>
+     * significant digits ({@code 0.1f}&rarr;15, {@code 1.234f}&rarr;15, {@code 3.14159f}&rarr;14,
+     * {@code 123.456f}&rarr;15), which the 12-digit rounding covers. The removed pass addressed a
+     * 10-12 digit band that the same ruling established holds real data rather than noise, and
+     * rewriting real data is how {@code 19999.0} once became {@code 20000.0}.
+     * </p>
      *
      * @param aValue
      *            the value to be cleaned.
@@ -166,10 +178,29 @@ public class DataValueSupport
      *            the type to aim for. If possible, the value will be wrapped into a data value of
      *            this type.
      * @return a IDataValue that wraps the given object. If aValue is null, this is a
-     *         {@link DataValueMissing} for {@link MissingValue#MIS}.
+     *         {@link DataValueMissing} for {@link MissingValue#MIS}; if aValue already is a
+     *         {@link MissingValue} it is a {@link DataValueMissing} for that value, whatever the
+     *         requested type — a missing cell stays missing on a character column too.
      */
     public static IDataValue getAsDataValue(@Nullable Object aValue, DataValueType aType)
     {
+        if (aValue == null)
+        {
+            // null is wrapped as DataValueMissing
+            return new DataValueMissing(MissingValue.MIS);
+        }
+
+        if (aValue instanceof MissingValue missingvalue)
+        {
+            // ⭐ A stored MissingValue keeps its identity for EVERY target type: whether a cell
+            // is missing cannot depend on the column's type. Resolved BEFORE the switch on
+            // purpose. getAsDataValueString wraps anything non-null through toString(), so a
+            // missing cell used to become the plain string ".", ".A" or "NA" and answered
+            // "not missing" — on exactly the character columns that Dataset-JSON, Parquet and
+            // .cdt store a MissingValue in.
+            return new DataValueMissing(missingvalue);
+        }
+
         IDataValue res = null;
         switch (aType)
         {
@@ -191,10 +222,9 @@ public class DataValueSupport
             break;
         case OTHER:
         default:
-            if (aValue != null)
-            {
-                res = new DataValueOther(aValue);
-            }
+            // The null guard this arm used to carry is gone: null is answered above the switch, so
+            // Error Prone reports the check as AlreadyChecked (-Werror).
+            res = new DataValueOther(aValue);
             break;
         }
 
@@ -202,18 +232,6 @@ public class DataValueSupport
         {
             // we wrapped it into the requested type!
             return res;
-        }
-
-        if (aValue == null)
-        {
-            // null is wrapped as DataValueMissing
-            return new DataValueMissing(MissingValue.MIS);
-        }
-
-        if (aValue instanceof MissingValue missingvalue)
-        {
-            // keep it as missing value
-            return new DataValueMissing(missingvalue);
         }
 
         if (aValue instanceof String str)

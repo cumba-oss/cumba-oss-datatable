@@ -10,7 +10,9 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.provider.cdt.library.CdtLibraryProvider;
@@ -100,7 +102,8 @@ class CdtBomStrippingTest
     {
         Path p = writeWithBom(tmp, "lib.cdt", DM_BODY);
         CdtLibraryProvider lp = new CdtLibraryProvider();
-        IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT);
+        IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT,
+                Map.<Property, String> of());
         ILibraryMember[] members = lp.provideLibraryMembers(lib).toArray(ILibraryMember[]::new);
         assertEquals(1, members.length);
         assertEquals("DM", members[0].getName());

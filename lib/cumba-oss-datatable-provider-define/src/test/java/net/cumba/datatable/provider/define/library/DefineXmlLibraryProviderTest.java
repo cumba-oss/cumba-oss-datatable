@@ -271,4 +271,53 @@ class DefineXmlLibraryProviderTest
             }
         };
     }
+
+    // ==================== buildSources(): dataset-level def:HasNoData ====================
+    // Ported from the internal twin: the HasNoData filter in buildSources() had no direct test.
+
+
+    @Test
+    void buildSourcesIncludesTableMarkedNoDataNo()
+    {
+        net.cumba.datatable.metadata.IMetadataLibrary metadata = org.mockito.Mockito
+                .mock(net.cumba.datatable.metadata.IMetadataLibrary.class);
+
+        net.cumba.datatable.metadata.IDataTableMetadata dt = org.mockito.Mockito
+                .mock(net.cumba.datatable.metadata.IDataTableMetadata.class);
+        org.mockito.Mockito.when(dt.getTableURI()).thenReturn(URI.create("file:///dm.xpt"));
+        org.mockito.Mockito.when(dt.getName()).thenReturn("DM");
+        org.mockito.Mockito.when(dt.getLabel()).thenReturn("Demographics");
+        org.mockito.Mockito.when(dt.getMetaValue(
+                net.cumba.datatable.impl.provider.DataTableMetaSupport.META_KEY_ITEM_NO_DATA))
+                .thenReturn(java.util.Optional.of("No"));
+
+        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(java.util.List.of(dt));
+
+        net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean[] sources = DefineXmlLibraryProvider
+                .buildSources(metadata);
+        assertEquals(1, sources.length, "HasNoData=\"No\" must not exclude the table");
+        assertEquals("DM", sources[0].getName());
+    }
+
+
+    @Test
+    void buildSourcesExcludesTableMarkedNoDataYes()
+    {
+        net.cumba.datatable.metadata.IMetadataLibrary metadata = org.mockito.Mockito
+                .mock(net.cumba.datatable.metadata.IMetadataLibrary.class);
+
+        net.cumba.datatable.metadata.IDataTableMetadata dt = org.mockito.Mockito
+                .mock(net.cumba.datatable.metadata.IDataTableMetadata.class);
+        org.mockito.Mockito.when(dt.getTableURI()).thenReturn(URI.create("file:///dm.xpt"));
+        org.mockito.Mockito.when(dt.getMetaValue(
+                net.cumba.datatable.impl.provider.DataTableMetaSupport.META_KEY_ITEM_NO_DATA))
+                .thenReturn(java.util.Optional.of("Yes"));
+
+        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(java.util.List.of(dt));
+
+        net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean[] sources = DefineXmlLibraryProvider
+                .buildSources(metadata);
+        assertEquals(0, sources.length, "HasNoData=\"Yes\" must exclude the table");
+    }
+
 }

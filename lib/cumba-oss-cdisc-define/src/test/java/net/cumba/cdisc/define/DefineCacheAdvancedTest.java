@@ -10,6 +10,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -18,8 +19,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Advanced tests for {@link DefineCache} covering revalidation via mocked {@code lastModified}, the
  * timeout fast-path, and a concurrency check on the double-checked locking inside
- * {@link DefineCache#sharedInstance()}. {@code SoftReference} GC behaviour is deliberately
- * <strong>not</strong> tested.
+ * {@link DefineCache#sharedInstance()}, plus the reaping of entries whose {@code SoftReference} has
+ * cleared -- driven through {@link DefineCache.CacheEntry#clearReference()} rather than by trying
+ * to provoke the collector, which no test can do deterministically.
  */
 class DefineCacheAdvancedTest
 {
@@ -196,20 +198,72 @@ class DefineCacheAdvancedTest
     }
 
 
-    @Test
-    void cleanUpCache_dropsEntriesWithClearedReferences() throws Exception
+    private static StubbedLastModifiedCache loadingCache()
     {
-        // We exercise the cleanUpCache() path indirectly: any time getOrLoad is called, the
-        // private cleanUpCache() runs first. We don't try to GC the SoftReference (per plan),
-        // we simply verify the method is invoked without side-effects on a populated cache.
         StubbedLastModifiedCache cache = new StubbedLastModifiedCache();
-        URI uri = URI.create("test://stable.xml");
-        cache.setLastModified(uri, 1L);
         cache.setDefineLoader(u -> new DefineSupport(u, ODM.builder().build()));
+        return cache;
+    }
 
-        DefineSupport a = cache.getOrLoad(uri);
-        DefineSupport b = cache.getOrLoad(uri);
 
-        assertSame(a, b);
+    /**
+     * A cache access must reap every entry whose define has been collected, and only those.
+     *
+     * <p>
+     * The predecessor of this test called {@code getOrLoad} twice and asserted the same instance
+     * came back -- it named {@code cleanUpCache} but never put a cleared reference in the map, so
+     * it could not tell reaping from doing nothing. Clearing the
+     * {@link java.lang.ref.SoftReference} directly is the same event the collector raises under
+     * heap pressure, minus the race.
+     * </p>
+     */
+    @Test
+    void clearedEntriesAreReapedOnTheNextAccessAndLiveOnesSurvive() throws Exception
+    {
+        StubbedLastModifiedCache cache = loadingCache();
+        URI collected = URI.create("test://collected.xml");
+        URI live = URI.create("test://live.xml");
+        cache.setLastModified(collected, 1L);
+        cache.setLastModified(live, 1L);
+
+        DefineSupport liveDefine = cache.getOrLoad(live);
+        cache.getOrLoad(collected);
+        assertEquals(Set.of(live, collected), cache.cacheSnapshot().keySet(),
+                "both URIs are cached to begin with");
+
+        // the snapshot is a copy of the map, but its entries are the live ones
+        cache.cacheSnapshot().get(collected).clearReference();
+
+        assertSame(liveDefine, cache.getOrLoad(live),
+                "the surviving entry is still a cache hit, not a reload");
+        assertEquals(Set.of(live), cache.cacheSnapshot().keySet(),
+                "the entry whose define was collected must be gone from the map; a cleared"
+                        + " reference that is never removed is a key and a CacheEntry retained for"
+                        + " the life of the process");
+    }
+
+
+    /**
+     * The point of the cleanup: a long session that opens many defines, each of which is eventually
+     * collected, must not accumulate map entries. Without the reap this map only ever grows --
+     * every define.xml ever opened leaves its URI and a dead {@code CacheEntry} behind.
+     */
+    @Test
+    void aSessionOfCollectedDefinesDoesNotGrowTheCache() throws Exception
+    {
+        StubbedLastModifiedCache cache = loadingCache();
+
+        for (int i = 0; i < 25; i++)
+        {
+            URI uri = URI.create("test://session-" + i + ".xml");
+            cache.setLastModified(uri, 1L);
+            cache.getOrLoad(uri);
+
+            assertEquals(Set.of(uri), cache.cacheSnapshot().keySet(),
+                    "after access " + i + " the cache must hold that define and nothing else");
+
+            // the user closes it and the heap comes under pressure
+            cache.cacheSnapshot().get(uri).clearReference();
+        }
     }
 }

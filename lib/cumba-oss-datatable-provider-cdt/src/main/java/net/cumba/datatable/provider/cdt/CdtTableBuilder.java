@@ -168,6 +168,8 @@ public final class CdtTableBuilder
             }
             for (int c = 0; c < aColumns.length; c++)
             {
+                // Never null: parseValue yields "" for a missing CHAR cell and MissingValue.MIS
+                // for a missing numeric one, so no null ever reaches the data buffer.
                 Object val = CdtValues.parseValue(row.get(c), cdtCols.get(c).getType());
                 if (val instanceof String s)
                 {

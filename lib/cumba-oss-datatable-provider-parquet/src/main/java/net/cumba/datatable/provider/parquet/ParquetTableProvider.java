@@ -81,6 +81,15 @@ public class ParquetTableProvider extends AbstractDataTableProvider
 
     private static final double NANOS_PER_SECOND = 1_000_000_000.0;
 
+    /**
+     * 2^64, exactly representable as a {@code double} (it is a power of two well inside the
+     * exponent range). Carpet/parquet-mr hand back a Parquet {@code UINT_64} value as the raw
+     * two's-complement bit pattern reinterpreted as a signed {@code long} — a magnitude above
+     * {@link Long#MAX_VALUE} therefore arrives as a negative number. Adding this constant to that
+     * negative value recovers the true unsigned magnitude (F-prov-16).
+     */
+    private static final double UNSIGNED_64_BIT_OFFSET = 0x1.0p64;
+
     /** SAS display format attached to Parquet DATE columns (days since 1960-01-01). */
     static final String SAS_DATE_FORMAT = "E8601DA.";
 
@@ -450,8 +459,17 @@ public class ParquetTableProvider extends AbstractDataTableProvider
         {
             return DataValueType.DOUBLE;
         }
-        if (lta instanceof LogicalTypeAnnotation.IntLogicalTypeAnnotation)
+        if (lta instanceof LogicalTypeAnnotation.IntLogicalTypeAnnotation intType)
         {
+            // F-prov-16: UINT_64's range (0 .. 2^64-1) exceeds what a signed long can hold by
+            // magnitude, so a LONG column cannot represent every value; widen to DOUBLE, matching
+            // the DECIMAL convention above (see addData2Column for the unsigned reinterpretation
+            // this requires). UINT_32's max (4,294,967,295) still fits a signed long once
+            // un-sign-extended, so it stays LONG — see addData2Column.
+            if (!intType.isSigned() && intType.getBitWidth() == 64)
+            {
+                return DataValueType.DOUBLE;
+            }
             return DataValueType.LONG;
         }
 
@@ -506,10 +524,21 @@ public class ParquetTableProvider extends AbstractDataTableProvider
 
         private final String[] columnNames;
 
+        /**
+         * Unsigned bit width (32 or 64) for a column whose Parquet logical type is an unsigned
+         * {@code IntLogicalTypeAnnotation}, or 0 for every other column. Carpet/parquet-mr hand
+         * back such a value as the raw two's-complement bit pattern reinterpreted as the matching
+         * signed Java type, so {@code addData2Column} uses this to undo that reinterpretation
+         * (F-prov-16) instead of trusting {@link Number#longValue()} / {@link Number#doubleValue()}
+         * directly.
+         */
+        private final int[] unsignedBitWidth;
+
         Parquet2TableDataParser(@NonNull DataTableMeta aMeta, List<Type> aFields)
         {
             super(ParquetTableProvider.this, aMeta);
             columnNames = new String[aFields.size()];
+            unsignedBitWidth = new int[aFields.size()];
             for (int i = 0; i < aFields.size(); i++)
             {
                 // F-E24: null-named Parquet fields are rare but possible. Match the metadata-side
@@ -518,8 +547,16 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                 // (aRowSlice.get(ridx).get(colName)) would always miss for the null-named column
                 // and the column would still be silently all-missing — and worse, would mis-index
                 // if the column order in the Carpet row map happened not to be null-keyed.
-                String name = aFields.get(i).getName();
+                Type field = aFields.get(i);
+                String name = field.getName();
                 columnNames[i] = (name != null) ? name : "V" + (i + 1);
+
+                if (field.isPrimitive() && field.asPrimitiveType()
+                        .getLogicalTypeAnnotation() instanceof LogicalTypeAnnotation.IntLogicalTypeAnnotation intType
+                        && !intType.isSigned())
+                {
+                    unsignedBitWidth[i] = intType.getBitWidth();
+                }
             }
         }
 
@@ -569,15 +606,58 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                 {
                     aDataColumn.addElement(boolVal);
                 }
+                else if (val instanceof BigDecimal bd)
+                {
+                    // F-E15: Parquet DECIMAL columns can carry values that exceed double
+                    // precision. Lossy conversion silently corrupts identifiers / financial
+                    // numbers. Verify round-trip and fail explicitly so the user knows to
+                    // re-export as STRING.
+                    //
+                    // ⚠ This branch MUST come before the `instanceof Number` branch below:
+                    // BigDecimal is itself a Number, so with the branches in the other order the
+                    // `Number` arm silently swallows every BigDecimal and this guard never runs —
+                    // measured against a real 29-integer-digit DECIMAL(38,9) fixture, which loaded
+                    // as 1.2345678901234567E19 with no exception at all.
+                    double d = bd.doubleValue();
+                    if (BigDecimal.valueOf(d).compareTo(bd) != 0)
+                    {
+                        throw new UncheckedIOException(new IOException("DECIMAL column value " + bd
+                                + " (column " + colName + " row " + ridx
+                                + ") exceeds double precision and cannot be represented "
+                                + "without loss. Convert column to STRING in source if precision "
+                                + "must be preserved."));
+                    }
+                    aDataColumn.addElement(d);
+                }
                 else if (val instanceof Number num)
                 {
                     if (type == DataValueType.LONG)
                     {
-                        aDataColumn.addElement(num.longValue());
+                        // F-prov-16: a Parquet UINT_32 comes back from Carpet as the raw
+                        // two's-complement bit pattern reinterpreted as a signed Integer, so a
+                        // magnitude above Integer.MAX_VALUE reads back negative;
+                        // Integer.toUnsignedLong undoes that reinterpretation. UINT_32's max
+                        // (4,294,967,295) always fits a signed long, so this is lossless.
+                        long lv = (unsignedBitWidth[aColumnIndex] == 32
+                                && num instanceof Integer iv) ? Integer.toUnsignedLong(iv)
+                                        : num.longValue();
+                        aDataColumn.addElement(lv);
                     }
                     else
                     {
-                        double dbl = num.doubleValue();
+                        double dbl;
+                        if (unsignedBitWidth[aColumnIndex] == 64 && num instanceof Long lv
+                                && lv < 0)
+                        {
+                            // F-prov-16: same reinterpretation as above, for UINT_64 (which is
+                            // typed DOUBLE by getDataValueType because its range exceeds what a
+                            // signed long can hold — see UNSIGNED_64_BIT_OFFSET).
+                            dbl = lv + UNSIGNED_64_BIT_OFFSET;
+                        }
+                        else
+                        {
+                            dbl = num.doubleValue();
+                        }
                         if (Double.isNaN(dbl))
                         {
                             aDataColumn.addElement(
@@ -616,23 +696,6 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                     // F-prov-09: SAS datetime seconds (previously epoch nanos); see toSasSeconds
                     // for the precision trade-off.
                     aDataColumn.addElement(toSasSeconds(inst));
-                }
-                else if (val instanceof BigDecimal bd)
-                {
-                    // F-E15: Parquet DECIMAL columns can carry values that exceed double
-                    // precision. Lossy conversion silently corrupts identifiers / financial
-                    // numbers. Verify round-trip and fail explicitly so the user knows to
-                    // re-export as STRING.
-                    double d = bd.doubleValue();
-                    if (BigDecimal.valueOf(d).compareTo(bd) != 0)
-                    {
-                        throw new UncheckedIOException(new IOException("DECIMAL column value " + bd
-                                + " (column " + colName + " row " + ridx
-                                + ") exceeds double precision and cannot be represented "
-                                + "without loss. Convert column to STRING in source if precision "
-                                + "must be preserved."));
-                    }
-                    aDataColumn.addElement(d);
                 }
                 else if (val instanceof Enum<?> enumVal)
                 {

@@ -7,6 +7,7 @@ import java.util.List;
 import lombok.Builder;
 import lombok.Value;
 import lombok.extern.jackson.Jacksonized;
+import org.jspecify.annotations.Nullable;
 
 // ItemGroupDef (Dataset)
 @Value
@@ -106,7 +107,7 @@ public class ItemGroupDef implements IDescribedElement, INamedElement
      * schema restricts the name to the {@code ItemGroupClass} enumeration.
      * </p>
      */
-    public String getEffectiveClassName()
+    public @Nullable String getEffectiveClassName()
     {
         if (classElement != null && classElement.getName() != null
                 && !classElement.getName().isBlank())

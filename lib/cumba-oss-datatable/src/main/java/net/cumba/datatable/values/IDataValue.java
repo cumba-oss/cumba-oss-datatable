@@ -26,7 +26,7 @@ public interface IDataValue
      *
      * @return an object that is the internal value of this data value.<br/>
      *         <b>This is NOT allowed to be null.</b> Null values must be mapped to
-     *         {@link MissingValue}, {@code Double.NaN} or anything else.
+     *         {@link MissingValue}, {@link Double#NaN} or anything else.
      */
     Object getValue();
 

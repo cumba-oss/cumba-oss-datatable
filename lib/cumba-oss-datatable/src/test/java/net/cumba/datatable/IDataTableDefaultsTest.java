@@ -613,4 +613,29 @@ class IDataTableDefaultsTest
         assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).isEmptyOrMissing(9));
     }
 
+
+    /**
+     * ⭐ The table-level pin of the {@code DataValueSupport.getAsDataValue} missing-value hoist
+     * (PLAN-cdt-char-missing-contract phase 6): a stored {@link MissingValue} in a CHARACTER column
+     * stays missing through the <em>typed</em> channel too, while its rendering is unchanged.
+     * Before the hoist the STRING arm of the type switch stringified it, so this cell answered a
+     * {@code DataValueString} of {@code "."} that reported {@code isMissingOrInvalid() == false}.
+     */
+    @Test
+    void getDataValue_keepsAMissingValueMissingInACharacterColumn()
+    {
+        StubTable t = blanknessTable();
+
+        IDataValue charCell = t.getDataValue(1, 0);
+        assertEquals(".", charCell.getValueAsString(),
+                "the rendering is unchanged — a missing cell still displays as its text");
+        assertTrue(charCell.isMissingOrInvalid(),
+                "a MissingValue in a CHARACTER column is missing, whatever type was asked for");
+        assertTrue(charCell.isEmptyOrMissing());
+
+        // The raw-value predicates were always correct, and still are.
+        assertTrue(t.isEmptyOrMissing(1, 0));
+        assertTrue(t.getColumn(0).isEmptyOrMissing(1));
+    }
+
 }

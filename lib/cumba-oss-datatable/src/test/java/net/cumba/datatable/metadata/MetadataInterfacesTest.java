@@ -207,4 +207,79 @@ class MetadataInterfacesTest
         assertTrue(lib.getCodelist("SEX").isPresent());
         assertFalse(lib.getCodelist("XX").isPresent());
     }
+
+    // ==================== IDataTableMetadata defaults ====================
+
+    /**
+     * A minimal {@link IDataTableMetadata} implementing only the abstract methods, so the interface
+     * <em>defaults</em> actually run. A Mockito mock cannot serve here: it stubs default methods
+     * like any other, so it would answer {@code null} instead of executing the body under test.
+     */
+    private static final class StubTableMetadata implements IDataTableMetadata
+    {
+
+        @Override
+        public Set<String> getMetaKeys()
+        {
+            return Set.of();
+        }
+
+
+        @Override
+        public Optional<Object> getMetaValue(String aKey)
+        {
+            return Optional.empty();
+        }
+
+
+        @Override
+        public String getName()
+        {
+            return "DM";
+        }
+
+
+        @Override
+        public String getLabel()
+        {
+            return "Demographics";
+        }
+
+
+        @Override
+        public URI getTableURI()
+        {
+            return URI.create("file:///dm.xpt");
+        }
+
+
+        @Override
+        public List<IColumnMetadata> getColumns()
+        {
+            return List.of();
+        }
+
+
+        @Override
+        public Optional<IColumnMetadata> getColumn(String aColumnName)
+        {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * {@code getSubClassNames()} defaults to empty rather than null, so a metadata source with no
+     * subclass concept — everything except a Define-XML 2.1 {@code <def:SubClass>} — needs no
+     * override and no caller needs a null check.
+     */
+    @Test
+    void testDataTableMetadataSubClassNamesDefaultsToEmpty()
+    {
+        IDataTableMetadata meta = new StubTableMetadata();
+
+        assertNotNull(meta.getSubClassNames());
+        assertTrue(meta.getSubClassNames().isEmpty());
+        // The class name default is null-by-design for a source that declares none.
+        assertEquals(null, meta.getClassName());
+    }
 }

@@ -67,7 +67,7 @@ public class DataBrowserMetadataLibrary implements IMetadataLibrary
 
 
     @Override
-    public String getName()
+    public @Nullable String getName()
     {
         return bean.getName();
     }

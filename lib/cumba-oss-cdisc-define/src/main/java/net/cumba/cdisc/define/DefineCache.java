@@ -187,6 +187,27 @@ public class DefineCache
 
 
     /**
+     * A snapshot of the cache contents, so a test can see what {@link #cleanUpCache()} reaped.
+     *
+     * <p>
+     * Package-visible for testing, not API -- nothing outside this package may depend on it. It
+     * exists because reaping is otherwise <em>unobservable</em>: the map is private, and an entry
+     * disappearing has no outward effect other than the heap it stops holding. The returned map is
+     * an immutable copy, but the {@link CacheEntry} values are the live ones.
+     * </p>
+     *
+     * @return an immutable copy of the current cache contents.
+     */
+    Map<URI, CacheEntry> cacheSnapshot()
+    {
+        synchronized (cacheMap)
+        {
+            return Map.copyOf(cacheMap);
+        }
+    }
+
+
+    /**
      * Internal helper method to clean up the cache.
      */
     private void cleanUpCache()
@@ -247,6 +268,23 @@ public class DefineCache
         DefineSupport getDefine()
         {
             return ref.get();
+        }
+
+
+        /**
+         * Clears this entry's {@link SoftReference}, exactly as the collector does when the heap
+         * comes under pressure.
+         *
+         * <p>
+         * Package-visible for testing, not API. It is the seam that makes {@code cleanUpCache}
+         * observable: a {@link SoftReference} cannot be forced to clear -- {@code System.gc()} is a
+         * hint, and filling the heap to provoke one would make every run of these tests a race --
+         * so the test simulates the one event the cleanup exists to react to.
+         * </p>
+         */
+        void clearReference()
+        {
+            ref.clear();
         }
     }
 

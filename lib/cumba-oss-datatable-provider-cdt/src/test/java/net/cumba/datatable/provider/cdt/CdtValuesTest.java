@@ -1,7 +1,7 @@
 package net.cumba.datatable.provider.cdt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.LocalDate;
@@ -12,62 +12,24 @@ import org.junit.jupiter.api.Test;
 class CdtValuesTest
 {
 
-    /**
-     * <b>Deliberately still {@code null}, and not an oversight.</b> The house contract for a blank
-     * cell is <em>missing ≡ empty</em>, spelled per the column's storage type — and for a character
-     * column {@code null} <em>is</em> that spelling: a CHAR column is typed
-     * {@link DataValueType#STRING}, its buffer stores the {@code null} without complaint, and
-     * {@code AbstractDataBuffer.createDataValue} maps it back to the empty string ("for STRING we
-     * map from null to empty string"). The blank character cell therefore already reads as
-     * {@code ""} and never as missing, which is exactly what
-     * {@code BlankCellFormatIndependenceTest} asserts for the CDT format today.
-     * <p>
-     * The numeric half below is different only because {@code DataBufferDouble} has no such
-     * mapping: it rejects {@code null} outright. Returning {@code ""} here instead would change
-     * nothing at the table level and would silently start writing an override for every blank
-     * character cell in {@code CdtLoader}, so the char case is left exactly as it was.
-     */
     @Test
-    void charEmptyIsNullBecauseTheStringBufferMapsNullToEmpty()
+    void charEmptyIsEmptyString()
     {
-        assertNull(CdtValues.parseValue("", CdtType.CHAR));
+        // SAS character semantics: a Char column has no missing sentinel — "" IS its
+        // missing value. Never null; see CdtValues.missingFor.
+        assertEquals("", CdtValues.parseValue("", CdtType.CHAR));
     }
 
 
-    /**
-     * Changed from {@code assertNull}: a blank numeric cell used to yield {@code null}, which
-     * {@code DataBufferDouble.setValue} rejects with
-     * {@code IllegalArgumentException: Invalid value:
-     * null} — so a {@code .cdt} carrying one could not be loaded through {@code CdtTableProvider}
-     * at all. Missing in a numeric buffer is spelled {@link MissingValue}.
-     */
     @Test
-    void numericEmptyIsMissingValue()
+    void numEmptyIsMissing()
     {
         assertEquals(MissingValue.MIS, CdtValues.parseValue("", CdtType.NUM));
-        assertEquals(MissingValue.MIS, CdtValues.parseValue("", CdtType.DATE));
-        assertEquals(MissingValue.MIS, CdtValues.parseValue("", CdtType.TIME));
-        assertEquals(MissingValue.MIS, CdtValues.parseValue("", CdtType.DATETIME));
     }
 
 
-    /** A {@code null} raw field is the same missing cell as an empty one. */
     @Test
-    void numericNullRawIsMissingValue()
-    {
-        assertEquals(MissingValue.MIS, CdtValues.parseValue(null, CdtType.NUM));
-        assertNull(CdtValues.parseValue(null, CdtType.CHAR));
-    }
-
-
-    /**
-     * Changed from {@code assertNull} for the same reason as {@link #numericEmptyIsMissingValue()}.
-     * {@code CdtParser.parseDataRow} already folds an unquoted {@code .} to {@code ""} before the
-     * value ever reaches here, so this branch only fires for direct API callers — but it must agree
-     * with the empty-string branch or the two disagree about what missing means.
-     */
-    @Test
-    void numDotIsMissingValueSasConvention()
+    void numDotIsMissingSasConvention()
     {
         assertEquals(MissingValue.MIS, CdtValues.parseValue(".", CdtType.NUM));
         assertEquals(MissingValue.MIS, CdtValues.parseValue(".", CdtType.DATE));
@@ -76,39 +38,45 @@ class CdtValuesTest
     }
 
 
-    /**
-     * The type-driven guard itself: {@link CdtValues#missingFor(CdtType)} must agree with
-     * {@link CdtValues#toDataValueType(CdtType)} for <em>every</em> {@link CdtType}, so a numeric
-     * type added later cannot quietly go back to yielding {@code null} into a
-     * {@code DataBufferDouble}. Iterating the enum is what makes this a guard rather than a
-     * restatement of the four cases above.
-     */
     @Test
-    void everyTypeThatMapsToDoubleGetsAMissingValue()
+    void charDotIsMissingSinceTheSentinelExists()
     {
-        for (CdtType t : CdtType.values())
-        {
-            Object missing = CdtValues.missingFor(t);
-            if (CdtValues.toDataValueType(t) == DataValueType.DOUBLE)
-            {
-                assertEquals(MissingValue.MIS, missing,
-                        t + " is stored in a numeric buffer, which rejects null");
-            }
-            else
-            {
-                assertNull(missing, t + " is not stored in a numeric buffer");
-            }
-            assertEquals(missing, CdtValues.parseValue("", t),
-                    t + ": an empty field must be the type's missing representation");
-        }
+        // Changed 2026-09-17: "." is the missing sentinel for EVERY column type, Char included -
+        // it is the only way .cdt can express a missing character value. A literal dot is written
+        // quoted and reaches parseValue escaped; see charEscapedDotIsLiteralDot below and
+        // CdtMissingValueTest for the whole contract.
+        assertEquals(MissingValue.MIS, CdtValues.parseValue(".", CdtType.CHAR));
     }
 
 
     @Test
-    void charDotIsLiteralDotNotNull()
+    void charEscapedDotIsLiteralDot()
     {
-        // For Char, a single "." is a literal string value, NOT the null sentinel.
-        assertEquals(".", CdtValues.parseValue(".", CdtType.CHAR));
+        // The escape hatch: a quoted "." field. CdtParser marks it via CdtValues.encodeField, so
+        // a literal dot stays representable - see CdtRoundTripTest.quotingRoundTrips.
+        assertEquals(".", CdtValues.parseValue(CdtValues.encodeField(".", true), CdtType.CHAR));
+    }
+
+
+    @Test
+    void missingForFollowsSasCharacterSemantics()
+    {
+        assertEquals("", CdtValues.missingFor(CdtType.CHAR));
+        assertEquals(MissingValue.MIS, CdtValues.missingFor(CdtType.NUM));
+        assertEquals(MissingValue.MIS, CdtValues.missingFor(CdtType.DATE));
+        assertEquals(MissingValue.MIS, CdtValues.missingFor(CdtType.TIME));
+        assertEquals(MissingValue.MIS, CdtValues.missingFor(CdtType.DATETIME));
+    }
+
+
+    @Test
+    void parseValueNeverReturnsNull()
+    {
+        for (CdtType t : CdtType.values())
+        {
+            assertNotNull(CdtValues.parseValue(null, t));
+            assertNotNull(CdtValues.parseValue("", t));
+        }
     }
 
 

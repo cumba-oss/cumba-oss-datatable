@@ -686,30 +686,15 @@ public class DefineXmlPruner
     private int removeOrphanedWhereClauseDefs(boolean aApply)
     {
         int count = 0;
-        Set<String> referencedOIDs = new HashSet<>();
-
-        // WhereClauseRef is in def: namespace
-        NodeList wcRefs = doc.getElementsByTagNameNS(defNs, "WhereClauseRef");
-        for (int i = 0; i < wcRefs.getLength(); i++)
-        {
-            Element ref = (Element) wcRefs.item(i);
-            String oid = ref.getAttribute("WhereClauseOID");
-            if (!oid.isEmpty())
-            {
-                referencedOIDs.add(oid);
-            }
-        }
-        // Fallback: check local name
-        NodeList wcRefsLocal = getElementsByLocalName("WhereClauseRef");
-        for (int i = 0; i < wcRefsLocal.getLength(); i++)
-        {
-            Element ref = (Element) wcRefsLocal.item(i);
-            String oid = ref.getAttribute("WhereClauseOID");
-            if (!oid.isEmpty())
-            {
-                referencedOIDs.add(oid);
-            }
-        }
+        // Namespace-agnostic, like every other family's reference collection (F-10, F-20). This
+        // replaces two hand-rolled WhereClauseRef sweeps -- one over the def namespace, one over
+        // the local name -- that were mutually redundant: getElementsByLocalName falls through to
+        // the def namespace whenever the ODM-namespace set is empty, which it is in every
+        // conformant Define-XML, so the second sweep was a superset of the first and neither
+        // could be observed failing. @WhereClauseOID occurs nowhere but on def:WhereClauseRef,
+        // and collecting it wherever it appears can only retain a WhereClauseDef, never delete
+        // one -- the same direction of error the F-10 review accepted for @ItemOID.
+        Set<String> referencedOIDs = collectAllAttributeValues("WhereClauseOID");
 
         NodeList wcDefs = doc.getElementsByTagNameNS(defNs, ELEM_WHERE_CLAUSE_DEF);
         if (wcDefs.getLength() == 0)

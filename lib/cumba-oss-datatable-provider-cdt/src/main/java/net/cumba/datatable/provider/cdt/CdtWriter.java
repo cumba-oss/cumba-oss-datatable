@@ -266,7 +266,6 @@ public final class CdtWriter
         long rowCount = aTable.getRowCount();
         for (long r = 0; r < rowCount; r++)
         {
-            boolean allNull = true;
             StringBuilder row = new StringBuilder(64);
             for (int c = 0; c < colCount; c++)
             {
@@ -278,23 +277,27 @@ public final class CdtWriter
                 DataTableColumnMeta cm = aMeta.getColumn(c);
                 String rendered = renderValue(raw, cm.getType(), cm.getDisplayFormat(), r,
                         cm.getName());
-                if (!rendered.isEmpty())
-                {
-                    allNull = false;
-                }
-                row.append(quoteFieldIfNeeded(rendered));
+                // A MissingValue renders as its bare sentinel (".", "._", ".A"...) and must NOT be
+                // quoted - quoting it is exactly how it would read back as a literal dot. Every
+                // other value goes through quoteFieldIfNeeded, which quotes a literal that happens
+                // to be sentinel-shaped.
+                row.append(raw instanceof MissingValue ? rendered : quoteFieldIfNeeded(rendered));
             }
-            // F-prov-cdt-02: the "." sentinel exists for exactly one reason - CdtParser.parseAll
-            // splits on line breaks and skips blank lines, so a single-column all-missing row
-            // (whose rendered "row" text is "", since there is no second field to add a " | "
-            // separator) would otherwise be written as an indistinguishable blank line and
-            // silently vanish on read. A multi-column all-missing row's rendered text always
-            // contains at least one " | " separator, so it is never blank and needs no sentinel.
-            // This used to trigger on colCount > 1 (never the case that is actually ambiguous)
-            // and miss colCount == 1 (the only case that is).
-            if (allNull && colCount == 1)
+            // F-prov-cdt-02: CdtParser.parseAll splits on line breaks and skips blank lines, so a
+            // single-column row whose one field renders empty (whose rendered "row" text is "",
+            // since there is no second field to add a " | " separator) would be written as an
+            // indistinguishable blank line and silently vanish on read. A multi-column row always
+            // contains at least one " | " separator, so it is never blank and needs no marker.
+            //
+            // The marker used to be the "." row sentinel. It cannot be, since 2026-09-17: "." now
+            // means MissingValue.MIS in every column type, so writing it for an EMPTY STRING char
+            // cell would turn "" into missing on read - a round-trip corruption. The quoted empty
+            // field says "one field, empty" without claiming anything about missingness, and a
+            // genuinely missing single-column cell needs no special case at all: it renders as its
+            // own bare sentinel, which is already a non-blank line.
+            if (colCount == 1 && row.length() == 0)
             {
-                aOut.append(".\n");
+                aOut.append("\"\"\n");
             }
             else
             {
@@ -307,8 +310,9 @@ public final class CdtWriter
     /**
      * Quote a rendered data field when needed so the parser can recover the exact characters: any
      * field that begins with whitespace, contains {@code |}, contains {@code "} or {@code \}, is
-     * exactly {@code .} (the all-missing sentinel), or is itself a fence line (three or more dashes
-     * and nothing else) is wrapped in double quotes with backslash escaping.
+     * shaped like a missing sentinel ({@code .}, {@code ._}, {@code .A}..{@code .Z}), or is itself
+     * a fence line (three or more dashes and nothing else) is wrapped in double quotes with
+     * backslash escaping.
      *
      * <p>
      * F-prov-cdt-03: the fence check matters only for a single-column table, where the rendered
@@ -323,7 +327,7 @@ public final class CdtWriter
         {
             return "";
         }
-        boolean needQuote = ".".equals(aValue) || CdtFence.isFence(aValue);
+        boolean needQuote = CdtValues.isMissingSentinel(aValue) || CdtFence.isFence(aValue);
         if (!needQuote)
         {
             char first = aValue.charAt(0);
@@ -364,13 +368,16 @@ public final class CdtWriter
         }
         if (aValue instanceof MissingValue)
         {
-            return null;
+            // Kept, not flattened to null: which missing it is, is data. renderValue turns it into
+            // the .cdt sentinel that reads back as the same constant.
+            return aValue;
         }
         if (aValue instanceof IDataValue dv)
         {
             if (dv.isMissingOrInvalid())
             {
-                return null;
+                Object wrapped = dv.getValue();
+                return wrapped instanceof MissingValue ? wrapped : null;
             }
             return dv.getValue();
         }
@@ -388,6 +395,10 @@ public final class CdtWriter
         {
             return "";
         }
+        if (aValue instanceof MissingValue mv)
+        {
+            return renderMissing(mv);
+        }
         if (aType == null)
         {
             return checkNoControlChars(aValue.toString(), aRowIdx, aColName);
@@ -401,6 +412,27 @@ public final class CdtWriter
         case NUM -> renderNumber(aValue);
         case CHAR -> checkNoControlChars(aValue.toString(), aRowIdx, aColName);
         };
+    }
+
+
+    /**
+     * Render a missing value as the {@code .cdt} sentinel that reads back as the same constant: its
+     * own display string for the 28 SAS forms ({@code .}, {@code ._}, {@code .A}..{@code .Z}).
+     *
+     * <p>
+     * The format has no spelling for the non-SAS constants {@link MissingValue#NA}, {@code None},
+     * {@code np.nan}, {@code pd.NA}, {@code pd.NaT}, {@code <UKN>} and {@code <ERR>}, and must not
+     * borrow their display strings: {@code NA} is a legitimate CDISC null-flavour <em>value</em> in
+     * character data, so writing it would turn a missing cell into a real one. They degrade to the
+     * generic {@code .} — the flavour is lost, the missingness is not. Before this method existed
+     * every one of them, SAS forms included, was written as a blank field, which on a character
+     * column silently became the empty string.
+     * </p>
+     */
+    private static String renderMissing(MissingValue aValue)
+    {
+        String text = aValue.getDisplayString();
+        return CdtValues.isMissingSentinel(text) ? text : MissingValue.MIS.getDisplayString();
     }
 
 

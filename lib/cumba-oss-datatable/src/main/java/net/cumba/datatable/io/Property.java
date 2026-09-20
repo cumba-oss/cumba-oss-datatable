@@ -184,6 +184,11 @@ public record Property(String name, String description, PropertyType type, Strin
     }
 
 
+    /**
+     * Create a {@link PropertyType#DIRECTORY} property. The value is a URI string <b>or</b> a local
+     * filesystem path pointing to a directory — consumers must accept both, see
+     * {@link PropertyType#DIRECTORY}; the UI renders a text field plus a directory-chooser button.
+     */
     public static Property forDirectory(String aName, String aDescription, String aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.DIRECTORY, aDefaultValue, null, false,
@@ -192,8 +197,9 @@ public record Property(String name, String description, PropertyType type, Strin
 
 
     /**
-     * Create a {@link PropertyType#FILE} property. The value is a URI string pointing to a single
-     * file; the UI renders a text field plus a file-chooser button.
+     * Create a {@link PropertyType#FILE} property. The value is a URI string <b>or</b> a local
+     * filesystem path pointing to a single file — consumers must accept both, see
+     * {@link PropertyType#FILE}; the UI renders a text field plus a file-chooser button.
      */
     public static Property forFile(String aName, String aDescription, String aDefaultValue)
     {
@@ -204,7 +210,9 @@ public record Property(String name, String description, PropertyType type, Strin
 
     /**
      * Create a {@link PropertyType#FILES} property. The value is a comma-separated list of file
-     * URIs; the UI renders a text field plus a picker dialog for managing the list.
+     * references, each a URI string <b>or</b> a local filesystem path — consumers must accept both
+     * and convert per element, see {@link PropertyType#FILES}; the UI renders a text field plus a
+     * picker dialog for managing the list.
      */
     public static Property forFiles(String aName, String aDescription, String aDefaultValue)
     {

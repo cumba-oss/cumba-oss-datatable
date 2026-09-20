@@ -3,6 +3,7 @@ package net.cumba.datatable.provider.sas.xpt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
 import java.util.List;
@@ -10,6 +11,7 @@ import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.provider.sas.testsupport.LoggerCapture;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.sasutils.xpt.VariableXpt;
 import org.junit.jupiter.api.BeforeEach;
@@ -186,11 +188,18 @@ class XptTableProviderTest
 
         VariableXpt vxpt = createVar(null, (short) 2, (short) 8);
 
-        provider.addColumn(support, vxpt, 0, URI.create("file:///tmp/anon.xpt"));
+        try (LoggerCapture log = LoggerCapture.attach(XptTableProvider.class.getName()))
+        {
+            provider.addColumn(support, vxpt, 0, URI.create("file:///tmp/anon.xpt"));
 
-        DataTableColumnMeta[] cols = support.getTableMeta().build().getColumns();
-        assertEquals("V1", cols[0].getName());
-        assertEquals(DataValueType.STRING, cols[0].getType());
+            DataTableColumnMeta[] cols = support.getTableMeta().build().getColumns();
+            assertEquals("V1", cols[0].getName());
+            assertEquals(DataValueType.STRING, cols[0].getType());
+            // A synthesised name is a guess at a broken NAMESTR record: silently renaming a
+            // clinical column is exactly the kind of thing that must appear in the log.
+            assertTrue(log.containsMessageContaining("has no name"), log.messages().toString());
+            assertTrue(log.containsMessageContaining("V1"), log.messages().toString());
+        }
     }
 
     // --- helpers ---

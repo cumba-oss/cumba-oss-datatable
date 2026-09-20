@@ -1,7 +1,6 @@
 package net.cumba.datatable.impl.databuffer;
 
 import java.util.List;
-
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
 import net.cumba.datatable.values.MissingValue;

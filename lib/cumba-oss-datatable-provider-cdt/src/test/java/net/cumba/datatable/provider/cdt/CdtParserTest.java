@@ -344,13 +344,25 @@ class CdtParserTest
                         ---
                         "|pipe-prefix"
                         ---
-                        """, "|pipe-prefix"), Arguments.of("quotedDotIsLiteralDotString", """
+                        """, "|pipe-prefix"), Arguments.of("unquotedDotIsTheMissingSentinel", """
+                        dataset T
+                        col X type=Char
+                        ---
+                        .
+                        ---
+                        """, "."), Arguments.of("unquotedSpecialMissingIsTheSentinel", """
+                        dataset T
+                        col X type=Char
+                        ---
+                        .A
+                        ---
+                        """, ".A"), Arguments.of("quotedDotIsEscapedLiteralDotString", """
                         dataset T
                         col X type=Char
                         ---
                         "."
                         ---
-                        """, "."), Arguments.of("quotedAllWhitespaceValueStripsToEmpty", """
+                        """, "\\."), Arguments.of("quotedAllWhitespaceValueStripsToEmpty", """
                         dataset T
                         col X type=Char
                         ---
@@ -402,6 +414,10 @@ class CdtParserTest
     @MethodSource("singleValueDataFieldProvider")
     void singleValueDataFieldParsing(String name, String content, String expected)
     {
+        // NB. this asserts the ENCODED field text stored in the row model, not the typed value: an
+        // unquoted missing sentinel is stored bare ("." / ".A"), while a quoted literal that would
+        // read back as one is escaped ("." -> "\\."). CdtValues.parseValue is the decoder; see
+        // CdtValues.encodeField for why the row model has to carry the distinction at all.
         CdtDataset ds = CdtParser.parseFirst(content, "t");
         assertEquals(expected, ds.getDataRows().get(0).get(0));
     }
@@ -460,6 +476,12 @@ class CdtParserTest
     }
 
 
+    /**
+     * The all-missing row sentinel expands to one missing sentinel per column. ⚠ Changed
+     * 2026-09-17: it used to expand to {@code ""} per column, which on a Char column is the EMPTY
+     * STRING, not missing. Measured before the change: zero {@code .cdt} files in the stack use
+     * this row form, so nothing moved.
+     */
     @Test
     void dotSentinelInMultiColumnRow()
     {
@@ -472,7 +494,7 @@ class CdtParserTest
                 ---
                 """;
         CdtDataset ds = CdtParser.parseFirst(content, "t");
-        assertEquals(List.of("", ""), ds.getDataRows().get(0));
+        assertEquals(List.of(".", "."), ds.getDataRows().get(0));
     }
 
 

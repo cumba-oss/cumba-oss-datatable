@@ -3,6 +3,7 @@ package net.cumba.datatable.provider.sas.sas7bdat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -14,6 +15,7 @@ import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.provider.sas.testsupport.LoggerCapture;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
 import net.cumba.sasutils.VariableType;
@@ -77,13 +79,20 @@ class BdatTableProviderTest
         DataTableMetaSupport support = new DataTableMetaSupport(null);
         support.setTable(URI.create("file:///tmp/anon.sas7bdat"));
 
-        VariableBdat var = nullNameVar(VariableType.CHARACTER, 4);
+        VariableBdat variable = nullNameVar(VariableType.CHARACTER, 4);
 
-        provider.addColumn(support, var, 2, URI.create("file:///tmp/anon.sas7bdat"));
+        try (LoggerCapture log = LoggerCapture.attach(BdatTableProvider.class.getName()))
+        {
+            provider.addColumn(support, variable, 2, URI.create("file:///tmp/anon.sas7bdat"));
 
-        DataTableColumnMeta[] cols = support.getTableMeta().build().getColumns();
-        assertEquals("V3", cols[0].getName());
-        assertEquals(DataValueType.STRING, cols[0].getType());
+            DataTableColumnMeta[] cols = support.getTableMeta().build().getColumns();
+            assertEquals("V3", cols[0].getName());
+            assertEquals(DataValueType.STRING, cols[0].getType());
+            // A synthesised name is a guess at a broken column-name subheader; silently renaming a
+            // clinical column must not happen without a trace in the log.
+            assertTrue(log.containsMessageContaining("has no name"), log.messages().toString());
+            assertTrue(log.containsMessageContaining("V3"), log.messages().toString());
+        }
     }
 
     // --- F-D17: clampExpectedRows guards against deleted > declared underflow ---
@@ -154,6 +163,30 @@ class BdatTableProviderTest
         assertInstanceOf(MissingValue.class, v,
                 "Non-STRING default arm must yield MIS_UNKNOWN, not coerced to empty string.");
         assertEquals(MissingValue.MIS_UNKNOWN, v);
+    }
+
+
+    @Test
+    void testNullArmNonStringColumnGetsMisUnknown() throws Exception
+    {
+        // The null arm used to yield MIS. Aligned on MIS_UNKNOWN: a null cell is an unexpected
+        // state (BdatVarParser.getValue cannot produce one today), not an ordinary SAS '.'
+        // missing that the file deliberately contained. The XPT twin answers identically.
+        CachedDataTableColumn col = invokeAddData2Column(DataValueType.DOUBLE, null);
+
+        assertEquals(1L, col.getRowCount());
+        assertEquals(MissingValue.MIS_UNKNOWN, col.getValue(0));
+    }
+
+
+    @Test
+    void testNullArmStringColumnGetsEmptyString() throws Exception
+    {
+        // SAS character missing is the empty string by convention -- unchanged.
+        CachedDataTableColumn col = invokeAddData2Column(DataValueType.STRING, null);
+
+        assertEquals(1L, col.getRowCount());
+        assertEquals("", col.getValue(0));
     }
 
 

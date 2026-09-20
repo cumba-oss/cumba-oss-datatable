@@ -1,6 +1,7 @@
 package net.cumba.datatable.provider.dsj;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.io.IOException;
 import java.net.URI;
@@ -144,6 +145,148 @@ class DsjTableProviderMetadataAssertionsTest
 
         assertEquals(0, table.getRowCount());
         assertEquals(1, table.getColumnCount());
+    }
+
+    // ---- ported from the internal twin: blank-vs-populated label, blank displayFormat,
+    // explicit records=0, and targetDataType resolution. The order-related tests of that file
+    // are deliberately NOT ported: net.cumba.datatable.order is not part of this project.
+
+
+    @Test
+    void blankTableLabelIsNotSetOnTheMetadata(@TempDir Path tmp) throws IOException
+    {
+        String json = BASE.formatted("   ");
+        URI uri = writeJson(tmp, "blanklabel.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        // A blank/whitespace-only label must be treated as absent, i.e. must not overwrite
+        // whatever default DataTableMetaBuilder assigns (never the literal blank string).
+        assertFalse("   ".equals(table.getMetaData().getLabel()),
+                "a blank table label must not be forwarded verbatim onto the built metadata");
+    }
+
+
+    @Test
+    void populatedTableLabelIsSetOnTheMetadata(@TempDir Path tmp) throws IOException
+    {
+        String json = BASE.formatted("A Real Label");
+        URI uri = writeJson(tmp, "reallabel.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals("A Real Label", table.getMetaData().getLabel());
+    }
+
+
+    @Test
+    void explicitlyZeroRecordsLeavesRowCountAtItsDefault(@TempDir Path tmp) throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-08T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.ZERO",
+                  "name": "ZERO",
+                  "label": "Zero records",
+                  "records": 0,
+                  "columns": [
+                    {"itemOID": "IT.A", "name": "A", "label": "A", "dataType": "string"}
+                  ],
+                  "rows": []
+                }
+                """;
+        URI uri = writeJson(tmp, "zero.json", json);
+
+        DataTableMeta meta = new DsjTableProvider().provideMetaData(uri,
+                DsjProviderSupplier.FI_DSJ_JSON);
+
+        // DataTableMeta's own default for an unset rowCount/totalRowCount is 0, so a document
+        // that explicitly declares "records": 0 must read back the same way as one that never
+        // sets rowCount at all -- this pins that (documented) equivalence rather than leaving it
+        // as an implicit assumption.
+        assertEquals(0, meta.getRowCount());
+        assertEquals(0, meta.getTotalRowCount());
+    }
+
+
+    @Test
+    void blankColumnDisplayFormatIsNotSetOnTheColumnMetadata(@TempDir Path tmp) throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-08T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.DF",
+                  "name": "DF",
+                  "label": "Blank displayFormat",
+                  "records": 1,
+                  "columns": [
+                    {"itemOID": "IT.A", "name": "A", "label": "A", "dataType": "double",
+                     "displayFormat": "   "},
+                    {"itemOID": "IT.B", "name": "B", "label": "B", "dataType": "double",
+                     "displayFormat": "8.2"}
+                  ],
+                  "rows": [[1.5, 2.5]]
+                }
+                """;
+        URI uri = writeJson(tmp, "displayformat.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertFalse("   ".equals(table.getMetaData().getColumn(0).getDisplayFormat()),
+                "a blank displayFormat must not be forwarded verbatim onto the column metadata");
+        assertEquals("8.2", table.getMetaData().getColumn(1).getDisplayFormat());
+    }
+
+
+    @Test
+    void provideMetaDataAlsoTreatsABlankLabelAsAbsent(@TempDir Path tmp) throws IOException
+    {
+        // provideMetaData() runs through buildMeta(), a separate (near-duplicate) copy of the
+        // blank-label check exercised via provide()'s handleMetadata() above -- both copies must
+        // be tested independently, since a mutation in one is invisible to a test of the other.
+        String json = BASE.formatted("   ");
+        URI uri = writeJson(tmp, "blanklabel-meta.json", json);
+
+        DataTableMeta meta = new DsjTableProvider().provideMetaData(uri,
+                DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertFalse("   ".equals(meta.getLabel()),
+                "a blank table label must not be forwarded verbatim by provideMetaData() either");
+    }
+
+
+    @Test
+    void targetDataTypeIntegerAndDecimalBothResolveToDoubleColumnType(@TempDir Path tmp)
+        throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-08T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.TT",
+                  "name": "TT",
+                  "label": "targetDataType resolution",
+                  "records": 1,
+                  "columns": [
+                    {"itemOID": "IT.INT", "name": "INTCOL", "label": "Int", "dataType": "integer",
+                     "targetDataType": "integer"},
+                    {"itemOID": "IT.DEC", "name": "DECCOL", "label": "Dec", "dataType": "decimal",
+                     "targetDataType": "decimal", "length": 16}
+                  ],
+                  "rows": [[7, "1.5"]]
+                }
+                """;
+        URI uri = writeJson(tmp, "targettype.json", json);
+
+        DataTableMeta meta = new DsjTableProvider().provideMetaData(uri,
+                DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals(net.cumba.datatable.values.DataValueType.DOUBLE, meta.getColumn(0).getType(),
+                "targetDataType=integer must resolve the column's stored type to DOUBLE");
+        assertEquals(net.cumba.datatable.values.DataValueType.DOUBLE, meta.getColumn(1).getType(),
+                "targetDataType=decimal must resolve the column's stored type to DOUBLE");
     }
 
 }

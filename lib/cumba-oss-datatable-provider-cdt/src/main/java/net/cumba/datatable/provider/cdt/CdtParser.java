@@ -423,16 +423,18 @@ public final class CdtParser
         private List<String> parseDataRow(String aLine, int aColumnCount, int aLineIdx)
         {
             // Sentinel: a line consisting solely of "." represents a row where every
-            // field is missing. Needed to express all-missing rows in single-column
-            // tables (otherwise
-            // indistinguishable from a blank line, which is skipped). A literal "."
-            // char value must be quoted (write as "."), see CdtWriter.
+            // field is missing - needed because a row whose fields are all blank is,
+            // in a single-column table, byte-identical to a blank line, which the
+            // parser skips. Each field takes the "." sentinel text, so the row means
+            // MissingValue.MIS in every column type, character columns included (it
+            // used to mean "" for those, which is the empty string, not missing).
+            // A literal "." char value must be quoted (write as "."), see CdtWriter.
             if (".".equals(aLine))
             {
                 List<String> result = new ArrayList<>(aColumnCount);
                 for (int i = 0; i < aColumnCount; i++)
                 {
-                    result.add("");
+                    result.add(".");
                 }
                 return result;
             }
@@ -478,7 +480,9 @@ public final class CdtParser
                     {
                         throw error(aLineIdx, "unterminated quoted data value: " + aLine);
                     }
-                    result.add(stripTrailing(field.toString()));
+                    // Quoted: the content is a LITERAL, so a "." / "._" / ".A" value is
+                    // escaped rather than read back as the missing sentinel.
+                    result.add(CdtValues.encodeField(stripTrailing(field.toString()), true));
 
                     // Skip whitespace between closing quote and next | or EOL.
                     while (i < aLine.length() && isHorizWs(aLine.charAt(i)))
@@ -501,14 +505,12 @@ public final class CdtParser
                         i++;
                     }
                     String field = aLine.substring(start, i).strip();
-                    // Unquoted "." is the SAS missing-value sentinel for any column
-                    // type (including Char). A literal "." Char value must be quoted
-                    // — see CdtWriter.quoteFieldIfNeeded.
-                    if (".".equals(field))
-                    {
-                        field = "";
-                    }
-                    result.add(field);
+                    // An unquoted ".", "._" or ".A".."Z" is the SAS missing sentinel for
+                    // any column type, Char included - it is the only way .cdt can say
+                    // "missing character value". A literal dot-shaped Char value must be
+                    // quoted - see CdtWriter.quoteFieldIfNeeded. The sentinel/literal
+                    // distinction travels in the stored string; see CdtValues.encodeField.
+                    result.add(CdtValues.encodeField(field, false));
                 }
 
                 if (i < aLine.length() && aLine.charAt(i) == '|')

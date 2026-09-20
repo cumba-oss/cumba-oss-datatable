@@ -16,7 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.values.DataValueString;
 import net.cumba.datatable.values.DataValueType;
+import net.cumba.datatable.values.IDataValue;
 import net.cumba.datatable.values.MissingValue;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -239,43 +241,66 @@ class CsvTableProviderTest
 
 
     /**
-     * Fix #161: a ragged row (fewer fields than the header declares) must resolve its absent cells
-     * the same way every other loader resolves a blank cell — <em>by column type</em>. A character
-     * column yields {@code ""}, a numeric column yields a {@link MissingValue}. Before Fix #161
-     * this site handed out {@code MissingValue.MIS} regardless of type, so the very same blank cell
-     * reported differently depending only on whether its row happened to be short.
-     * <p>
-     * The fixture is built so that <em>only</em> the ragged path can produce the two cells under
-     * test: row 2 carries a single field, so column indices 1 and 2 are out of range for it and the
-     * ordinary (non-ragged) branch is unreachable for them. {@code guessingRowCount} is lowered to
-     * 2 so that type detection samples only the two full rows — a ragged row inside the sampling
-     * window makes {@code CsvRecord.getValue} throw, which forces every affected column to STRING
-     * and would leave the numeric half of this assertion untestable.
+     * Fix #161, character half: a short row's absent <b>character</b> field reads as an empty
+     * string, not a {@link MissingValue}. A CSV cannot express a null, so the very same blank cell
+     * must not read differently depending only on whether its row happened to be short. The
+     * ordinary path already yields {@code ""} for a present-but-empty character field.
      */
     @Test
-    void testProvideShortRowsResolveByColumnType() throws Exception
+    void testProvideShortRowsInACharacterColumnReadAsEmptyString() throws Exception
     {
-        // rows 0 and 1 are full width and fix the types; row 2 is ragged.
-        String csv = "KEEPCOL,CHARCOL,NUMCOL\nx,A,1\ny,B,2\nz\n";
+        // Character data, and the second row is short.
+        String csv = "A,B,C\nx1,y1,z1\nx2\nx3,y3,z3\n";
         URI uri = writeTempCsv(csv);
 
-        provider.setGuessingRowCount(2);
         IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
 
         assertNotNull(table);
         assertEquals(3, table.getRowCount());
-        assertEquals(DataValueType.STRING, table.getMetaData().getColumn(1).getType());
-        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(2).getType());
+        assertSame(DataValueType.STRING, table.getMetaData().getColumn(1).getType(),
+                "precondition: the present values are character");
 
-        // The character column keeps the house contract: blank, but NOT missing.
-        assertEquals("", table.getValue(2, 1));
-        assertFalse(table.getDataValue(2, 1).isMissingOrInvalid(),
-                "a blank CHARACTER cell must never be missing, whatever the file format");
+        assertEquals("", table.getValue(1, 1));
+        assertEquals("", table.getValue(1, 2));
 
-        // The numeric column is unchanged by Fix #161: still missing.
-        assertTrue(table.getDataValue(2, 2).isMissingOrInvalid(),
-                "a blank NUMERIC cell stays missing");
-        assertInstanceOf(MissingValue.class, table.getValue(2, 2));
+        // Blank either way — the distinction is invisible to every blankness consumer.
+        assertTrue(table.isEmptyOrMissing(1, 1));
+        assertTrue(table.isEmptyOrMissing(1, 2));
+        // …and it is genuinely an empty string, not a missing value.
+        assertFalse(table.isMissingOrNull(1, 1));
+
+        // ⛔ The storage boundary of the 2026-09-18 ruling ("null char cell is MissingValue.MIS").
+        // That ruling changed what a raw null WRAPS to; it did not change what a blank CSV field
+        // is STORED as, and a CSV field is stored as "". Asserted on the wrapped channel too,
+        // because the raw assertions above would still pass if the wrap started promoting "" to a
+        // missing value.
+        IDataValue dv = table.getDataValue(1, 1);
+        assertInstanceOf(DataValueString.class, dv,
+                "a blank CSV character field must wrap as an empty string, not a missing value");
+        assertEquals("", dv.getValueAsString());
+        assertFalse(dv.isMissingOrInvalid(),
+                "a blank CSV character field must not read as missing");
+    }
+
+
+    /**
+     * The other half of the rule: a short row's absent <b>numeric</b> field stays a
+     * {@link MissingValue}, because {@code ""} is not a number.
+     */
+    @Test
+    void testProvideShortRowsInANumericColumnStayMissing() throws Exception
+    {
+        String csv = "A,B,C\n1,2,3\n4\n7,8,9\n";
+        URI uri = writeTempCsv(csv);
+
+        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
+
+        assertNotNull(table);
+        assertSame(DataValueType.DOUBLE, table.getMetaData().getColumn(1).getType());
+
+        assertInstanceOf(MissingValue.class, table.getValue(1, 1));
+        assertInstanceOf(MissingValue.class, table.getValue(1, 2));
+        assertTrue(table.isEmptyOrMissing(1, 1));
     }
 
 

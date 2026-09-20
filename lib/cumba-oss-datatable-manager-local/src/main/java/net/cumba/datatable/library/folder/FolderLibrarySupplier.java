@@ -35,8 +35,18 @@ public class FolderLibrarySupplier implements ILibrarySupplier
             return false;
         }
 
-        Path p = Path.of(aUri);
-        return Files.isDirectory(p);
+        try
+        {
+            return Files.isDirectory(Path.of(aUri));
+        }
+        catch (IllegalArgumentException | java.nio.file.FileSystemNotFoundException _)
+        {
+            // A file-scheme URI the default filesystem cannot address (an authority component,
+            // an opaque form): not a folder we can serve. Before 2026-09-14 this THREW out of
+            // canProvideFor, taking down every provider-discovery loop that touched such a URI
+            // -- discovery answers questions, it must not crash on them.
+            return false;
+        }
     }
 
 

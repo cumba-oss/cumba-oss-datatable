@@ -59,17 +59,51 @@ class MockTableTest
     }
 
 
+    /**
+     * ⛔⛔ <b>Re-based 2026-09-18 — this test pinned the retired doctrine.</b> It was named
+     * {@code col_nullCellIsMissingAndRendersEmpty} and asserted {@code assertNull(dv.getValue())}
+     * plus {@code assertEquals("", dv.getValueAsString())}: <em>both</em> halves of the reading the
+     * owner retired that day — that a value channel may carry a {@code null}, and that a missing
+     * character cell is the empty string. The ruled answer is that cell's own {@link MissingValue},
+     * exactly as {@link MockTable#colLong} and {@link MockTable#colSasMissing} already answered,
+     * and exactly as both real wrap paths answer
+     * ({@code DataValueSupport.getAsDataValue(null, STRING)} and
+     * {@code AbstractDataBuffer.createDataValue}'s STRING arm).
+     *
+     * <p>
+     * ⚠ {@code ""} is a separate, <b>present</b> state and is pinned by
+     * {@link #col_storedEmptyStringStaysAPresentEmptyString()}.
+     * </p>
+     */
     @Test
-    void col_nullCellIsMissingAndRendersEmpty()
+    void col_nullCellIsTheMisMissingNotAnEmptyString()
     {
         IDataTable t = MockTable.of().col("AETERM", "X", null).build();
         IDataValue dv = t.getDataValue(1, 0);
 
         assertTrue(dv.isMissingOrInvalid());
-        assertNull(dv.getValue());
-        assertEquals("", dv.getValueAsString());
+        assertEquals(MissingValue.MIS, dv.getValue());
+        assertEquals(".", dv.getValueAsString());
         assertEquals(DataValueType.MISSING, dv.getType());
         assertTrue(Double.isNaN(dv.getValueAsDouble()));
+    }
+
+
+    /**
+     * ⛔ The boundary control for the test above. A stored {@code ""} is a present value and must
+     * NOT be folded into the missing answer; if the ruling is ever over-applied to blanks, this
+     * reds.
+     */
+    @Test
+    void col_storedEmptyStringStaysAPresentEmptyString()
+    {
+        IDataTable t = MockTable.of().col("AETERM", "X", "").build();
+        IDataValue dv = t.getDataValue(1, 0);
+
+        assertFalse(dv.isMissingOrInvalid());
+        assertEquals("", dv.getValue());
+        assertEquals("", dv.getValueAsString());
+        assertEquals(DataValueType.STRING, dv.getType());
     }
 
 
@@ -933,8 +967,14 @@ class MockTableTest
         assertEquals(Long.valueOf(7L).hashCode(), t.hashCodeAt(0, 1));
         assertEquals(Long.valueOf(7L).hashCode(), t.getColumn(1).hashCodeAt(0));
 
-        // a character null stays null -> 0; a numeric missing is MissingValue.MIS -> stable hash
-        assertEquals(0, t.hashCodeAt(1, 0));
+        // ⛔ Re-based 2026-09-18. This line read `assertEquals(0, t.hashCodeAt(1, 0))` under the
+        // comment "a character null stays null -> 0" -- a second site pinning the retired
+        // doctrine, reached indirectly: MockTable derives hashCodeAt from the RAW cell via
+        // hashOf(cellAt(...)), so moving the null char cell to MissingValue.MIS moves this hash
+        // from 0 to the same stable hash the numeric missing already had. That is the correct
+        // answer: the two missings are the same value, so they must hash alike.
+        assertEquals(MissingValue.MIS.hashCodeStable(), t.hashCodeAt(1, 0));
+        assertEquals(MissingValue.MIS.hashCodeStable(), t.getColumn(0).hashCodeAt(1));
         assertEquals(MissingValue.MIS.hashCodeStable(), t.hashCodeAt(1, 1));
         assertEquals(MissingValue.MIS.hashCodeStable(), t.getColumn(1).hashCodeAt(1));
     }

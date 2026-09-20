@@ -194,9 +194,11 @@ class DefineMetadataLibraryIntegrationTest
         Optional<Object> ctp = lib.getMetaValue(IMetadataLibrary.META_KEY_CT_PACKAGES);
         assertTrue(ctp.isPresent());
         String ids = (String) ctp.orElseThrow();
-        assertTrue(ids.contains("sdtmct-2022-03-25"), ids);
-        assertTrue(ids.contains("adamct-2022-09-30"), ids);
-        assertFalse(ids.contains("ig"));
+        // Exact match, not substring: the ", " separator is load-bearing downstream (a
+        // consumer parses this as a comma-separated list of CT package ids), so a
+        // missing/misplaced separator that fuses two ids into one token must fail here. Kills
+        // a NegateConditionalsMutator on "!sb.isEmpty()" that would drop the separator.
+        assertEquals("sdtmct-2022-03-25, adamct-2022-09-30", ids);
         assertTrue(lib.getMetaKeys().contains(IMetadataLibrary.META_KEY_CT_PACKAGES));
     }
 
@@ -540,16 +542,23 @@ class DefineMetadataLibraryIntegrationTest
     {
         ItemDef def1 = ItemDef.builder().oid("I.A").name("A").dataType("text").build();
         ItemRef r1 = ItemRef.builder().itemOID("I.A").orderNumber(1).role("Identifier").build();
-        ItemGroupDef ig = ItemGroupDef.builder().oid("IG.D").name("D").itemRefs(List.of(r1))
+        // A second column: with only one column, index 0 is indistinguishable from "always 0"
+        // (PrimitiveReturnsMutator) or "counts down from 0" (IncrementsMutator on idx++ in
+        // buildColumns). The second column's index must be 1, not 0 and not -1.
+        ItemDef def2 = ItemDef.builder().oid("I.B").name("B").dataType("text").build();
+        ItemRef r2 = ItemRef.builder().itemOID("I.B").orderNumber(2).build();
+        ItemGroupDef ig = ItemGroupDef.builder().oid("IG.D").name("D").itemRefs(List.of(r1, r2))
                 .build();
         MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1")
-                .itemGroupDefs(List.of(ig)).itemDefs(List.of(def1)).build();
+                .itemGroupDefs(List.of(ig)).itemDefs(List.of(def1, def2)).build();
         IMetadataLibrary lib = buildLibrary(mdv, null);
 
-        IColumnMetadata col = lib.getDataTable("D").orElseThrow().getColumns().get(0);
+        List<IColumnMetadata> cols = lib.getDataTable("D").orElseThrow().getColumns();
+        IColumnMetadata col = cols.get(0);
         assertEquals("Identifier", col.getRole());
         assertEquals(0, col.getIndex());
         assertFalse(col.isByGroup());
+        assertEquals(1, cols.get(1).getIndex());
     }
 
 
@@ -562,7 +571,7 @@ class DefineMetadataLibraryIntegrationTest
         ItemDef def = ItemDef.builder().oid("I.A").name("A").dataType("integer")
                 .significantDigits(2).sasFieldName("AVAL").originElement(originElem).build();
         ItemRef ref = ItemRef.builder().itemOID("I.A").orderNumber(7).mandatory("Yes")
-                .keySequence(1).methodOID("M.1").role("Result").build();
+                .keySequence(1).methodOID("M.1").role("Result").hasNoData("Yes").build();
         ItemGroupDef ig = ItemGroupDef.builder().oid("IG.D").name("D").itemRefs(List.of(ref))
                 .build();
         MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1V").name("V1")
@@ -586,6 +595,11 @@ class DefineMetadataLibraryIntegrationTest
                 col.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_METHOD).orElseThrow());
         assertEquals("Origin-Description",
                 col.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_ORIGIN).orElseThrow());
+        // Variable-level def:HasNoData (Define-XML 2.1 extension on ItemRef) is a distinct field
+        // from the dataset-level one on ItemGroupDef; kills a VoidMethodCallMutator that removes
+        // the putIfNotBlank(..., itemRef.getHasNoData()) call.
+        assertEquals("Yes",
+                col.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_NO_DATA).orElseThrow());
     }
 
 

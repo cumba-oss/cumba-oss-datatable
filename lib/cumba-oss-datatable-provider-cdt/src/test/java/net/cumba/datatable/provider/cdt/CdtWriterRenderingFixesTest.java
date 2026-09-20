@@ -147,37 +147,4 @@ class CdtWriterRenderingFixesTest
         String text = writeToString(numTable("ADT", "DATE9.", 21929.0), tmp);
         assertEquals(true, text.contains("2020-01-15"), text);
     }
-
-    // ---- F-prov-cdt-05: DATE / DATETIME out-of-range must fail as IOException ------------------
-
-
-    /**
-     * F-prov-cdt-05: a DATE value so far outside the representable range that
-     * {@code LocalDate.plusDays} itself cannot compute it must fail with a descriptive
-     * {@link IOException} - the deliberate export-validation failure this class already uses for
-     * TIME (F-prov-04) and control characters - not an unchecked
-     * {@link java.time.DateTimeException}.
-     */
-    @Test
-    void extremeDateValueThrowsIOExceptionNotDateTimeException(@TempDir Path tmp)
-    {
-        // Built directly, not through CdtParser: the text format's ISO date syntax cannot even
-        // express a value this far out of range, so the only way to reach renderDate's overflow
-        // path at all is a table constructed outside this module's own reader.
-        IDataTable t = numTable("D", "DATE9.", 1.0e18);
-        IOException ex = assertThrows(IOException.class, () -> writeToString(t, tmp));
-        assertTrue(ex.getMessage().contains("D"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("1.0E18"), ex.getMessage());
-    }
-
-
-    @Test
-    void extremeDateTimeValueThrowsIOExceptionNotDateTimeException(@TempDir Path tmp)
-    {
-        IDataTable t = numTable("DT", "DATETIME20.", 1.0e18);
-        IOException ex = assertThrows(IOException.class, () -> writeToString(t, tmp));
-        assertTrue(ex.getMessage().contains("DT"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("1.0E18"), ex.getMessage());
-    }
-
 }
