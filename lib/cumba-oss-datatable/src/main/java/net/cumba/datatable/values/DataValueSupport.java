@@ -20,6 +20,27 @@ public class DataValueSupport
     public static final double EPSILON = 1e-13;
 
     /**
+     * Per-type "default missing" value used when initialising new cells (synthetic added rows on
+     * source columns, and added columns with empty user-supplied default). Mirrors SAS character
+     * semantics: a STRING column has no missing sentinel — an empty string is its missing value —
+     * while numeric / boolean / other types map to {@link MissingValue#MIS}.
+     *
+     * @param aType
+     *            the column's data type. Must not be {@code null}.
+     * @return {@code DataValueString("")} for {@link DataValueType#STRING};
+     *         {@code DataValueMissing(MissingValue.MIS)} for every other type.
+     */
+    public static IDataValue defaultForType(DataValueType aType)
+    {
+        if (aType == DataValueType.STRING)
+        {
+            return new DataValueString("");
+        }
+        return new DataValueMissing(MissingValue.MIS);
+    }
+
+
+    /**
      * <b>The single implementation of "this cell carries no usable value"</b>: it is {@code null},
      * missing/invalid, or its string form is empty.
      *
