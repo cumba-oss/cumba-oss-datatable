@@ -12,12 +12,14 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.text.SimpleDateFormat;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -36,6 +38,7 @@ import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.provider.IDataTableProvider;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
@@ -57,6 +60,28 @@ public class XptTableProvider extends AbstractDataTableProvider
     private static final Logger LOGGER = System.getLogger(XptTableProvider.class.getName());
 
     /**
+     * Charset to use when decoding character values from the XPT file. XPT v5 officially supports
+     * only 7-bit ASCII, but SAS writes values using the session encoding without recording it in
+     * the file, so the user must pick one.
+     */
+    public static final Property PROP_CHARSET = Property.forOneOfOrCustom(//
+            "Charset", //
+            "Character set used to decode string variables in the XPT file. The list is a set "
+                    + "of common suggestions; any JVM-supported charset name may be entered.", //
+            StandardCharsets.UTF_8.name(), //
+            StandardCharsets.UTF_8.name(), //
+            "US-ASCII", //
+            "ISO-8859-1", //
+            "windows-1252", //
+            "windows-1250", //
+            "windows-1251", //
+            "Shift_JIS", //
+            "GB2312", //
+            "Big5", //
+            "EUC-JP", //
+            "EUC-KR");
+
+    /**
      * The charset to be used when parsing character values from the XPT file.<br/>
      * The SAS v5 XPORT engine officially supports only latin1 7bit chars, but SAS itself simply
      * exports the data with the session encoding. Unfortunately XPT does not store the used
@@ -68,17 +93,22 @@ public class XptTableProvider extends AbstractDataTableProvider
     private Charset charset = ObservationIteratorXpt.DEFAULT_CHARSET;
 
     /**
-     * Resolve a {@link Charset} from the given charset name, falling back to
+     * Resolve a {@link Charset} from the given property map, falling back to
      * {@link ObservationIteratorXpt#DEFAULT_CHARSET} if unset or unparseable.
      */
-    public static Charset resolveCharset(@Nullable String aCharsetName)
+    public static Charset resolveCharset(@Nullable Map<Property, String> aProperties)
     {
-        if (CDT.isBlankOrNull(aCharsetName))
+        if (aProperties == null)
         {
             return ObservationIteratorXpt.DEFAULT_CHARSET;
         }
-        // isBlankOrNull(aCharsetName) is false here, so aCharsetName is non-null.
-        String name = Objects.requireNonNull(aCharsetName);
+        String requested = aProperties.get(PROP_CHARSET);
+        // NullAway does not narrow through CDT.isBlankOrNull (it carries no @Contract), so the
+        // non-blank arm is asserted explicitly; Property.defaultValue() is non-null by record
+        // component. Upstream spells this as a reassignment, which only compiles there because
+        // Map.get is untracked -- see the R15 trap: the analyser configs differ between trees.
+        String name = CDT.isBlankOrNull(requested) ? PROP_CHARSET.defaultValue()
+                : Objects.requireNonNull(requested);
         // F-D21: pre-check via Charset.isSupported so we can name the unsupported encoding
         // in the log; previously the catch swallowed both the JVM rejection message and the
         // input name. isSupported() itself throws IllegalCharsetNameException for malformed

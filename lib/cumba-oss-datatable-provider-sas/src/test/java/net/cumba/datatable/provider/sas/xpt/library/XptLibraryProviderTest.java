@@ -5,10 +5,15 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.provider.sas.xpt.XptProviderSupplier;
@@ -197,6 +202,20 @@ class XptLibraryProviderTest
         assertNull(provider.provide(uri, null));
     }
 
+    // ==================== getProviderProperties ====================
+
+
+    @Test
+    void testGetProviderPropertiesContainsCharset()
+    {
+        URI uri = URI.create("file:///data/test.xpt");
+        List<Property> props = provider.getProviderProperties(uri, XptProviderSupplier.FI_XPT);
+        assertNotNull(props);
+        assertTrue(props.contains(XptTableProvider.PROP_CHARSET));
+        // also expect a library-name property
+        assertTrue(props.size() >= 2);
+    }
+
     // ==================== mapToColumnMeta ====================
 
 
@@ -342,6 +361,25 @@ class XptLibraryProviderTest
         XptLibraryMember only = members.get(0);
         assertNotNull(only.getColumns());
         assertTrue(only.getColumns().length > 0);
+    }
+
+
+    @Test
+    void testProvideWithCustomCharsetProperty() throws IOException
+    {
+        File f = new File(System.getProperty("repoRoot"), "testdata/xpt/01_plain/adsl.xpt");
+        assertTrue(f.isFile());
+
+        Map<Property, String> props = new HashMap<>();
+        props.put(XptTableProvider.PROP_CHARSET, StandardCharsets.ISO_8859_1.name());
+
+        IDataTableLibrary lib = provider.provide(f.toURI(), XptProviderSupplier.FI_XPT, props);
+        assertNotNull(lib);
+        assertInstanceOf(XptLibrary.class, lib);
+
+        // every member should carry the requested charset
+        Charset expected = StandardCharsets.ISO_8859_1;
+        ((XptLibrary) lib).getMembers().forEach(m -> assertEquals(expected, m.getCharset()));
     }
 
     // ==================== helpers ====================

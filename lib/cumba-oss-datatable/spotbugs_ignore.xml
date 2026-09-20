@@ -77,6 +77,13 @@
     </Match>
 
     <Match>
+        <!-- Sentinel-equality test against canonical NaN/missing constants; intentional. -->
+        <Class name="net.cumba.datatable.values.DataValueSupport" />
+        <Method name="isExactValue" />
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
+    <Match>
         <!-- Tri-state Boolean: true / false / null (= unknown).
              Documented API contract on isExtensible(). -->
         <Class name="net.cumba.datatable.metadata.ICodeList" />

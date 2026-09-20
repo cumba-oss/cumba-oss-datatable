@@ -190,6 +190,21 @@ public class DataValueSupport
 
 
     /**
+     * A test if the given value is an exact value. This method compares the given value by the one
+     * returned from {@link #getAsDoubleCleaned(double)}. If both are equal, the value is considered
+     * exact.
+     *
+     * @param aValue
+     *            the value to test.
+     * @return true if the value is an exact value, false otherwise.
+     */
+    public static boolean isExactValue(double aValue)
+    {
+        return getAsDoubleCleaned(aValue) == aValue;
+    }
+
+
+    /**
      * Create a {@link IDataValue} instance from the given value object by aiming for the given
      * type.
      *

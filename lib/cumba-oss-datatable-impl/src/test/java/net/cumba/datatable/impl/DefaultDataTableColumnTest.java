@@ -9,6 +9,7 @@ import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.DefaultDataTableColumn;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class DefaultDataTableColumnTest
@@ -92,7 +93,7 @@ class DefaultDataTableColumnTest
     {
         ColumnCachedDataTable table = createTestTable();
         DefaultDataTableColumn col0 = new DefaultDataTableColumn(table, 0);
-        List<Object> values = col0.getValues().toList();
+        List<@Nullable Object> values = col0.getValues().toList();
         assertEquals(3, values.size());
         assertEquals("a", values.get(0));
         assertEquals("b", values.get(1));

@@ -70,6 +70,30 @@ import org.jspecify.annotations.Nullable;
  *            {@code MultiTableExportProperties#isMemberNameLimitDeclared}.
  *            </p>
  *            Set it with {@code Property.forString(...).withMaxLength(n)}.
+ * @param section
+ *            optional grouping key. A UI that supports it renders one tab per distinct section, in
+ *            first-appearance order, with section-less properties in the first tab; the reserved
+ *            name {@link #SECTION_ADVANCED} is rendered as a collapsed strip outside the tabs
+ *            instead. A UI that does not support sections ignores the field and lays every property
+ *            out in one list, so this is always safe to set.
+ * @param ordered
+ *            for {@link PropertyType#ANY_OF} / {@link PropertyType#SOME_OF}: the <b>order</b> of
+ *            the selected values is meaningful, not just the set. The picker then offers move-up /
+ *            move-down controls and returns the values in the order the user arranged them.
+ * @param minValue
+ *            optional inclusive lower bound for {@link PropertyType#INTEGER}. When both bounds are
+ *            present the UI renders a spinner instead of a free text field. {@code null} = no
+ *            bound.
+ * @param maxValue
+ *            optional inclusive upper bound for {@link PropertyType#INTEGER}; see
+ *            {@link #minValue}.
+ * @param enabledWhenPattern
+ *            optional regular expression evaluated against the current value of the
+ *            {@link #dependsOn} property. The UI keeps this property's editor <b>disabled</b> while
+ *            the controller's value does not match. Ignored when {@link #dependsOn} is blank. This
+ *            is a second, independent use of {@code dependsOn}: {@link #conditionalAllowedValues}
+ *            narrows a dependent's <em>values</em>, this narrows its <em>availability</em>, and a
+ *            property may declare either or both.
  */
 @Jacksonized
 @Builder(toBuilder = true)
@@ -77,34 +101,70 @@ import org.jspecify.annotations.Nullable;
 public record Property(String name, String description, PropertyType type, String defaultValue,
         @Nullable List<String> allowedValues, boolean editable, @Nullable String dependsOn,
         @Nullable Map<String, List<String>> conditionalAllowedValues,
-        @Nullable String dynamicResolverKey, @Nullable Integer maxLength)
+        @Nullable String dynamicResolverKey, @Nullable Integer maxLength, @Nullable String section,
+        boolean ordered, @Nullable Long minValue, @Nullable Long maxValue,
+        @Nullable String enabledWhenPattern)
 {
+
+    /**
+     * Reserved {@link #section} name. Properties in it are rendered in a collapsed "Advanced" strip
+     * <em>outside</em> the section tabs, reachable whichever tab is showing, rather than as a tab
+     * of their own.
+     */
+    public static final String SECTION_ADVANCED = "Advanced";
 
     public static Property forString(String aName, String aDescription, String aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.STRING, aDefaultValue, null, false,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
     public static Property forBoolean(String aName, String aDescription, boolean aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.BOOLEAN,
-                Boolean.toString(aDefaultValue), null, false, null, null, null, null);
+                Boolean.toString(aDefaultValue), null, false, null, null, null, null, null, false,
+                null, null, null);
     }
 
 
     public static Property forInteger(String aName, String aDescription, long aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.INTEGER, Long.toString(aDefaultValue),
-                null, false, null, null, null, null);
+                null, false, null, null, null, null, null, false, null, null, null);
+    }
+
+
+    /**
+     * Create a bounded {@link PropertyType#INTEGER} property. A UI that supports it renders a
+     * spinner clamped to {@code [aMin, aMax]} rather than a free text field that has to be
+     * validated after the fact.
+     *
+     * @param aName
+     *            the property name.
+     * @param aDescription
+     *            the property description, shown as a tool tip.
+     * @param aDefaultValue
+     *            the initial value.
+     * @param aMin
+     *            inclusive lower bound.
+     * @param aMax
+     *            inclusive upper bound.
+     * @return the property.
+     */
+    public static Property forInteger(String aName, String aDescription, long aDefaultValue,
+            long aMin, long aMax)
+    {
+        return new Property(aName, aDescription, PropertyType.INTEGER, Long.toString(aDefaultValue),
+                null, false, null, null, null, null, null, false, aMin, aMax, null);
     }
 
 
     public static Property forNumber(String aName, String aDescription, double aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.NUMBER,
-                Double.toString(aDefaultValue), null, false, null, null, null, null);
+                Double.toString(aDefaultValue), null, false, null, null, null, null, null, false,
+                null, null, null);
     }
 
 
@@ -112,7 +172,7 @@ public record Property(String name, String description, PropertyType type, Strin
             String... aValues)
     {
         return new Property(aName, aDescription, PropertyType.ONE_OF, aDefaultValue,
-                List.of(aValues), false, null, null, null, null);
+                List.of(aValues), false, null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -120,7 +180,7 @@ public record Property(String name, String description, PropertyType type, Strin
             List<String> aValues)
     {
         return new Property(aName, aDescription, PropertyType.ONE_OF, aDefaultValue, aValues, false,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -133,7 +193,7 @@ public record Property(String name, String description, PropertyType type, Strin
             String... aValues)
     {
         return new Property(aName, aDescription, PropertyType.ONE_OF, aDefaultValue,
-                List.of(aValues), true, null, null, null, null);
+                List.of(aValues), true, null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -141,7 +201,7 @@ public record Property(String name, String description, PropertyType type, Strin
             List<String> aValues)
     {
         return new Property(aName, aDescription, PropertyType.ONE_OF, aDefaultValue, aValues, true,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -149,7 +209,7 @@ public record Property(String name, String description, PropertyType type, Strin
             String... aValues)
     {
         return new Property(aName, aDescription, PropertyType.SOME_OF, aDefaultValue,
-                List.of(aValues), false, null, null, null, null);
+                List.of(aValues), false, null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -157,7 +217,7 @@ public record Property(String name, String description, PropertyType type, Strin
             List<String> aValues)
     {
         return new Property(aName, aDescription, PropertyType.SOME_OF, aDefaultValue, aValues,
-                false, null, null, null, null);
+                false, null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -165,7 +225,7 @@ public record Property(String name, String description, PropertyType type, Strin
             String... aValues)
     {
         return new Property(aName, aDescription, PropertyType.ANY_OF, aDefaultValue,
-                List.of(aValues), false, null, null, null, null);
+                List.of(aValues), false, null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -173,14 +233,14 @@ public record Property(String name, String description, PropertyType type, Strin
             List<String> aValues)
     {
         return new Property(aName, aDescription, PropertyType.ANY_OF, aDefaultValue, aValues, false,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
     public static Property forPassword(String aName, String aDescription, String aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.PASSWORD, aDefaultValue, null, false,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -192,7 +252,7 @@ public record Property(String name, String description, PropertyType type, Strin
     public static Property forDirectory(String aName, String aDescription, String aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.DIRECTORY, aDefaultValue, null, false,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -204,7 +264,7 @@ public record Property(String name, String description, PropertyType type, Strin
     public static Property forFile(String aName, String aDescription, String aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.FILE, aDefaultValue, null, false,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -217,7 +277,7 @@ public record Property(String name, String description, PropertyType type, Strin
     public static Property forFiles(String aName, String aDescription, String aDefaultValue)
     {
         return new Property(aName, aDescription, PropertyType.FILES, aDefaultValue, null, false,
-                null, null, null, null);
+                null, null, null, null, null, false, null, null, null);
     }
 
 
@@ -231,6 +291,6 @@ public record Property(String name, String description, PropertyType type, Strin
             String aDynamicResolverKey)
     {
         return new Property(aName, aDescription, PropertyType.SOME_OR_ALL_OF, aDefaultValue, null,
-                false, null, null, aDynamicResolverKey, null);
+                false, null, null, aDynamicResolverKey, null, null, false, null, null, null);
     }
 }

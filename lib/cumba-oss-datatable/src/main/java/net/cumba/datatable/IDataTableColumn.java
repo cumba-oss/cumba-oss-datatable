@@ -44,7 +44,7 @@ public interface IDataTableColumn
      * @return a stream that contains all values of this column in the order the values are in this
      *         column.
      */
-    default Stream<Object> getValues()
+    default Stream<@Nullable Object> getValues()
     {
         return getValues(0, getRowCount());
     }
@@ -59,7 +59,7 @@ public interface IDataTableColumn
      *            the row index of the first value to not retrieve in the stream anymore.
      * @return a stream that contains the values of the requested range of the column.
      */
-    default Stream<Object> getValues(long aStartRowIndex, long aEndRowIndex)
+    default Stream<@Nullable Object> getValues(long aStartRowIndex, long aEndRowIndex)
     {
         long rc = getRowCount();
         if (aStartRowIndex < 0 || aStartRowIndex >= rc)
@@ -75,7 +75,7 @@ public interface IDataTableColumn
                     "The end row (%d) must be >= start row (%d).".formatted(end, aStartRowIndex));
         }
 
-        return LongStream.range(aStartRowIndex, end).mapToObj(this::getValue);
+        return LongStream.range(aStartRowIndex, end).<@Nullable Object> mapToObj(this::getValue);
     }
 
 

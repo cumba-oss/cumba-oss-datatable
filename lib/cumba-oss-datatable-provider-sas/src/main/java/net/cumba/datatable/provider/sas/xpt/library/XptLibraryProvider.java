@@ -56,8 +56,9 @@ public class XptLibraryProvider extends AbstractLibraryProvider
     @Override
     public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
     {
-        return List
-                .of(ILibraryProvider.libraryNameProperty(aUri, aFileInfo, getLibraryNameFor(aUri)));
+        return List.of(
+                ILibraryProvider.libraryNameProperty(aUri, aFileInfo, getLibraryNameFor(aUri)),
+                XptTableProvider.PROP_CHARSET);
     }
 
 
@@ -93,7 +94,7 @@ public class XptLibraryProvider extends AbstractLibraryProvider
                 getLibraryNameFor(aUri));
         XptLibrary lib = new XptLibrary(libName, null, aUri);
 
-        Charset charset = XptTableProvider.resolveCharset(null);
+        Charset charset = XptTableProvider.resolveCharset(aProperties);
 
         List<XptLibraryMember> mems = new ArrayList<>();
 

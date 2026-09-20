@@ -349,7 +349,7 @@ public class ParquetTableProvider extends AbstractDataTableProvider
             DataTableMeta meta = dtms.getTableMeta().build();
 
             // Create table parser and read rows via Carpet
-            Parquet2TableDataParser tableParser = new Parquet2TableDataParser(meta, fields);
+            ParquetTableDataParser tableParser = new ParquetTableDataParser(meta, fields);
 
             @SuppressWarnings("rawtypes")
             CarpetReader<Map> carpetReader = new CarpetReader<>(aFile, Map.class);
@@ -519,7 +519,7 @@ public class ParquetTableProvider extends AbstractDataTableProvider
      * Each row is a map of column name to value. Values are dispatched to columns based on column
      * index, with type conversion matching the Parquet schema.
      */
-    private class Parquet2TableDataParser extends AbstractTableDataParser<Map<String, Object>>
+    private class ParquetTableDataParser extends AbstractTableDataParser<Map<String, Object>>
     {
 
         private final String[] columnNames;
@@ -534,7 +534,7 @@ public class ParquetTableProvider extends AbstractDataTableProvider
          */
         private final int[] unsignedBitWidth;
 
-        Parquet2TableDataParser(@NonNull DataTableMeta aMeta, List<Type> aFields)
+        ParquetTableDataParser(@NonNull DataTableMeta aMeta, List<Type> aFields)
         {
             super(ParquetTableProvider.this, aMeta);
             columnNames = new String[aFields.size()];

@@ -42,7 +42,7 @@ public class OverlayDataTable extends AbstractDataTable
     private final IDataTable delegate;
 
     /** Overlay values: key = (row, overlayColumnIndex), value = raw Object. */
-    private final Map<Long, Object> valueOverrides = new HashMap<>();
+    private final Map<Long, @Nullable Object> valueOverrides = new HashMap<>();
 
     /** Overlay IDataValue: key = (row, overlayColumnIndex). */
     private final Map<Long, IDataValue> dataValueOverrides = new HashMap<>();
@@ -638,7 +638,7 @@ public class OverlayDataTable extends AbstractDataTable
     }
 
 
-    private <V> void reindexMap(Map<Long, V> aMap, int aRemovedIndex)
+    private <V extends @Nullable Object> void reindexMap(Map<Long, V> aMap, int aRemovedIndex)
     {
         Map<Long, V> updated = new HashMap<>();
         var it = aMap.entrySet().iterator();

@@ -68,11 +68,11 @@
     </Match>
 
     <Match>
-        <!-- Parquet2TableDataParser is an inner class whose lifecycle is
+        <!-- ParquetTableDataParser is an inner class whose lifecycle is
              tied to the enclosing ParquetTableProvider; flagged as
              refactorable to static but the enclosing reference is
              intentional for callback / resource sharing. -->
-        <Class name="net.cumba.datatable.provider.parquet.ParquetTableProvider$Parquet2TableDataParser" />
+        <Class name="net.cumba.datatable.provider.parquet.ParquetTableProvider$ParquetTableDataParser" />
         <Bug pattern="SIC_INNER_SHOULD_BE_STATIC_NEEDS_THIS" />
     </Match>
 

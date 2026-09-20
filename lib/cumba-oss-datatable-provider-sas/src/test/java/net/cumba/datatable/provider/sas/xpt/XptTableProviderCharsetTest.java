@@ -2,7 +2,10 @@ package net.cumba.datatable.provider.sas.xpt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import net.cumba.datatable.io.Property;
 import org.junit.jupiter.api.Test;
 
 class XptTableProviderCharsetTest
@@ -38,23 +41,26 @@ class XptTableProviderCharsetTest
 
 
     @Test
-    void testResolveCharsetWithNullNameReturnsDefault()
+    void testResolveCharsetWithNullPropertiesReturnsDefault()
     {
         assertEquals(ObservationIteratorXpt.DEFAULT_CHARSET, XptTableProvider.resolveCharset(null));
     }
 
 
     @Test
-    void testResolveCharsetWithBlankNameFallsBackToDefault()
+    void testResolveCharsetWithBlankPropertyFallsBackToDefault()
     {
-        assertEquals(ObservationIteratorXpt.DEFAULT_CHARSET, XptTableProvider.resolveCharset(""));
+        Map<Property, String> props = Map.of(XptTableProvider.PROP_CHARSET, "");
+        assertEquals(Charset.forName(XptTableProvider.PROP_CHARSET.defaultValue()),
+                XptTableProvider.resolveCharset(props));
     }
 
 
     @Test
     void testResolveCharsetWithSupportedNameReturnsThatCharset()
     {
-        assertEquals(StandardCharsets.ISO_8859_1, XptTableProvider.resolveCharset("ISO-8859-1"));
+        Map<Property, String> props = Map.of(XptTableProvider.PROP_CHARSET, "ISO-8859-1");
+        assertEquals(StandardCharsets.ISO_8859_1, XptTableProvider.resolveCharset(props));
     }
 
 
@@ -64,7 +70,8 @@ class XptTableProviderCharsetTest
         // F-D21: unsupported names log a WARN and fall back to the default rather than
         // throwing — the rest of the parse can still proceed (encoded values will be best-
         // effort decoded). We just verify the fallback contract here.
+        Map<Property, String> props = Map.of(XptTableProvider.PROP_CHARSET, "NoSuchCharsetX-99");
         assertEquals(ObservationIteratorXpt.DEFAULT_CHARSET,
-                XptTableProvider.resolveCharset("NoSuchCharsetX-99"));
+                XptTableProvider.resolveCharset(props));
     }
 }

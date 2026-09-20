@@ -50,15 +50,30 @@ final class OriginDisambiguationModule extends SimpleModule
 
     OriginDisambiguationModule()
     {
-        // A plain XmlMapper WITHOUT this module: used to materialise the rewritten tree without
-        // re-entering the wrapping deserializer (no infinite recursion).
-        // ACCEPT_SINGLE_VALUE_AS_ARRAY compensates for the XML unwrapped-list handling that the
-        // tree
-        // round-trip would otherwise lose (e.g. a lone TranslatedText).
+        setDeserializerModifier(new OriginModifier(newTreeMapper()));
+    }
+
+
+    /**
+     * A plain XmlMapper WITHOUT this module: used to materialise the rewritten tree without
+     * re-entering the wrapping deserializer (no infinite recursion). ACCEPT_SINGLE_VALUE_AS_ARRAY
+     * compensates for the XML unwrapped-list handling that the tree round-trip would otherwise lose
+     * (e.g. a lone TranslatedText).
+     *
+     * <p>
+     * Package-visible rather than private so a test can build the wrapping deserializer on the
+     * <em>same</em> mapper configuration production uses, instead of a copy that could drift away
+     * from it. Not API.
+     * </p>
+     *
+     * @return the tree mapper the wrapping deserializer materialises beans with.
+     */
+    static XmlMapper newTreeMapper()
+    {
         XmlMapper treeMapper = new XmlMapper();
         treeMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         treeMapper.configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
-        setDeserializerModifier(new OriginModifier(treeMapper));
+        return treeMapper;
     }
 
     /** Wraps {@link ItemDef}'s builder deserializer with {@link ItemDefOriginDeserializer}. */
@@ -91,8 +106,16 @@ final class OriginDisambiguationModule extends SimpleModule
     /**
      * Wraps the generated {@link ItemDef} deserializer and redirects the element-form
      * {@code Origin} node to {@link ItemDef#ORIGIN_ELEMENT_PROPERTY} before materialising the bean.
+     *
+     * <p>
+     * Package-visible rather than private for testing, not API: Jackson replaces a delegating
+     * deserializer's delegatee during contextualization by calling {@code newDelegatingInstance},
+     * and a replacement that lost the wrapper — or the tree mapper it materialises beans with —
+     * would silently stop disambiguating the {@code Origin} collision, with no parse error
+     * anywhere.
+     * </p>
      */
-    private static final class ItemDefOriginDeserializer extends DelegatingDeserializer
+    static final class ItemDefOriginDeserializer extends DelegatingDeserializer
     {
 
         private static final long serialVersionUID = 1L;

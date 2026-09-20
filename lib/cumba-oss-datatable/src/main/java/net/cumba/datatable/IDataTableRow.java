@@ -104,9 +104,9 @@ public interface IDataTableRow
      * @throws IndexOutOfBoundsException
      *             in case at least 1 column index is invalid.
      */
-    default Stream<Object> getValues(int... aColumns) throws IndexOutOfBoundsException
+    default Stream<@Nullable Object> getValues(int... aColumns) throws IndexOutOfBoundsException
     {
-        return Arrays.stream(aColumns).mapToObj(this::getValue);
+        return Arrays.stream(aColumns).<@Nullable Object> mapToObj(this::getValue);
     }
 
 
@@ -121,9 +121,9 @@ public interface IDataTableRow
      *             in case at least one column name does not reference a valid column in the table
      *             of this row.
      */
-    default Stream<Object> getValues(String... aColumnNames) throws NoSuchElementException
+    default Stream<@Nullable Object> getValues(String... aColumnNames) throws NoSuchElementException
     {
-        return Arrays.stream(aColumnNames).map(this::getValue);
+        return Arrays.stream(aColumnNames).<@Nullable Object> map(this::getValue);
     }
 
 

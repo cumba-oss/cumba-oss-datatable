@@ -2,12 +2,15 @@ package net.cumba.datatable.provider;
 
 import java.io.IOException;
 import java.net.URI;
-
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import lombok.NonNull;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.io.IGenericProvider;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.metadata.IMetadataLibrary;
 import org.jspecify.annotations.Nullable;
@@ -83,6 +86,139 @@ public interface IDataTableProvider extends IGenericProvider<IDataTable>
         throws IOException, NullPointerException
     {
         return provideMetaData(aMember.getUri(), aFileInfo);
+    }
+
+    // ⭐⭐ THE PROVIDER-PROPERTY OVERLOADS, ported 2026-09-20 under the FEATURE-LEVEL reduction
+    // rule (owner). These are NOT new API on a withheld feature: "provider properties" is a
+    // PORTED feature here -- net.cumba.datatable.io.Property ships in full, ILibraryProvider
+    // already declares getProviderProperties(URI, FileInfo) and provide(URI, FileInfo,
+    // Map<Property,String>), and five library providers in this repository already override
+    // them. Only the TABLE-provider side had been cut, which left one ported feature internally
+    // inconsistent: XptLibraryProvider.provide RECEIVED a property map and threw it away, so
+    // every member was stamped with the default charset.
+    //
+    // ⚑ All are `default`, so no implementor in this repository breaks.
+
+
+    /**
+     * Retrieve the list of supported properties for loading the given URI.
+     *
+     * @param aUri
+     *            the URI to retrieve the properties for.
+     * @param aFileInfo
+     *            the optional FileInfo how to interpret the file.
+     * @return a list of all supported properties by the provider. This might be empty but never
+     *         null.
+     */
+    default List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return Collections.emptyList();
+    }
+
+
+    /**
+     * Retrieve the list of supported properties for loading the given library member.
+     *
+     * @param aMember
+     *            the library member to retrieve the properties for.
+     * @param aFileInfo
+     *            the optional FileInfo how to interpret the file.
+     * @return a list of all supported properties by the provider. This might be empty but never
+     *         null.
+     */
+    default List<Property> getProviderProperties(ILibraryMember aMember,
+            @Nullable FileInfo aFileInfo)
+    {
+        return aMember != null ? getProviderProperties(aMember.getUri(), aFileInfo)
+                : Collections.emptyList();
+    }
+
+
+    /**
+     * Provide a IDataTable for the given URI and file info with the given properties.
+     *
+     * @param aUri
+     *            the URI to provide the data table for.
+     * @param aFileInfo
+     *            the optional FileInfo how to interpret the file.
+     * @param aProperties
+     *            a map of properties with values to be considered for loading.
+     * @return the loaded data table for the given URI.
+     * @throws IOException
+     *             in case the data table can not be loaded.
+     */
+    default @Nullable IDataTable provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        return provide(aUri, aFileInfo);
+    }
+
+
+    /**
+     * Provide a IDataTable for the given library member and file info with the given properties.
+     *
+     * @param aMember
+     *            the library member to provide the data table for.
+     * @param aFileInfo
+     *            the optional FileInfo how to interpret the file.
+     * @param aProperties
+     *            a map of properties with values to be considered for loading.
+     * @return the loaded data table for the given library member.
+     * @throws IOException
+     *             in case the data table can not be loaded.
+     */
+    default @Nullable IDataTable provide(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        return provide(aMember, aFileInfo);
+    }
+
+
+    /**
+     * Provide only the {@link DataTableMeta} for the given URI and file info with the given
+     * properties.
+     *
+     * @param aUri
+     *            the URI to provide the metadata for.
+     * @param aFileInfo
+     *            the optional FileInfo how to interpret the file.
+     * @param aProperties
+     *            a map of properties with values to be considered for loading.
+     * @return the metadata for the data table referenced by the given URI.
+     * @throws IOException
+     *             in case the metadata can not be loaded.
+     */
+    default DataTableMeta provideMetaData(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        return provideMetaData(aUri, aFileInfo);
+    }
+
+
+    /**
+     * Provide only the {@link DataTableMeta} for the given library member and file info with the
+     * given properties.
+     *
+     * @param aMember
+     *            the library member to provide the metadata for.
+     * @param aFileInfo
+     *            the optional FileInfo how to interpret the file.
+     * @param aProperties
+     *            a map of properties with values to be considered for loading.
+     * @return the metadata for the data table referenced by the given member.
+     * @throws IOException
+     *             in case the metadata can not be loaded.
+     * @throws NullPointerException
+     *             when {@code aMember} is {@code null}.
+     */
+    default DataTableMeta provideMetaData(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        return provideMetaData(aMember, aFileInfo);
     }
 
 }

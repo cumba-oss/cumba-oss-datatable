@@ -366,8 +366,16 @@ public class DefineXmlPruner
      * Count, without removing, the elements the next cascade pass would remove. Zero means the
      * document has converged: each family's detector is run against the unmodified document, so if
      * all report zero, a real pass would remove nothing either.
+     *
+     * <p>
+     * Package-visible for the same reason as {@link #cascadeOrphans(int)}: the truncation warning
+     * is only as trustworthy as this sweep, and the sweep has two properties a caller cannot see
+     * from the warning alone -- it counts every family, and it must leave the document untouched. A
+     * detection pass that silently mutated the document would be indistinguishable from a converged
+     * prune.
+     * </p>
      */
-    private int countOrphans()
+    int countOrphans()
     {
         int count = 0;
         count += removeOrphanedItemRefs(false);

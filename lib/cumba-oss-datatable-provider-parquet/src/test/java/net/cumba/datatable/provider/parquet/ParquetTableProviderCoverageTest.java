@@ -108,7 +108,7 @@ class ParquetTableProviderCoverageTest
 
         assertNotNull(table);
         assertEquals(2L, table.getRowCount());
-        // ensure all columns produced non-null cells (the branches inside Parquet2TableDataParser
+        // ensure all columns produced non-null cells (the branches inside ParquetTableDataParser
         // for LocalDate, LocalTime, Instant and BigDecimal all executed for row 0).
         for (int c = 0; c < table.getColumnCount(); c++)
         {
@@ -226,7 +226,7 @@ class ParquetTableProviderCoverageTest
         // 35-digit value: well beyond the ~15-16 significant digits a double can hold.
         java.math.BigDecimal bd = new java.math.BigDecimal("12345678901234567890123456789012345");
         double d = bd.doubleValue();
-        // Mirrors the production check in Parquet2TableDataParser, which rejects a DECIMAL whose
+        // Mirrors the production check in ParquetTableDataParser, which rejects a DECIMAL whose
         // double round-trip is not value-equal to the original BigDecimal.
         assertNotEquals(0, java.math.BigDecimal.valueOf(d).compareTo(bd),
                 "BigDecimal " + bd + " unexpectedly round-trips through double; "
@@ -268,7 +268,7 @@ class ParquetTableProviderCoverageTest
 
     /**
      * F-E24: when a Parquet field's {@link Type#getName()} returns null, the
-     * {@code Parquet2TableDataParser} constructor must substitute the same synthetic
+     * {@code ParquetTableDataParser} constructor must substitute the same synthetic
      * {@code "V" + (i + 1)} fallback that {@code addMetaColumn} uses on the metadata side. This
      * keeps the value-lookup key aligned with the metadata column name so the column doesn't become
      * unconditionally all-missing.
@@ -297,7 +297,7 @@ class ParquetTableProviderCoverageTest
                 .build();
 
         Class<?> inner = Class.forName(
-                "net.cumba.datatable.provider.parquet.ParquetTableProvider$Parquet2TableDataParser");
+                "net.cumba.datatable.provider.parquet.ParquetTableProvider$ParquetTableDataParser");
         java.lang.reflect.Constructor<?> ctor = inner.getDeclaredConstructor(
                 ParquetTableProvider.class, net.cumba.datatable.DataTableMeta.class,
                 java.util.List.class);

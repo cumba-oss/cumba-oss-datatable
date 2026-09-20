@@ -11,6 +11,7 @@ import java.util.stream.Stream;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
 import net.cumba.datatable.values.MissingValue;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -397,7 +398,7 @@ class IDataTableDefaultsTest
     {
         IDataTable t = threeRowTable();
         IDataTableColumn c = t.getColumn(0);
-        List<Object> all = c.getValues().toList();
+        List<@Nullable Object> all = c.getValues().toList();
         assertEquals(3, all.size());
         assertEquals("a", all.get(0));
         assertEquals("c", all.get(2));

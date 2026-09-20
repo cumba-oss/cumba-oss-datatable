@@ -8,6 +8,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -203,6 +204,39 @@ public class DataTableColumnMeta implements IDataTableColumnMeta, Cloneable
             // should not occur
             throw new AssertionError(ex);
         }
+    }
+
+
+    /**
+     * Check if the most critical fields {@link #getIndex()}, {@link #getName()} and
+     * {@link #getType()} are equal.
+     *
+     * @param aOther
+     *            the value to compare with.
+     * @return true if the given value is not null and the values or index, name and type equal,
+     *         false otherwise.
+     */
+    @JsonIgnore
+    @SuppressWarnings("ReferenceEquality") // identity short-circuit for equals helper
+    public boolean coreEquals(@Nullable DataTableColumnMeta aOther)
+    {
+        if (aOther == this)
+        {
+            return true;
+        }
+        if (aOther == null)
+        {
+            return false;
+        }
+        if (getIndex() != aOther.getIndex())
+        {
+            return false;
+        }
+        if (!Objects.equals(getName(), aOther.getName()))
+        {
+            return false;
+        }
+        return getType() == aOther.getType();
     }
 
     /**

@@ -40,14 +40,29 @@ final class ItemGroupClassDisambiguationModule extends SimpleModule
 
     ItemGroupClassDisambiguationModule()
     {
-        // A plain XmlMapper WITHOUT this module, to materialise the rewritten tree without
-        // re-entering the wrapping deserializer. ACCEPT_SINGLE_VALUE_AS_ARRAY compensates for the
-        // XML unwrapped-list handling the tree round-trip would otherwise lose (a lone ItemRef /
-        // SubClass).
+        setDeserializerModifier(new ClassModifier(newTreeMapper()));
+    }
+
+
+    /**
+     * A plain XmlMapper WITHOUT this module, to materialise the rewritten tree without re-entering
+     * the wrapping deserializer. ACCEPT_SINGLE_VALUE_AS_ARRAY compensates for the XML
+     * unwrapped-list handling the tree round-trip would otherwise lose (a lone ItemRef / SubClass).
+     *
+     * <p>
+     * Package-visible rather than private so a test can build the wrapping deserializer on the
+     * <em>same</em> mapper configuration production uses, instead of a copy that could drift away
+     * from it. Not API.
+     * </p>
+     *
+     * @return the tree mapper the wrapping deserializer materialises beans with.
+     */
+    static XmlMapper newTreeMapper()
+    {
         XmlMapper treeMapper = new XmlMapper();
         treeMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         treeMapper.configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
-        setDeserializerModifier(new ClassModifier(treeMapper));
+        return treeMapper;
     }
 
     /**
@@ -83,8 +98,15 @@ final class ItemGroupClassDisambiguationModule extends SimpleModule
      * Wraps the generated {@link ItemGroupDef} deserializer and redirects the element-form
      * {@code Class} node to {@link ItemGroupDef#CLASS_ELEMENT_PROPERTY} before materialising the
      * bean.
+     *
+     * <p>
+     * Package-visible rather than private for testing, not API: Jackson replaces a delegating
+     * deserializer's delegatee during contextualization by calling {@code newDelegatingInstance},
+     * and a replacement that lost the wrapper — or the tree mapper it materialises beans with —
+     * would silently stop disambiguating the {@code Class} collision, with no parse error anywhere.
+     * </p>
      */
-    private static final class ItemGroupClassDeserializer extends DelegatingDeserializer
+    static final class ItemGroupClassDeserializer extends DelegatingDeserializer
     {
 
         private static final long serialVersionUID = 1L;

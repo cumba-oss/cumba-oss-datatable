@@ -39,7 +39,7 @@ import org.jspecify.annotations.Nullable;
 // Lombok @Builder/@AllArgsConstructor all-args constructor trips NullAway's @NonNull-field init
 // check (NullAway#917); the custom builder + @lombok.NonNull enforce required fields at build().
 @SuppressWarnings("NullAway.Init")
-public class DataTableMeta implements IDataTableMeta
+public class DataTableMeta implements IDataTableMeta, Cloneable
 {
 
     /**
@@ -73,8 +73,14 @@ public class DataTableMeta implements IDataTableMeta
     {
         if (aMeta instanceof DataTableMeta dmd)
         {
-            // DataTableMeta is immutable --> we do not need to copy
-            return dmd;
+            if (aMeta.getClass() == DataTableMeta.class)
+            {
+                // this is immutable --> we do not need to copy
+                return dmd;
+            }
+
+            // we can clone
+            return dmd.clone();
         }
 
         // we copy by builder
@@ -254,6 +260,23 @@ public class DataTableMeta implements IDataTableMeta
     }
 
 
+    /**
+     * Returns a copy of the internal metadata table. The array uses an alternating key-value
+     * layout: even indices (0, 2, 4, ...) contain {@link String} keys, odd indices (1, 3, 5, ...)
+     * contain the corresponding values.
+     *
+     * @return a copy of the metadata table, or {@code null} if no custom metadata is set.
+     */
+    public Object @Nullable [] getMetaTable()
+    {
+        if (metaTable == null)
+        {
+            return null;
+        }
+        return Arrays.copyOf(metaTable, metaTable.length);
+    }
+
+
     @Override
     @JsonIgnore
     public @Nullable Object getMetaData(@NonNull String aKey)
@@ -310,6 +333,81 @@ public class DataTableMeta implements IDataTableMeta
             }
         }
         return List.copyOf(res);
+    }
+
+
+    /**
+     * Creates a shallow clone. This is safe because all fields are final and either primitives,
+     * immutable objects, or arrays that are never mutated after construction. Custom metadata
+     * values stored via {@link DataTableMetaBuilder#addMetaData(String, Object)} are shared between
+     * clone and original — callers must not store mutable objects as metadata values.
+     */
+    @Override
+    public DataTableMeta clone()
+    {
+        try
+        {
+            return (DataTableMeta) super.clone();
+        }
+        catch (CloneNotSupportedException ex)
+        {
+            // should not occur
+            throw new AssertionError(ex);
+        }
+    }
+
+
+    /**
+     * Compare another instance if the core attributes are equal.<br/>
+     * Core attributes are name, rowCount, totalRowCount, columnCount and all columns are coreEqual
+     * as well.
+     *
+     * @param aOther
+     *            the other instance to compare.
+     * @return true if all core attributes of this instance and the given other instance are equal,
+     *         false otherwise.
+     */
+    @SuppressWarnings("ReferenceEquality") // identity short-circuit for equals helper
+    public boolean coreEquals(@Nullable DataTableMeta aOther)
+    {
+        if (aOther == this)
+        {
+            return true;
+        }
+
+        if (aOther == null)
+        {
+            return false;
+        }
+
+        if (!Objects.equals(getName(), aOther.getName()))
+        {
+            return false;
+        }
+        if (getRowCount() != aOther.getRowCount())
+        {
+            return false;
+        }
+        if (getTotalRowCount() != aOther.getTotalRowCount())
+        {
+            return false;
+        }
+        int colCount = getColumnCount();
+        if (colCount != aOther.getColumnCount())
+        {
+            return false;
+        }
+
+        for (int c = 0; c < colCount; c++)
+        {
+            if (!getColumn(c).coreEquals(aOther.getColumn(c)))
+            {
+                return false;
+            }
+        }
+
+        return true;
+
     }
 
     public static class DataTableMetaBuilder
@@ -384,6 +482,17 @@ public class DataTableMeta implements IDataTableMeta
         {
             columns = null;
             return this;
+        }
+
+
+        @JsonIgnore
+        public DataTableMetaBuilder addColumns(List<DataTableColumnMeta> aColumns)
+        {
+            if (CDT.isEmptyOrNull(aColumns))
+            {
+                return this;
+            }
+            return addColumns(aColumns.toArray(DataTableColumnMeta[]::new));
         }
 
 
