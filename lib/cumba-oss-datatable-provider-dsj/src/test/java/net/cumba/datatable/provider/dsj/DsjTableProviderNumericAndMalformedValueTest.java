@@ -39,15 +39,26 @@ import org.junit.jupiter.api.io.TempDir;
  * it happened to arrive quoted or bare -- exactly the raw-identity hazard the null-vs-"" note
  * elsewhere in this class already documents (merge/join keys, by-group hashing, frequency buckets).
  * Fixed to store {@code num.toString()}.</li>
- * <li><b>Thousand-separator decimal strings (fix, lenient path only).</b> The spec's
+ * <li><b>Thousand-separator decimal strings — BOTH paths, 2026-09-21.</b> The spec's
  * {@code dataType} note: "When a thousand separator is used in a decimal represented as string, the
- * comma is used." {@code addParsedDoubleOrError} now strips commas before parsing. NOTE: this fix
- * is scoped to THIS module's lenient (no-{@code targetDataType}) path only. The same defect exists
- * in {@code cumba-oss-cdisc-dsj}'s {@code DecimalMapper} (the {@code
- * targetDataType=decimal} path, verified separately: {@code "1,234.5"} there currently still
- * silently becomes {@code Double.NaN} -> {@link MissingValue#MIS_ERROR} after this module's other
- * fix, rather than {@code 1234.5}) -- that module is closed from an earlier campaign wave, so this
- * lane reports rather than fixes it there.</li>
+ * comma is used." A comma is therefore a THOUSANDS separator and never a decimal separator, and one
+ * that is not in a valid grouping position is a format violation.
+ * <p>
+ * ⛔⛔ <b>This bullet used to say the opposite of all four of its own claims, and review round 2
+ * caught it 20 lines above the assertion that contradicts it.</b> It read <i>"fix, lenient path
+ * only"</i>, <i>"now strips commas before parsing"</i>, <i>"{@code "1,234.5"} there currently still
+ * silently becomes {@code Double.NaN}"</i> and <i>"this lane reports rather than fixes it
+ * there"</i>. As of {@code plans/PLAN-dsj-thousand-separator.md}: the fix covers BOTH paths; the
+ * lenient path no longer strips unconditionally (that WAS the defect — {@code "1,5"} became 15.0, a
+ * ten-fold error in a clinical value with no failure signal); {@code DecimalMapper} answers 1234.5
+ * for {@code "1,234.5"} where it used to degrade to {@link MissingValue#MIS_ERROR}; and that module
+ * was fixed in the same change, not reported.
+ * </p>
+ * <p>
+ * ⚑ Kept as a worked example rather than replaced silently: prose describing a defect outlives the
+ * defect, and a stale NOTE in a file the same diff edits is indistinguishable from a live one.
+ * </p>
+ * </li>
  * <li>The decimal-as-string representation for a properly-mapped {@code targetDataType=decimal}
  * column (CDISC Dataset-JSON v1.1 "Decimal Variables") -- confirmed via review that this actually
  * routes through {@code DataTypeMapperFactory}'s {@code DecimalMapper}, which converts the JSON
@@ -88,14 +99,16 @@ class DsjTableProviderNumericAndMalformedValueTest
                   "itemGroupOID": "IG.DEC",
                   "name": "DEC",
                   "label": "Decimal-as-string",
-                  "records": 2,
+                  "records": 4,
                   "columns": [
                     {"itemOID": "IT.ADSL.BMIBL", "name": "BMIBL", "label": "Baseline BMI (kg/m^2)",
                      "dataType": "decimal", "targetDataType": "decimal", "length": 16}
                   ],
                   "rows": [
                     ["30.8983333232059"],
-                    ["28.977529926378"]
+                    ["28.977529926378"],
+                    ["1,234.5"],
+                    ["1,5"]
                   ]
                 }
                 """;
@@ -103,9 +116,20 @@ class DsjTableProviderNumericAndMalformedValueTest
 
         IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
 
-        assertEquals(2, table.getRowCount());
+        assertEquals(4, table.getRowCount());
         assertEquals(30.8983333232059, (double) table.getValue(0, 0), 1e-12);
         assertEquals(28.977529926378, (double) table.getValue(1, 0), 1e-12);
+        // ⭐ Defect B, end to end. The mapper unit test in cumba-cdisc-dsj pins the conversion;
+        // this pins that a spec-legal thousands separator survives the WHOLE provider path on a
+        // targetDataType=decimal column. Review round 1: the accept direction existed nowhere in
+        // either datatable repo, while the reject direction was covered only by accident.
+        assertEquals(1234.5, (double) table.getValue(2, 0), 1e-12);
+        // ⭐ and the STRICT REJECT direction, directly rather than transitively (review round 2):
+        // "1,5" on a targetDataType=decimal column. It was covered only as a composition of the
+        // cdisc-dsj unit test ("1,5" -> NaN) and mappedUnparseableDecimalStringBecomesMisError
+        // (NaN -> MIS_ERROR). Both links held, but this is the clinically important direction.
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(3, 0),
+                "a misplaced thousands separator must not survive the strict path as a number");
     }
 
 
@@ -169,13 +193,92 @@ class DsjTableProviderNumericAndMalformedValueTest
         assertEquals(1234.5, (double) table.getValue(0, 0), 1e-12);
     }
 
-    // Deliberately withheld pending an owner ruling: internal's
-    // thousandSeparatorInLenientDecimalStringIsAccepted. addParsedDoubleOrError strips commas
-    // unconditionally, so a European decimal comma ("1,5") is silently read as 15.0 -- a
-    // ten-fold corruption of a clinical value. This lenient path exists precisely for
-    // non-conformant input, where a comma is not guaranteed to be a thousands separator.
-    // Pinning "1,234.5" -> 1234.5 here would make that hazard intended behaviour, so the
-    // method stays out until the owner rules on what "1,5" should do.
+
+    @Test
+    void thousandSeparatorInLenientDecimalStringIsAccepted(@TempDir Path tmp) throws IOException
+    {
+        // Spec "dataType" note: "When a thousand separator is used in a decimal represented as
+        // string, the comma is used."
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-08T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.LEN2",
+                  "name": "LEN2",
+                  "label": "Thousand separator",
+                  "records": 1,
+                  "columns": [
+                    {"itemOID": "IT.VAL", "name": "VAL", "label": "Value", "dataType": "decimal"}
+                  ],
+                  "rows": [
+                    ["1,234.5"]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "thousands.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals(1234.5, (double) table.getValue(0, 0), 1e-12);
+    }
+
+
+    /**
+     * ⛔⛔ DEFECT A, closed 2026-09-21 — the reason this whole plan exists.
+     *
+     * <p>
+     * This path used to strip commas <b>unconditionally</b>, so {@code "1,5"} parsed as
+     * {@code 15.0}: a <b>ten-fold</b> error in a clinical value, with no failure signal at all. Not
+     * a {@code MissingValue}, not an exception — a plausible number that nothing downstream could
+     * detect. A comma that is not a valid thousands separator is a format violation and takes the
+     * same {@code MIS_ERROR} outcome as any other unreadable value (owner, 2026-09-21).
+     * </p>
+     *
+     * <p>
+     * ⚠ It is emphatically NOT read as a European decimal comma either: the answer is neither
+     * {@code 15.0} nor {@code 1.5}. The engine does not guess at intent.
+     * </p>
+     *
+     * @param tmp
+     *            a temporary directory.
+     * @throws IOException
+     *             if the fixture cannot be written.
+     */
+    @Test
+    void misplacedThousandSeparatorInLenientDecimalStringBecomesMisError(@TempDir Path tmp)
+        throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-08T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.LEN3",
+                  "name": "LEN3",
+                  "label": "Misplaced separator",
+                  "records": 6,
+                  "columns": [
+                    {"itemOID": "IT.VAL", "name": "VAL", "label": "Value", "dataType": "decimal"}
+                  ],
+                  "rows": [
+                    ["1,5"],
+                    ["1,23"],
+                    ["1,2345"],
+                    ["1.234,5"],
+                    ["0,123"],
+                    ["1,234.5,6"]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "misplaced.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        for (int row = 0; row < 6; row++)
+        {
+            assertEquals(MissingValue.MIS_ERROR, table.getValue(row, 0),
+                    "row " + row + " must be MIS_ERROR, never a guessed number");
+        }
+    }
 
 
     @Test

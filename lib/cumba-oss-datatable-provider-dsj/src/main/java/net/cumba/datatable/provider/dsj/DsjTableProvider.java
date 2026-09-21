@@ -34,6 +34,7 @@ import net.cumba.cdisc.dsj.DataTypeMapperFactory;
 import net.cumba.cdisc.dsj.DsjTable;
 import net.cumba.cdisc.dsj.DsjTableColumn;
 import net.cumba.cdisc.dsj.IDataTypeMapper;
+import net.cumba.cdisc.dsj.ThousandSeparators;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableColumnMeta.DataTableColumnMetaBuilder;
 import net.cumba.datatable.DataTableMeta;
@@ -840,15 +841,42 @@ public class DsjTableProvider extends AbstractDataTableProvider
 
         private static void addParsedDoubleOrError(CachedDataTableColumn aColumn, String aStr)
         {
+            // Dataset-JSON's "dataType" note: "When a thousand separator is used in a decimal
+            // represented as string, the comma is used." This is the lenient no-targetDataType
+            // parsing path (a mapped targetDataType=decimal column never reaches here --
+            // DataTypeMapperFactory's DecimalMapper converts the string before this method is
+            // called).
+            //
+            // ⛔⛔ UNTIL 2026-09-21 THIS LINE READ `Double.parseDouble(aStr.replace(",", ""))` --
+            // an UNCONDITIONAL strip. "1,234.5" was right, but "1,5" became 15.0: a TEN-FOLD
+            // error in a clinical value, with no failure signal whatever. Not a MissingValue, not
+            // an exception -- a plausible number nothing downstream could detect.
+            //
+            // ⚠ And this is precisely the path where the spec's guarantee does NOT hold: it is
+            // reached only for a column with no targetDataType, i.e. a non-conformant file. The
+            // one code path that assumed "a comma means thousands" was the one path where nothing
+            // guaranteed it.
+            //
+            // A misplaced comma is a FORMAT VIOLATION and is treated as one (owner, 2026-09-21),
+            // taking the same MIS_ERROR outcome as an unparseable string. ⭐ The scanner judges
+            // the comma context only, so every form parseDouble accepts today -- surrounding
+            // whitespace, a `d`/`f` suffix, a hex literal -- still parses.
+            String withoutSeparators = ThousandSeparators.strip(aStr);
+            if (withoutSeparators == null)
+            {
+                // ⚠ DELIBERATELY SILENT, unlike DecimalMapper's TRACE on the same rejection
+                // (review round 1 asked for a decision rather than an accident). This path is
+                // per-cell over whole columns and its existing NumberFormatException arm below is
+                // silent too, so logging only the comma case would make ONE unreadable value
+                // noisier than every other unreadable value on the same path. Consistency within
+                // the path beats symmetry across the two paths; the outcome is identical either
+                // way, and that is what the corpus sees.
+                aColumn.addElement(MissingValue.MIS_ERROR);
+                return;
+            }
             try
             {
-                // Dataset-JSON's "dataType" note: "When a thousand separator is used in a
-                // decimal represented as string, the comma is used." This is the lenient
-                // no-targetDataType parsing path (a mapped targetDataType=decimal column never
-                // reaches here -- DataTypeMapperFactory's DecimalMapper converts the string
-                // before this method is called), so the comma is stripped before parsing rather
-                // than rejected as a malformed number.
-                double val = Double.parseDouble(aStr.replace(",", ""));
+                double val = Double.parseDouble(withoutSeparators);
                 if (!Double.isFinite(val))
                 {
                     // "NaN" / "Infinity" / "-Infinity" (and any string whose magnitude overflows
