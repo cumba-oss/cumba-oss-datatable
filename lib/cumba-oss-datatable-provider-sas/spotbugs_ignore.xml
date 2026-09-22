@@ -84,13 +84,6 @@
 
     <Match>
         <!-- File.delete in temp-file cleanup block. -->
-        <Class name="net.cumba.datatable.provider.sas.sas7bcat.BcatFormatCatalogProvider" />
-        <Method name="provide" />
-        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
-    </Match>
-
-    <Match>
-        <!-- File.delete in temp-file cleanup block. -->
         <Class name="net.cumba.datatable.provider.sas.xpt.XptTableProvider" />
         <Method name="provide" />
         <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
