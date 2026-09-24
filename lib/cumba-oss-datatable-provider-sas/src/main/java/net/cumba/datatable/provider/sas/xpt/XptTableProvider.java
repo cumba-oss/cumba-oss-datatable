@@ -15,10 +15,9 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
-import java.text.SimpleDateFormat;
-import java.time.ZoneId;
-import java.util.Date;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -58,6 +57,13 @@ public class XptTableProvider extends AbstractDataTableProvider
 {
 
     private static final Logger LOGGER = System.getLogger(XptTableProvider.class.getName());
+
+    /**
+     * Renders the header's created/modified stamps. SAS stores them without a time zone, so the
+     * wall-clock value is formatted as is; no zone conversion is applied.
+     */
+    private static final DateTimeFormatter META_TIMESTAMP = DateTimeFormatter
+            .ofPattern("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT);
 
     /**
      * Charset to use when decoding character values from the XPT file. XPT v5 officially supports
@@ -408,10 +414,10 @@ public class XptTableProvider extends AbstractDataTableProvider
 
         XptTableDataParser tableParser = new XptTableDataParser(this, meta);
 
-        try (FileInputStream fin = new FileInputStream(aFile))
+        // 262_144 = 256*1024
+        try (FileInputStream fin = new FileInputStream(aFile);
+                BufferedInputStream bin = new BufferedInputStream(fin, 262_144))
         {
-            // 262_144 = 256*1024
-            BufferedInputStream bin = new BufferedInputStream(fin, 262_144);
             ObservationIteratorXpt iter = new ObservationIteratorXpt(aDataSet, getCharset(), bin);
 
             while (iter.hasNext())
@@ -426,6 +432,8 @@ public class XptTableProvider extends AbstractDataTableProvider
             // throws IOException by unwrapping the cause where present.
             if (ex.getCause() instanceof IOException ioe)
             {
+                // The iterator's wrapper survives as a suppressed exception.
+                ioe.addSuppressed(ex);
                 throw ioe;
             }
             throw ex;
@@ -491,21 +499,15 @@ public class XptTableProvider extends AbstractDataTableProvider
 
     protected void applyTableMetaData(DataTableMetaSupport aSupport, DatasetXpt aDataSet)
     {
-        SimpleDateFormat sdtf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-
         DataTableMetaBuilder b = aSupport.getTableMeta();
 
         if (aDataSet.getCreated() != null)
         {
-            Date created = Date
-                    .from(aDataSet.getCreated().atZone(ZoneId.systemDefault()).toInstant());
-            b.addMetaData(META_KEY_CREATED, sdtf.format(created));
+            b.addMetaData(META_KEY_CREATED, META_TIMESTAMP.format(aDataSet.getCreated()));
         }
         if (aDataSet.getModified() != null)
         {
-            Date modified = Date
-                    .from(aDataSet.getModified().atZone(ZoneId.systemDefault()).toInstant());
-            b.addMetaData(META_KEY_MODIFIED, sdtf.format(modified));
+            b.addMetaData(META_KEY_MODIFIED, META_TIMESTAMP.format(aDataSet.getModified()));
         }
         if (!CDT.isBlankOrNull(aDataSet.getLabel()))
         {

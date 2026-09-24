@@ -14,13 +14,12 @@ import java.net.URI;
 import java.nio.ByteOrder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
-import java.text.SimpleDateFormat;
-import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -56,6 +55,13 @@ public class BdatTableProvider extends AbstractDataTableProvider
 {
 
     private static final Logger LOGGER = System.getLogger(BdatTableProvider.class.getName());
+
+    /**
+     * Renders the header's created/modified stamps. SAS stores them without a time zone, so the
+     * wall-clock value is formatted as is; no zone conversion is applied.
+     */
+    private static final DateTimeFormatter META_TIMESTAMP = DateTimeFormatter
+            .ofPattern("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT);
 
     /**
      * The integer (one or two bytes) at the {@code SasFileConstants.ENCODING_OFFSET} indicates the
@@ -209,7 +215,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
      */
     public static @Nullable String getEncodingName(int encodingByte)
     {
-        return SAS_CHARACTER_ENCODINGS.get(Byte.valueOf((byte) encodingByte));
+        return SAS_CHARACTER_ENCODINGS.get((byte) encodingByte);
     }
 
 
@@ -637,8 +643,6 @@ public class BdatTableProvider extends AbstractDataTableProvider
     protected void applyTableMetaData(DataTableMetaSupport aSupport, DatasetBdat aDataSet,
             long aRowCount, Charset aCharset)
     {
-        SimpleDateFormat sdtf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss");
-
         String rawCompr = aDataSet.getCompression().orElse(null);
 
         String compr;
@@ -674,15 +678,11 @@ public class BdatTableProvider extends AbstractDataTableProvider
 
         if (aDataSet.getCreated() != null)
         {
-            Date created = Date
-                    .from(aDataSet.getCreated().atZone(ZoneId.systemDefault()).toInstant());
-            b.addMetaData(META_KEY_CREATED, sdtf.format(created));
+            b.addMetaData(META_KEY_CREATED, META_TIMESTAMP.format(aDataSet.getCreated()));
         }
         if (aDataSet.getModified() != null)
         {
-            Date modified = Date
-                    .from(aDataSet.getModified().atZone(ZoneId.systemDefault()).toInstant());
-            b.addMetaData(META_KEY_MODIFIED, sdtf.format(modified));
+            b.addMetaData(META_KEY_MODIFIED, META_TIMESTAMP.format(aDataSet.getModified()));
         }
 
         aDataSet.getDataSetLabel().ifPresent(b::label);
