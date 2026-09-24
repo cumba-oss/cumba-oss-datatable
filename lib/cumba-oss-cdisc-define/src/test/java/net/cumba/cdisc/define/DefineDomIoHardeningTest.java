@@ -32,6 +32,16 @@ class DefineDomIoHardeningTest
 
     private static final String ODM_NS = "http://www.cdisc.org/ns/odm/v1.3";
 
+    /**
+     * The feature URI the parser names when the DOCTYPE ban refuses a document. It is matched
+     * instead of the English wording because the JDK's parser localises its messages to the default
+     * locale (on a German JVM: "DOCTYPE ist nicht zulässig, …"), while the URI is inserted verbatim
+     * in every locale. It is also absent from both refusals that would remain with the ban removed
+     * — measured in en/de/ja/fr — so matching on it still tells the ban apart from a later
+     * backstop.
+     */
+    private static final String DOCTYPE_BAN = "http://apache.org/xml/features/disallow-doctype-decl";
+
     private static Document parse(String aXml) throws Exception
     {
         return DefineDomIo.parse(new ByteArrayInputStream(aXml.getBytes(StandardCharsets.UTF_8)));
@@ -56,7 +66,7 @@ class DefineDomIoHardeningTest
 
         SAXException ex = assertThrows(SAXException.class, () -> parse(xxe),
                 "a Define-XML file is untrusted input; a DOCTYPE must be refused, not resolved");
-        assertTrue(ex.getMessage().contains("DOCTYPE is disallowed"),
+        assertTrue(ex.getMessage().contains(DOCTYPE_BAN),
                 "the refusal must come from the DOCTYPE ban, not from a later backstop: "
                         + ex.getMessage());
     }
@@ -74,7 +84,7 @@ class DefineDomIoHardeningTest
                 + ODM_NS + "\" FileOID=\"X\"/>";
 
         SAXException ex = assertThrows(SAXException.class, () -> parse(doctype));
-        assertTrue(ex.getMessage().contains("DOCTYPE is disallowed"), ex.getMessage());
+        assertTrue(ex.getMessage().contains(DOCTYPE_BAN), ex.getMessage());
     }
 
 
