@@ -47,6 +47,11 @@
 
         <dependency>
             <groupId>net.cumba</groupId>
+            <artifactId>cumba-oss-help</artifactId>
+            <!-- declared directly: this module calls URIHelper.openStream (PLAN-jar-url-stream-cache) -->
+        </dependency>
+        <dependency>
+            <groupId>net.cumba</groupId>
             <artifactId>cumba-oss-datatable</artifactId>
         </dependency>
 

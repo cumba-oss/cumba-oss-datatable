@@ -571,7 +571,7 @@ public class XptTableProvider extends AbstractDataTableProvider
     protected File downloadToFile(URI aUri) throws IOException
     {
         File tmp = File.createTempFile("corej-xpt-", ".xpt");
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             Files.copy(in, tmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }

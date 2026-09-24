@@ -71,12 +71,15 @@ class DsjTableProviderPathFromUriTest
 
 
     @Test
-    void fileUriWithAuthorityIsRejectedByPathsGetAndYieldsNull() throws Exception
+    void fileUriThatPathsGetRejectsYieldsNull() throws Exception
     {
-        // Paths.get(URI) throws IllegalArgumentException for a "file:" URI carrying a non-empty
-        // authority component -- pathFromUri must catch that and return null rather than
-        // propagating it, so the caller falls back to the stream-based path.
-        assertNull(invoke(URI.create("file://somehost/tmp/x.json")));
+        // Paths.get(URI) throws IllegalArgumentException for a "file:" URI it cannot map --
+        // pathFromUri must catch that and return null rather than propagating it, so the caller
+        // falls back to the stream-based path. A QUERY component is rejected by both the Unix and
+        // the Windows provider (UnixUriUtils, WindowsUriSupport). An AUTHORITY is not portable:
+        // on Windows file://host/tmp/x.json is the UNC path \\host\tmp\x.json and resolves --
+        // which is what this test used to assume could not happen, and why it failed there.
+        assertNull(invoke(URI.create("file:///tmp/x.json?q=1")));
     }
 
 

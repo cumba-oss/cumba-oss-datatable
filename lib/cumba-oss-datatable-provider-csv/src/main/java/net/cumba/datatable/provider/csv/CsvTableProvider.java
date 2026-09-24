@@ -23,6 +23,7 @@ import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
@@ -88,7 +89,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
     @Override
     public DataTableMeta provideMetaData(URI aURI, @Nullable FileInfo aFileInfo) throws IOException
     {
-        try (InputStream in = aURI.toURL().openStream();
+        try (InputStream in = URIHelper.openStream(aURI);
                 BufferedInputStream bin = new BufferedInputStream(in, 65_536))
         {
             CsvParserSettings ps = buildParserSettings(bin);
@@ -147,7 +148,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
     @Override
     public IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo) throws IOException
     {
-        try (InputStream in = aURI.toURL().openStream();
+        try (InputStream in = URIHelper.openStream(aURI);
                 BufferedInputStream bin = new BufferedInputStream(in, 65_536))
         {
             CsvParserSettings ps = buildParserSettings(bin);

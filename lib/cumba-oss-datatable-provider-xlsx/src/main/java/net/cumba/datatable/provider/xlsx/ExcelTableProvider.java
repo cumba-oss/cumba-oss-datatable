@@ -18,6 +18,7 @@ import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
@@ -72,7 +73,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
     public IDataTable provide(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
     {
 
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             try (Workbook workbook = StreamingReader.builder().rowCacheSize(100).bufferSize(4096)
                     .open(in))
@@ -97,7 +98,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
     @Override
     public DataTableMeta provideMetaData(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
     {
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             try (Workbook workbook = StreamingReader.builder().rowCacheSize(100).bufferSize(4096)
                     .open(in))

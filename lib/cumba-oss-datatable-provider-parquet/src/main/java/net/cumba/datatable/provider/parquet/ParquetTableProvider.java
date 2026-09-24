@@ -28,6 +28,7 @@ import net.cumba.datatable.DataTableColumnMeta.DataTableColumnMetaBuilder;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
@@ -500,7 +501,7 @@ public class ParquetTableProvider extends AbstractDataTableProvider
     protected File downloadToFile(URI aUri) throws IOException
     {
         File tmp = File.createTempFile("cumba-oss-parquet-", ".parquet");
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             Files.copy(in, tmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }

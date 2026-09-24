@@ -78,7 +78,7 @@ public class ExcelLibraryProvider implements ILibraryProvider
             Map<Property, String> aProperties)
         throws IOException
     {
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             try (Workbook workbook = StreamingReader.builder().rowCacheSize(100).bufferSize(4096)
                     .open(in))

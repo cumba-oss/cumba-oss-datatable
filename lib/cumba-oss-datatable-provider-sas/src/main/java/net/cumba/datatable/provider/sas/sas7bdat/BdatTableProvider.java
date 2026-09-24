@@ -30,6 +30,7 @@ import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.DataTableMeta.DataTableMetaBuilder;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.databuffer.AbstractDataBuffer;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
@@ -235,7 +236,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
     @Override
     public IDataTable provide(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
     {
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             try (PositionAwareInputStream pais = new PositionAwareInputStream(in))
             {
@@ -249,7 +250,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
     @Override
     public DataTableMeta provideMetaData(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
     {
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             try (PositionAwareInputStream pais = new PositionAwareInputStream(in))
             {

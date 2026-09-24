@@ -9,8 +9,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.net.URL;
 import javax.xml.stream.XMLInputFactory;
+import net.cumba.datatable.help.URIHelper;
 
 /**
  * Complete CDISC Define.xml parser using Jackson XML with immutable Lombok beans. Supports ODM
@@ -58,8 +58,7 @@ public class DefineXmlParser
 
     public ODM parse(URI aURI) throws IOException
     {
-        URL url = aURI.toURL();
-        try (InputStream in = url.openStream())
+        try (InputStream in = URIHelper.openStream(aURI))
         {
             return xmlMapper.readValue(in, ODM.class);
         }

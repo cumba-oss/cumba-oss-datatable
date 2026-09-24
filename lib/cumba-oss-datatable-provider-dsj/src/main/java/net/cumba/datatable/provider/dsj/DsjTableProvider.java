@@ -9,7 +9,6 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.net.URI;
-import java.net.URL;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -42,6 +41,7 @@ import net.cumba.datatable.DataTableMeta.DataTableMetaBuilder;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.IDataTableColumn;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
@@ -123,7 +123,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
             return 1;
         });
 
-        try (InputStream stream = aURI.toURL().openStream())
+        try (InputStream stream = URIHelper.openStream(aURI))
         {
             dsjtp.parseDataSet(stream);
         }
@@ -184,8 +184,6 @@ public class DsjTableProvider extends AbstractDataTableProvider
     @Override
     public IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo) throws IOException
     {
-        URL tblUrl = aURI.toURL();
-
         DataSetJsonTableParallelParser dsjtp = new DataSetJsonTableParallelParser();
         if (parallelism != null)
         {
@@ -272,7 +270,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
         }
         else
         {
-            try (InputStream stream = tblUrl.openStream())
+            try (InputStream stream = URIHelper.openStream(aURI))
             {
                 dsjtp.parseDataSet(stream);
             }

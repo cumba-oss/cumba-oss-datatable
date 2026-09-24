@@ -186,7 +186,7 @@ public class CdtLibraryProvider extends AbstractLibraryProvider
         // Non-file URIs: stream the bytes straight into memory. `.cdt` library files
         // are small (typically a few hundred KB at most), so buffering the whole payload
         // beats round-tripping through a temp file.
-        try (var in = aUri.toURL().openStream())
+        try (var in = URIHelper.openStream(aUri))
         {
             return CdtTableProvider.stripBom(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }

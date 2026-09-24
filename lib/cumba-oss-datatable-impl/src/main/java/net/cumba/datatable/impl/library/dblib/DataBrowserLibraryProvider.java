@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URL;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -16,6 +15,7 @@ import lombok.CustomLog;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.library.AbstractLibraryProvider;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserColumnMetaBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
@@ -67,8 +67,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             Map<Property, String> aProperties)
         throws IOException
     {
-        URL url = aUri.toURL();
-        try (InputStream in = url.openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             DataBrowserLibraryBean bean = new ObjectMapper().readValue(in,
                     DataBrowserLibraryBean.class);
@@ -96,8 +95,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
     {
         try
         {
-            URL url = aUri.toURL();
-            try (InputStream in = url.openStream())
+            try (InputStream in = URIHelper.openStream(aUri))
             {
                 DataBrowserLibraryBean bean = new ObjectMapper().readValue(in,
                         DataBrowserLibraryBean.class);

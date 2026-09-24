@@ -102,7 +102,7 @@ public class CdtTableProvider extends AbstractDataTableProvider
                     : URIHelper.replaceFragment(aUri, null);
             return stripBom(Files.readString(Path.of(fileUri), StandardCharsets.UTF_8));
         }
-        try (InputStream in = aUri.toURL().openStream())
+        try (InputStream in = URIHelper.openStream(aUri))
         {
             return stripBom(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }
