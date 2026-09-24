@@ -19,7 +19,7 @@ import org.jspecify.annotations.Nullable;
 public class ColumnCachedDataTable extends AbstractDataTable
 {
 
-    private IDataTableColumn[] columns;
+    private final IDataTableColumn[] columns;
 
     @Setter(value = AccessLevel.PROTECTED)
     private long rowCount = -1;

@@ -503,9 +503,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             try
             {
                 boolean possiblyDouble = true;
-                for (int rowIdx = 0; rowIdx < aRowBlock.size(); rowIdx++)
+                for (ExcelRow row : aRowBlock)
                 {
-                    ExcelRow row = aRowBlock.get(rowIdx);
                     if (!row.isNumberOrMissing(i))
                     {
                         possiblyDouble = false;
@@ -979,10 +978,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         protected void addData2Column(List<ExcelRow> aRowSlice, int aColumnIndex,
                 DataTableColumnMeta aMetaColumn, CachedDataTableColumn aDataColumn)
         {
-            for (int i = 0; i < aRowSlice.size(); i++)
+            for (ExcelRow row : aRowSlice)
             {
-                ExcelRow row = aRowSlice.get(i);
-
                 switch (aMetaColumn.getType())
                 {
                 case DOUBLE:

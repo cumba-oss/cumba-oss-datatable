@@ -147,6 +147,8 @@ class DataTableLoadSupport
             return cached.getMetaData().getAllColumns();
         }
 
+        // Borrowed from the member, which owns the library; this method must not close it.
+        @SuppressWarnings("PMD.CloseResource")
         IDataTableLibrary lib = aMember.getLibrary();
         URI uri = lib.getUri();
 
@@ -160,8 +162,7 @@ class DataTableLoadSupport
                 {
                     try
                     {
-                        return p.provideLibraryMemberColumns(aMember)
-                                .map(c -> (DataTableColumnMeta) c);
+                        return p.provideLibraryMemberColumns(aMember);
                     }
                     catch (IOException ex)
                     {

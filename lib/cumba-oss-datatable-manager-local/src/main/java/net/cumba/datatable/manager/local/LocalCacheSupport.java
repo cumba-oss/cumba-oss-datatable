@@ -310,7 +310,7 @@ class LocalCacheSupport
     java.util.stream.Stream<IDataTableLibrary> streamLibraries()
     {
         return libraryCache.values().stream()//
-                .map(w -> w.getStrong())//
+                .map(LibraryCacheEntryWeak::getStrong)//
                 .filter(java.util.Objects::nonNull)//
                 .map(LibraryCacheEntry::getLibrary)//
                 .filter(java.util.Objects::nonNull);

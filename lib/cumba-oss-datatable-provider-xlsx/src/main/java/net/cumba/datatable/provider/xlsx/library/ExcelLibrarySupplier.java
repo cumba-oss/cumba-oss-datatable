@@ -30,12 +30,7 @@ public class ExcelLibrarySupplier extends AbstractLibrarySupplier
             return FIS.contains(aFileInfo);
         }
 
-        if (!CDT.isBlankOrNull(aUri.getFragment()))
-        {
-            return false;
-        }
-
-        return super.canProvideFor(aUri, null);
+        return CDT.isBlankOrNull(aUri.getFragment()) && super.canProvideFor(aUri, null);
     }
 
 

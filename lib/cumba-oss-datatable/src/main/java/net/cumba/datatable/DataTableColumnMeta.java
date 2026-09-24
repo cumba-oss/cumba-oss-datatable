@@ -220,23 +220,8 @@ public class DataTableColumnMeta implements IDataTableColumnMeta, Cloneable
     @SuppressWarnings("ReferenceEquality") // identity short-circuit for equals helper
     public boolean coreEquals(@Nullable DataTableColumnMeta aOther)
     {
-        if (aOther == this)
-        {
-            return true;
-        }
-        if (aOther == null)
-        {
-            return false;
-        }
-        if (getIndex() != aOther.getIndex())
-        {
-            return false;
-        }
-        if (!Objects.equals(getName(), aOther.getName()))
-        {
-            return false;
-        }
-        return getType() == aOther.getType();
+        return aOther == this || (aOther != null && getIndex() == aOther.getIndex()
+                && Objects.equals(getName(), aOther.getName()) && getType() == aOther.getType());
     }
 
     /**

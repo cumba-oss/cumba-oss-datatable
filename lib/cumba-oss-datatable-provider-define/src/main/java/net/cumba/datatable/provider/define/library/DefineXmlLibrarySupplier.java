@@ -34,11 +34,7 @@ public class DefineXmlLibrarySupplier implements ILibrarySupplier
         }
 
         String path = aUri.getPath();
-        if (path == null)
-        {
-            return false;
-        }
-        return path.toLowerCase(Locale.ROOT).endsWith("/define.xml");
+        return path != null && path.toLowerCase(Locale.ROOT).endsWith("/define.xml");
     }
 
 

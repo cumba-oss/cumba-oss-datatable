@@ -213,7 +213,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
 
         // Declared row count as captured PRE-parse from the document's "records" attribute
         // (-1 means the document does not declare one); see the row-accounting check below.
-        long[] declaredRows = new long[]
+        long[] declaredRows =
         {
                 -1L
         };

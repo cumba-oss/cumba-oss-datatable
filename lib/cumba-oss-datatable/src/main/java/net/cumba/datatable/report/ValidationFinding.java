@@ -212,12 +212,8 @@ public class ValidationFinding
     public boolean hasRows()
     {
         RowFindingSlab s = getRows();
-        if (s.rowCount() == 0)
-        {
-            return false;
-        }
         // Sorted ascending, so the last entry is the maximum.
-        return s.rowIndexAt(s.rowCount() - 1) >= 0;
+        return s.rowCount() != 0 && s.rowIndexAt(s.rowCount() - 1) >= 0;
     }
 
 

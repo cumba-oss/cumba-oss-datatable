@@ -14,15 +14,15 @@ import net.cumba.sasutils.xpt.VariableXpt;
 public class XptVarParser
 {
 
-    private VariableXpt variable;
+    private final VariableXpt variable;
 
-    private VariableType type;
+    private final VariableType type;
 
-    private int length;
+    private final int length;
 
-    private int offset;
+    private final int offset;
 
-    private Charset charset;
+    private final Charset charset;
 
     /**
      * Create a new parser for the given XPT variable.

@@ -124,13 +124,13 @@ public class DataTableMetaSupport
     /**
      * The list of columns (as builders) that are already added to the table.
      */
-    private List<DataTableColumnMetaBuilder> columns = new ArrayList<>();
+    private final List<DataTableColumnMetaBuilder> columns = new ArrayList<>();
 
     /**
      * A set of column names of columns, already added. It is not allowed to have two columns with
      * the same name.
      */
-    private Set<String> columnNames = new HashSet<>();
+    private final Set<String> columnNames = new HashSet<>();
 
     /**
      * The builder for table metadata. This is created in {@link #setTable(URI, String)}.
@@ -330,7 +330,7 @@ public class DataTableMetaSupport
         }
         if (aSizeInBytes >= 0)
         {
-            tableMetaBuilder.addMetaData(META_KEY_DATASET_SIZE, Long.valueOf(aSizeInBytes));
+            tableMetaBuilder.addMetaData(META_KEY_DATASET_SIZE, aSizeInBytes);
         }
     }
 
@@ -462,7 +462,7 @@ public class DataTableMetaSupport
             throw new IllegalStateException("No table set!");
         }
 
-        DataTableColumnMeta[] metaCols = columns.stream().map(b -> b.build())
+        DataTableColumnMeta[] metaCols = columns.stream().map(DataTableColumnMetaBuilder::build)
                 .toArray(DataTableColumnMeta[]::new);
         tableMetaBuilder.columns(metaCols);
         return metaCols;

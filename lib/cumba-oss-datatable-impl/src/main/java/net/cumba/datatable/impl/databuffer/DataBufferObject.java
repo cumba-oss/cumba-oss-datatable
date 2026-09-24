@@ -101,7 +101,7 @@ public class DataBufferObject extends AbstractDataBuffer
     @Override
     public long getEstimatedMemoryBytes()
     {
-        long total = (long) size * 8L;
+        long total = size * 8L;
         for (int i = 0; i < size; i++)
         {
             @Nullable

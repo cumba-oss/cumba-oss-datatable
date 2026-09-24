@@ -131,9 +131,18 @@ public final class SyntheticDataTable implements IDataTable
                 if (numeric)
                 {
                     Double d = DEFAULT_NUMERIC_CYCLE[i];
-                    data[c][r] = d == null ? null
-                            : type == DataValueType.LONG ? (Object) Long.valueOf(d.longValue())
-                                    : (Object) d;
+                    if (d == null)
+                    {
+                        data[c][r] = null;
+                    }
+                    else if (type == DataValueType.LONG)
+                    {
+                        data[c][r] = d.longValue();
+                    }
+                    else
+                    {
+                        data[c][r] = d;
+                    }
                 }
                 else
                 {

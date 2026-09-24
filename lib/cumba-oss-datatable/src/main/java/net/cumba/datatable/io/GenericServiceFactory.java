@@ -80,7 +80,7 @@ public class GenericServiceFactory<S, P>
             String supClsName = supplierClass.getName();
             String resourceName = "META-INF/services/%s".formatted(supClsName);
             Enumeration<URL> infoEnum = getClass().getClassLoader().getResources(resourceName);
-            Set<String> clsNames = new LinkedHashSet<String>();
+            Set<String> clsNames = new LinkedHashSet<>();
             while (infoEnum.hasMoreElements())
             {
                 URL extUrl = infoEnum.nextElement();

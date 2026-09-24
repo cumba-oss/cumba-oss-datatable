@@ -96,10 +96,7 @@ public class BdatVarParser
         // TODO: unpack without copy — but NOT via a reusable instance field; see the class
         // javadoc. This method may run concurrently on one shared instance.
 
-        byte[] full = new byte[]
-        {
-                0, 0, 0, 0, 0, 0, 0, 0
-        };
+        byte[] full = new byte[8];
         if (byteOrder == ByteOrder.LITTLE_ENDIAN)
         {
             int subOffset = 8 - length;

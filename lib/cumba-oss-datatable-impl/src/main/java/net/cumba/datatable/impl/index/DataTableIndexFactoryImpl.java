@@ -227,10 +227,10 @@ public class DataTableIndexFactoryImpl extends DataTableIndexFactory
         public boolean matches(int aCandidateGroupId)
         {
             int repRow = groupRepRow[aCandidateGroupId];
-            for (int i = 0; i < colIds.length; i++)
+            for (int colId : colIds)
             {
-                if (!java.util.Objects.equals(table.getValue(repRow, colIds[i]),
-                        table.getValue(currentRow, colIds[i])))
+                if (!java.util.Objects.equals(table.getValue(repRow, colId),
+                        table.getValue(currentRow, colId)))
                 {
                     return false;
                 }

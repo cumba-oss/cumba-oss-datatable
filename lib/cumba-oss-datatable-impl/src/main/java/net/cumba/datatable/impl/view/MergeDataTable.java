@@ -221,9 +221,8 @@ public class MergeDataTable extends AbstractDataTable
         }
 
         int col = aColumn;
-        for (int i = 0; i < tables.length; i++)
+        for (IDataTable t : tables)
         {
-            IDataTable t = tables[i];
             int colCount = t.getColumnCount();
             if (col < colCount)
             {
@@ -246,9 +245,8 @@ public class MergeDataTable extends AbstractDataTable
         }
 
         int col = aColumn;
-        for (int i = 0; i < tables.length; i++)
+        for (IDataTable t : tables)
         {
-            IDataTable t = tables[i];
             int colCount = t.getColumnCount();
             if (col < colCount)
             {

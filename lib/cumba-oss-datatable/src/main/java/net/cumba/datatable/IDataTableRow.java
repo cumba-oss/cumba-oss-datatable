@@ -190,7 +190,8 @@ public interface IDataTableRow
     default List<@Nullable Object> getValues()
     {
         int colCount = getColumnCount();
-        return new GenericListView<@Nullable Object>(this::getValue, colCount);
+        List<@Nullable Object> view = new GenericListView<>(this::getValue, colCount);
+        return view;
     }
 
 

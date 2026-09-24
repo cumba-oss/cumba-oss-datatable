@@ -13,7 +13,7 @@ import net.cumba.datatable.view.IDataTableView;
 public class DefaultDataTableIndex implements IDataTableIndex
 {
 
-    private IDataTableView[] blocks;
+    private final IDataTableView[] blocks;
 
     public DefaultDataTableIndex(@NonNull IDataTableView[] aBlocks)
     {

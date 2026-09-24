@@ -70,7 +70,7 @@ public class OverlayDataTable extends AbstractDataTable
 
     private @Nullable DataTableMeta cachedMeta;
 
-    private boolean metaDirty = true;
+    private boolean metaDirty;
 
     /**
      * Creates a virtual empty table with the given name, label, and row count. The table starts

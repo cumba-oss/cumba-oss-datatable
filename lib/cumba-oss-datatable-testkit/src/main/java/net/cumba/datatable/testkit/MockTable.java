@@ -37,12 +37,6 @@ import org.jspecify.annotations.Nullable;
  * numeric SAS dates as numeric.
  * </p>
  */
-// Five static Mockito imports (mock / lenient / eq / anyLong / anyString) exceed PMD's default
-// TooManyStaticImports threshold of 4. They are the idiomatic Mockito spelling and the whole point
-// of a mock-building helper; spelling them Mockito.mock(...) throughout would be strictly less
-// readable. ⚠ Only visible since this class moved from a TEST tree to a MAIN one -- PMD, SpotBugs
-// and NullAway all analyse src/main only.
-@SuppressWarnings("PMD.TooManyStaticImports")
 public final class MockTable
 {
 

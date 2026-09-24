@@ -45,27 +45,11 @@ public final class FindingLocations
      */
     public static boolean isNonColumnToken(@Nullable String aToken)
     {
-        if (aToken == null || aToken.isBlank())
-        {
-            return true;
-        }
-        // SUB:DTHDTC and other prefixed derived refs.
-        if (aToken.indexOf(':') >= 0)
-        {
-            return true;
-        }
-        // RELREC.**TERM, DM.DTHDTC and other dataset-qualified cross references.
-        if (aToken.indexOf('.') >= 0)
-        {
-            return true;
-        }
-        // $scalar operation references.
-        if (aToken.charAt(0) == '$')
-        {
-            return true;
-        }
-        // ** / -- wildcard placeholders that never name a concrete column.
-        return aToken.indexOf('*') >= 0;
+        // Blank; SUB:DTHDTC and other prefixed derived refs; RELREC.**TERM, DM.DTHDTC and other
+        // dataset-qualified cross references; $scalar operation references; ** / -- wildcard
+        // placeholders that never name a concrete column.
+        return aToken == null || aToken.isBlank() || aToken.indexOf(':') >= 0
+                || aToken.indexOf('.') >= 0 || aToken.charAt(0) == '$' || aToken.indexOf('*') >= 0;
     }
 
 

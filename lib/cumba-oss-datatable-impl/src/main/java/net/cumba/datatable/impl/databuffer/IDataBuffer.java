@@ -97,12 +97,18 @@ public interface IDataBuffer
      * @throws IllegalArgumentException
      *             in case the given value can not be stored in this buffer.
      */
+    // The explicit boxing is load-bearing: it selects setValue(int, Object). Passing the primitive
+    // would resolve to this very overload and recurse forever.
+    @SuppressWarnings("PMD.UnnecessaryBoxing")
     default void setValue(int aIndex, double aValue) throws IllegalArgumentException
     {
         setValue(aIndex, Double.valueOf(aValue));
     }
 
 
+    // The explicit boxing is load-bearing: it selects setValue(int, Object). Passing the primitive
+    // would resolve to this very overload and recurse forever.
+    @SuppressWarnings("PMD.UnnecessaryBoxing")
     default void setValue(int aIndex, long aValue) throws IllegalArgumentException
     {
         setValue(aIndex, Long.valueOf(aValue));

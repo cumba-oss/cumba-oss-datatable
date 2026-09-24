@@ -86,7 +86,7 @@ public class DefineSupport
     @NonNull
     private final ODM odm;
 
-    private boolean namesCaseInsensitive = true;
+    private static final boolean NAMES_CASE_INSENSITIVE = true;
 
     /**
      * Create a new instance from the given file.
@@ -238,7 +238,7 @@ public class DefineSupport
 
     public Optional<ItemDef> getItemDefByName(@Nullable String aName)
     {
-        return getItemDefByName(aName, namesCaseInsensitive);
+        return getItemDefByName(aName, NAMES_CASE_INSENSITIVE);
     }
 
 
@@ -347,7 +347,7 @@ public class DefineSupport
 
     public Optional<ItemGroupDef> getItemGroupDefByName(@Nullable String aName)
     {
-        return getItemGroupDefByName(aName, namesCaseInsensitive);
+        return getItemGroupDefByName(aName, NAMES_CASE_INSENSITIVE);
     }
 
 
@@ -391,7 +391,7 @@ public class DefineSupport
 
     public Optional<ItemDef> getItemForName(@Nullable ItemGroupDef aGroup, @Nullable String aName)
     {
-        return getItemForName(aGroup, aName, namesCaseInsensitive);
+        return getItemForName(aGroup, aName, NAMES_CASE_INSENSITIVE);
     }
 
 

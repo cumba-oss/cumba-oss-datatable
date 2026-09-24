@@ -88,9 +88,9 @@ public class CsvTableProvider extends AbstractDataTableProvider
     @Override
     public DataTableMeta provideMetaData(URI aURI, @Nullable FileInfo aFileInfo) throws IOException
     {
-        try (InputStream in = aURI.toURL().openStream())
+        try (InputStream in = aURI.toURL().openStream();
+                BufferedInputStream bin = new BufferedInputStream(in, 65_536))
         {
-            BufferedInputStream bin = new BufferedInputStream(in, 65_536);
             CsvParserSettings ps = buildParserSettings(bin);
 
             CsvParser parser = new CsvParser(ps);
@@ -147,9 +147,9 @@ public class CsvTableProvider extends AbstractDataTableProvider
     @Override
     public IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo) throws IOException
     {
-        try (InputStream in = aURI.toURL().openStream())
+        try (InputStream in = aURI.toURL().openStream();
+                BufferedInputStream bin = new BufferedInputStream(in, 65_536))
         {
-            BufferedInputStream bin = new BufferedInputStream(in, 65_536);
             CsvParserSettings ps = buildParserSettings(bin);
 
             CsvParser parser = new CsvParser(ps);
@@ -350,9 +350,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
             {
                 boolean possiblyDouble = true;
                 boolean sawNumericEvidence = false;
-                for (int rowIdx = 0; rowIdx < aRowBlock.size(); rowIdx++)
+                for (CsvRecord row : aRowBlock)
                 {
-                    CsvRecord row = aRowBlock.get(rowIdx);
                     if (i >= row.getColumnCount())
                     {
                         // ⚠ Ragged row: this record does not reach column i at all. An ABSENT cell
@@ -473,10 +472,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
         protected void addData2Column(List<CsvRecord> aRowSlice, int aColumnIndex,
                 DataTableColumnMeta aMetaColumn, CachedDataTableColumn aDataColumn)
         {
-            for (int i = 0; i < aRowSlice.size(); i++)
+            for (CsvRecord row : aRowSlice)
             {
-                CsvRecord row = aRowSlice.get(i);
-
                 if (aColumnIndex >= row.getColumnCount())
                 {
                     // A CSV cannot express a null: a short row's absent character field is

@@ -297,7 +297,7 @@ public final class TestMetadataFixtures
 
         private final String name;
 
-        private DataValueType type = DataValueType.STRING;
+        private final DataValueType type = DataValueType.STRING;
 
         private @Nullable Boolean extensible;
 

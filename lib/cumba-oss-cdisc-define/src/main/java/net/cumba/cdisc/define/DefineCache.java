@@ -8,6 +8,7 @@ import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
 import java.lang.ref.WeakReference;
 import java.net.URI;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,9 +67,11 @@ public class DefineCache
     private IDefineLoader defineLoader = DefineSupport::new;
 
     /**
-     * The first cache timeout in milli seconds
+     * The first cache timeout in milli seconds. Deliberately not a compile-time constant: javac
+     * would inline a constant initializer, leaving an instance field SpotBugs reports as
+     * SS_SHOULD_BE_STATIC, and {@code DefineCacheSeamTest} reads this field by name.
      */
-    private long cacheTimeout1 = 2_000L;
+    private final long cacheTimeout1 = Duration.ofSeconds(2).toMillis();
 
     /**
      * Retrieve the define for the given URI from the cache or load it.

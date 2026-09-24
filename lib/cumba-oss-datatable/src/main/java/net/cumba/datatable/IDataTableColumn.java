@@ -248,7 +248,8 @@ public interface IDataTableColumn
     {
         long rcl = getRowCount();
         int rc = (rcl > Integer.MAX_VALUE) ? Integer.MAX_VALUE : Math.toIntExact(rcl);
-        return new GenericListView<@Nullable Object>(this::getValue, rc);
+        List<@Nullable Object> view = new GenericListView<>(this::getValue, rc);
+        return view;
     }
 
 
