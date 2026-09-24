@@ -203,8 +203,9 @@ class MetadataCacheLocatorTest
 
     /**
      * ⚠ The sibling of {@code DictionaryStoreLocatorTest.userStore_unusableUserHome…}:
-     * {@code user.home} is operator-settable through {@code databrowser.properties}, applied before
-     * the startup call that lands here, so an unparseable value must degrade rather than throw.
+     * {@code user.home} is operator-settable through the data browser's {@code databrowser.conf},
+     * which its launcher applies before {@code ViewerMain.main} reaches the startup call that lands
+     * here, so an unparseable value must degrade rather than throw.
      */
     @Test
     void defaultStore_unusableUserHomeFallsBackToTheWorkingDirectory()
