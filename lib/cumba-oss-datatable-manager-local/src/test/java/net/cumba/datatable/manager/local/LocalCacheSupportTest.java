@@ -30,6 +30,7 @@ import net.cumba.datatable.metadata.IMetadataLibrary;
 import net.cumba.datatable.values.DataValueType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -487,6 +488,9 @@ class LocalCacheSupportTest
 
     // fire-and-forget pool.submit; synchronised via the done CountDownLatch.
     @Test
+    // A deadlocked worker would make the pool's close() wait forever; the timeout turns that
+    // hang into a red test. SEPARATE_THREAD: interrupting close() alone would not end the wait.
+    @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     @SuppressWarnings("FutureReturnValueIgnored")
     void concurrentStoreAndLookup_isSafe() throws Exception
     {
