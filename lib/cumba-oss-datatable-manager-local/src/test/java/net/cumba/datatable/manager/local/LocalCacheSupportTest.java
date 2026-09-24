@@ -2,7 +2,6 @@ package net.cumba.datatable.manager.local;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,6 +13,8 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -498,6 +499,7 @@ class LocalCacheSupportTest
                 int writesPerWriter = 50;
                 CountDownLatch start = new CountDownLatch(1);
                 CountDownLatch done = new CountDownLatch(writers * 2);
+                Queue<Throwable> errors = new ConcurrentLinkedQueue<>();
                 for (int w = 0; w < writers; w++)
                 {
                     final int wid = w;
@@ -512,9 +514,9 @@ class LocalCacheSupportTest
                                 cache.storeTable(uri, simpleTable("t"), null, null, i);
                             }
                         }
-                        catch (Exception ignored)
+                        catch (Exception | Error e)
                         {
-                            // fall through
+                            errors.add(e);
                         }
                         finally
                         {
@@ -532,9 +534,9 @@ class LocalCacheSupportTest
                                 cache.findCachedTable(uri);
                             }
                         }
-                        catch (Exception ignored)
+                        catch (Exception | Error e)
                         {
-                            // fall through
+                            errors.add(e);
                         }
                         finally
                         {
@@ -544,15 +546,14 @@ class LocalCacheSupportTest
                 }
                 start.countDown();
                 assertTrue(done.await(10, TimeUnit.SECONDS), "workers stalled");
+                // A worker that threw must fail the test, not vanish into a swallowed catch.
+                assertTrue(errors.isEmpty(), () -> "worker failures: " + errors);
             }
             finally
             {
                 pool.shutdownNow();
             }
         }
-        // Spot-check: at least some entries survived without throwing.
-        // (Exact count depends on GC + cleanCache races, so we just assert no exception.)
-        assertNotNull(cache);
     }
 
     // ====================================================================

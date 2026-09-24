@@ -67,10 +67,6 @@ class AttributionTest
 
     private static final String ARTEFACTS = "attribution-artefacts.tsv";
 
-    /**
-     * Fails the build. Used instead of a JUnit assertion so this class is identical under JUnit 4
-     * and JUnit 5; only the {@code @Test} import differs between the modules that carry it.
-     */
     private static Path moduleDir()
     {
         String base = System.getProperty("projectBasedir");
