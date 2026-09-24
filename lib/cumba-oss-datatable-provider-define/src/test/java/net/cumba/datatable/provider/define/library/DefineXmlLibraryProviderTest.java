@@ -41,11 +41,12 @@ class DefineXmlLibraryProviderTest
     void testProvideLibraryMembersAlwaysReturnsEmpty() throws IOException
     {
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test"));
-
-        Stream<? extends ILibraryMember> result = provider.provideLibraryMembers(otherLib);
-        assertNotNull(result);
-        assertEquals(0, result.count());
+        try (IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test"));
+                Stream<? extends ILibraryMember> result = provider.provideLibraryMembers(otherLib))
+        {
+            assertNotNull(result);
+            assertEquals(0, result.count());
+        }
     }
 
     // ==================== provideLibraryMemberColumns ====================
@@ -67,22 +68,24 @@ class DefineXmlLibraryProviderTest
 
 
     @Test
-    void testGetLibraryAttributeWithNonDataBrowserLibrary()
+    void testGetLibraryAttributeWithNonDataBrowserLibrary() throws IOException
     {
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test"));
-
-        assertNull(provider.getLibraryAttribute(otherLib, "any-key"));
+        try (IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test")))
+        {
+            assertNull(provider.getLibraryAttribute(otherLib, "any-key"));
+        }
     }
 
 
     @Test
-    void testGetLibraryAttributeUnknownKey()
+    void testGetLibraryAttributeUnknownKey() throws IOException
     {
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test"));
-
-        assertNull(provider.getLibraryAttribute(otherLib, "unknown-key"));
+        try (IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test")))
+        {
+            assertNull(provider.getLibraryAttribute(otherLib, "unknown-key"));
+        }
     }
 
     // ==================== Name and Description ====================
@@ -176,7 +179,7 @@ class DefineXmlLibraryProviderTest
                 .thenReturn(java.util.Optional.empty());
 
         // Null entry — must be silently dropped, not NPE.
-        java.util.List<net.cumba.datatable.metadata.IDataTableMetadata> list = new java.util.ArrayList<>();
+        List<net.cumba.datatable.metadata.IDataTableMetadata> list = new java.util.ArrayList<>();
         list.add(real);
         list.add(null);
         org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(list);
@@ -193,7 +196,7 @@ class DefineXmlLibraryProviderTest
     {
         net.cumba.datatable.metadata.IMetadataLibrary metadata = org.mockito.Mockito
                 .mock(net.cumba.datatable.metadata.IMetadataLibrary.class);
-        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(java.util.List.of());
+        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(List.of());
 
         net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean[] sources = DefineXmlLibraryProvider
                 .buildSources(metadata);
@@ -291,7 +294,7 @@ class DefineXmlLibraryProviderTest
                 net.cumba.datatable.impl.provider.DataTableMetaSupport.META_KEY_ITEM_NO_DATA))
                 .thenReturn(java.util.Optional.of("No"));
 
-        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(java.util.List.of(dt));
+        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(List.of(dt));
 
         net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean[] sources = DefineXmlLibraryProvider
                 .buildSources(metadata);
@@ -313,7 +316,7 @@ class DefineXmlLibraryProviderTest
                 net.cumba.datatable.impl.provider.DataTableMetaSupport.META_KEY_ITEM_NO_DATA))
                 .thenReturn(java.util.Optional.of("Yes"));
 
-        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(java.util.List.of(dt));
+        org.mockito.Mockito.when(metadata.getDataTables()).thenReturn(List.of(dt));
 
         net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean[] sources = DefineXmlLibraryProvider
                 .buildSources(metadata);

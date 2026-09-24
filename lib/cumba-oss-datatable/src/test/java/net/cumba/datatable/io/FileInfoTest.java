@@ -141,7 +141,7 @@ class FileInfoTest
     // ==================== createCombined ====================
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testCreateCombinedSingleFileInfo()
     {
         FileInfo csv = FileInfo.createFor("csv", "CSV Files");
@@ -154,7 +154,7 @@ class FileInfoTest
     }
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testCreateCombinedMultipleFileInfos()
     {
         FileInfo csv = FileInfo.createFor("csv", "CSV Files");
@@ -170,7 +170,7 @@ class FileInfoTest
     }
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testCreateCombinedWithDescriptionPrefix()
     {
         FileInfo csv = FileInfo.createFor("csv", "CSV Files");
@@ -180,7 +180,7 @@ class FileInfoTest
     }
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testCreateCombinedWithBlankDescriptionPrefix()
     {
         FileInfo csv = FileInfo.createFor("csv", "CSV Files");
@@ -190,7 +190,7 @@ class FileInfoTest
     }
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testCreateCombinedTruncatesPastFive()
     {
         java.util.List<FileInfo> many = new java.util.ArrayList<>();
@@ -207,7 +207,7 @@ class FileInfoTest
     // ==================== findByFileName ====================
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testFindByFileNameMatch()
     {
         FileInfo csv = FileInfo.createFor("csv", "CSV");
@@ -219,7 +219,7 @@ class FileInfoTest
     }
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testFindByFileNameCaseInsensitive()
     {
         FileInfo csv = FileInfo.createFor("csv", "CSV");
@@ -247,7 +247,7 @@ class FileInfoTest
     }
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testFindByFileNameNullList()
     {
         // Separate from the parameterized cases: empty/missing FileInfo registry, not a
@@ -256,7 +256,7 @@ class FileInfoTest
     }
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testFindByFileNameFirstMatchWins()
     {
         FileInfo first = FileInfo.createFor("csv", "First CSV");
@@ -269,7 +269,7 @@ class FileInfoTest
     // ==================== UUID required ====================
 
 
-    @org.junit.jupiter.api.Test
+    @Test
     void testBuilderRequiresUuid()
     {
         // build() throws when uuid is null/blank — setters just store values, so the

@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  * JUnit 5 tests for the define package bean classes: - ItemGroupDef (Dataset definition) - ItemDef
  * (Variable definition) - ItemRef (Reference)
  */
-public class ItemGroupDefTest
+class ItemGroupDefTest
 {
 
     // ========================================================================
@@ -214,8 +214,8 @@ public class ItemGroupDefTest
             assertEquals("IT.AGE", itemDef.getOid());
             assertEquals("AGE", itemDef.getName());
             assertEquals("integer", itemDef.getDataType());
-            assertEquals(Integer.valueOf(3), itemDef.getLength());
-            assertEquals(Integer.valueOf(0), itemDef.getSignificantDigits());
+            assertEquals(3, itemDef.getLength());
+            assertEquals(0, itemDef.getSignificantDigits());
             assertEquals("AGE", itemDef.getSasFieldName());
             assertEquals("3.", itemDef.getDisplayFormat());
             assertEquals("COM.AGE", itemDef.getCommentOID());
@@ -262,8 +262,8 @@ public class ItemGroupDefTest
                     .label("Weight in kg").build();
 
             assertEquals("float", itemDef.getDataType());
-            assertEquals(Integer.valueOf(8), itemDef.getLength());
-            assertEquals(Integer.valueOf(2), itemDef.getSignificantDigits());
+            assertEquals(8, itemDef.getLength());
+            assertEquals(2, itemDef.getSignificantDigits());
             assertEquals("8.2", itemDef.getDisplayFormat());
         }
 
@@ -369,9 +369,9 @@ public class ItemGroupDefTest
                     .whereClauseRefs(Collections.singletonList(whereClauseRef)).build();
 
             assertEquals("IT.LBORRES", itemRef.getItemOID());
-            assertEquals(Integer.valueOf(5), itemRef.getOrderNumber());
+            assertEquals(5, itemRef.getOrderNumber());
             assertEquals("Yes", itemRef.getMandatory());
-            assertEquals(Integer.valueOf(3), itemRef.getKeySequence());
+            assertEquals(3, itemRef.getKeySequence());
             assertEquals("MT.LBORRES", itemRef.getMethodOID());
             assertEquals("Result Qualifier", itemRef.getRole());
             assertEquals("CL.ROLE", itemRef.getRoleCodeListOID());
@@ -407,9 +407,9 @@ public class ItemGroupDefTest
                     .mandatory("Yes").keySequence(2).build();
 
             assertEquals("IT.USUBJID", itemRef.getItemOID());
-            assertEquals(Integer.valueOf(2), itemRef.getOrderNumber());
+            assertEquals(2, itemRef.getOrderNumber());
             assertEquals("Yes", itemRef.getMandatory());
-            assertEquals(Integer.valueOf(2), itemRef.getKeySequence());
+            assertEquals(2, itemRef.getKeySequence());
         }
 
 
@@ -420,7 +420,7 @@ public class ItemGroupDefTest
                     .build();
 
             assertEquals("IT.AETERM", itemRef.getItemOID());
-            assertEquals(Integer.valueOf(10), itemRef.getOrderNumber());
+            assertEquals(10, itemRef.getOrderNumber());
             assertEquals("No", itemRef.getMandatory());
             assertNull(itemRef.getKeySequence());
         }
@@ -664,7 +664,7 @@ public class ItemGroupDefTest
 
             // Verify ItemRefs
             assertEquals("IT.STUDYID", itemGroupDef.getItemRefs().get(0).getItemOID());
-            assertEquals(Integer.valueOf(1), itemGroupDef.getItemRefs().get(0).getKeySequence());
+            assertEquals(1, itemGroupDef.getItemRefs().get(0).getKeySequence());
             assertEquals("Topic", itemGroupDef.getItemRefs().get(2).getRole());
         }
 
@@ -703,7 +703,7 @@ public class ItemGroupDefTest
             assertEquals("IT.LBORRES", itemDef.getOid());
             assertEquals("LBORRES", itemDef.getName());
             assertEquals("text", itemDef.getDataType());
-            assertEquals(Integer.valueOf(200), itemDef.getLength());
+            assertEquals(200, itemDef.getLength());
 
             // Verify nested structures
             assertNotNull(itemDef.getDescription());

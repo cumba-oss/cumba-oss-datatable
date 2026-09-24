@@ -2,6 +2,7 @@ package net.cumba.datatable.provider.sas.xpt.library;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
 import java.net.URI;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.values.DataValueType;
@@ -23,23 +24,25 @@ class XptLibraryMemberTest
 
 
     @Test
-    void testBuilderAllFields()
+    void testBuilderAllFields() throws IOException
     {
-        XptLibrary lib = createLibrary();
-        DataTableColumnMeta col = DataTableColumnMeta.builder().index(0).name("AGE")
-                .type(DataValueType.DOUBLE).build();
+        try (XptLibrary lib = createLibrary())
+        {
+            DataTableColumnMeta col = DataTableColumnMeta.builder().index(0).name("AGE")
+                    .type(DataValueType.DOUBLE).build();
 
-        XptLibraryMember member = XptLibraryMember.builder().library(lib).name("DM")
-                .label("Demographics").uri(MEMBER_URI).columns(new DataTableColumnMeta[]
-                {
-                        col
-                }).build();
+            XptLibraryMember member = XptLibraryMember.builder().library(lib).name("DM")
+                    .label("Demographics").uri(MEMBER_URI).columns(new DataTableColumnMeta[]
+                    {
+                            col
+                    }).build();
 
-        assertEquals("DM", member.getName());
-        assertEquals("Demographics", member.getLabel());
-        assertEquals(MEMBER_URI, member.getUri());
-        assertSame(lib, member.getLibrary());
-        assertEquals(1, member.getColumns().length);
+            assertEquals("DM", member.getName());
+            assertEquals("Demographics", member.getLabel());
+            assertEquals(MEMBER_URI, member.getUri());
+            assertSame(lib, member.getLibrary());
+            assertEquals(1, member.getColumns().length);
+        }
     }
 
 

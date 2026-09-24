@@ -38,7 +38,7 @@ class DefineCacheSeamTest
 
         private final Map<URI, Long> lastModified = new HashMap<>();
 
-        private long nowMs = 5_000_000L;
+        private final long nowMs = 5_000_000L;
 
         @Override
         protected long clock()

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.List;
@@ -78,13 +79,15 @@ class FolderMemberTest
 
 
     @Test
-    void testGetLibrary()
+    void testGetLibrary() throws IOException
     {
-        FolderLibrary lib = createLibrary(tempDir);
-        Path file = new File(tempDir, "data.csv").toPath();
-        FolderMember member = new FolderMember(lib, file);
+        try (FolderLibrary lib = createLibrary(tempDir))
+        {
+            Path file = new File(tempDir, "data.csv").toPath();
+            FolderMember member = new FolderMember(lib, file);
 
-        assertSame(lib, member.getLibrary());
+            assertSame(lib, member.getLibrary());
+        }
     }
 
     // ==================== getColumns ====================

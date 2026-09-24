@@ -13,7 +13,7 @@ class DataValueLongTest
     void testGetValue()
     {
         DataValueLong dv = new DataValueLong(42L);
-        assertEquals(Long.valueOf(42L), dv.getValue());
+        assertEquals(42L, dv.getValue());
     }
 
 

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 class ValidationFindingTest
@@ -23,11 +24,8 @@ class ValidationFindingTest
             return RowFindingSlab.EMPTY;
         }
         int vc = nameValuePairs.length / 2;
-        String[] values = new String[vc];
-        for (int i = 0; i < vc; i++)
-        {
-            values[i] = nameValuePairs[2 * i + 1];
-        }
+        String[] values = IntStream.range(0, vc).mapToObj(i -> nameValuePairs[2 * i + 1])
+                .toArray(String[]::new);
         return RowFindingSlab.builder(vc).addRow(rowIndex, values).build();
     }
 

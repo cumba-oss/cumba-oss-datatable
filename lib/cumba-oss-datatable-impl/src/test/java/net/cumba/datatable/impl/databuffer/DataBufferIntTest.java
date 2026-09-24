@@ -52,7 +52,7 @@ class DataBufferIntTest
     {
         buffer.setLongValue(0, 5);
         // getValue boxes into a Long, not an Integer.
-        assertEquals(Long.valueOf(5L), buffer.getValue(0));
+        assertEquals(5L, buffer.getValue(0));
     }
 
 
@@ -107,7 +107,7 @@ class DataBufferIntTest
     @Test
     void testSetValueNumberInRange()
     {
-        buffer.setValue(0, Integer.valueOf(1234));
+        buffer.setValue(0, (Object) 1234);
         assertEquals(1234L, buffer.getValue(0));
     }
 
@@ -125,15 +125,15 @@ class DataBufferIntTest
         assertTrue(buffer.canStore(null));
         assertTrue(buffer.canStore(MissingValue.MIS));
         assertTrue(buffer.canStore(true));
-        assertTrue(buffer.canStore(Integer.valueOf(10)));
+        assertTrue(buffer.canStore(10));
         assertTrue(buffer.canStore(Long.valueOf(Integer.MAX_VALUE)));
 
         assertFalse(buffer.canStore("not a number"));
         // Out of int range.
-        assertFalse(buffer.canStore(Long.valueOf((long) Integer.MAX_VALUE + 1)));
-        assertFalse(buffer.canStore(Long.valueOf((long) Integer.MIN_VALUE - 1)));
+        assertFalse(buffer.canStore((long) Integer.MAX_VALUE + 1));
+        assertFalse(buffer.canStore((long) Integer.MIN_VALUE - 1));
         // Has a fractional part.
-        assertFalse(buffer.canStore(Double.valueOf(1.5)));
+        assertFalse(buffer.canStore(1.5));
     }
 
 

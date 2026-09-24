@@ -1,6 +1,7 @@
 package net.cumba.cdisc.define;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,7 +76,7 @@ class DefineDomUtilTest
     {
         Document doc = parse();
         assertTrue(DefineDomUtil.hasNamespace(doc, DefineXmlConverter.DEF_NS_21));
-        assertTrue(!DefineDomUtil.hasNamespace(doc, DefineXmlConverter.DEF_NS_10));
+        assertFalse(DefineDomUtil.hasNamespace(doc, DefineXmlConverter.DEF_NS_10));
     }
 
 }

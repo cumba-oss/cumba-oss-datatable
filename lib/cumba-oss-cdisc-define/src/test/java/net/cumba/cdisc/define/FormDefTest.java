@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /**
  * JUnit 5 tests for bean classes in the net.cumba.datatable.define package.
  */
-public class FormDefTest
+class FormDefTest
 {
 
     @Nested
@@ -111,7 +111,7 @@ public class FormDefTest
                     .build();
 
             assertEquals("F.TEST", formRef.getFormOID());
-            assertEquals(Integer.valueOf(10), formRef.getOrderNumber());
+            assertEquals(10, formRef.getOrderNumber());
             assertEquals("Yes", formRef.getMandatory());
         }
 
@@ -130,8 +130,7 @@ public class FormDefTest
         @Test
         void testOrderNumberAsInteger()
         {
-            FormRef formRef = FormRef.builder().formOID("F.ORDER").orderNumber(Integer.valueOf(99))
-                    .build();
+            FormRef formRef = FormRef.builder().formOID("F.ORDER").orderNumber(99).build();
 
             assertEquals(99, formRef.getOrderNumber().intValue());
         }
@@ -149,7 +148,7 @@ public class FormDefTest
                     .mandatory("No").build();
 
             assertEquals("IG.TEST", ref.getItemGroupOID());
-            assertEquals(Integer.valueOf(5), ref.getOrderNumber());
+            assertEquals(5, ref.getOrderNumber());
             assertEquals("No", ref.getMandatory());
         }
 
@@ -241,7 +240,7 @@ public class FormDefTest
                     .mandatory("Yes").build();
 
             assertEquals("SE.TEST", ref.getStudyEventOID());
-            assertEquals(Integer.valueOf(15), ref.getOrderNumber());
+            assertEquals(15, ref.getOrderNumber());
             assertEquals("Yes", ref.getMandatory());
         }
 

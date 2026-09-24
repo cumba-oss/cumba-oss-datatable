@@ -65,7 +65,7 @@ class DataBufferDoubleTest
     @Test
     void testSetValueNumber()
     {
-        buffer.setValue(0, Integer.valueOf(7));
+        buffer.setValue(0, (Object) 7);
         assertEquals(7.0, buffer.getValue(0));
     }
 
@@ -73,7 +73,7 @@ class DataBufferDoubleTest
     @Test
     void testSetValueWholeLong()
     {
-        buffer.setValue(0, Long.valueOf(42L));
+        buffer.setValue(0, (Object) 42L);
         assertEquals(42.0, buffer.getValue(0));
     }
 
@@ -82,10 +82,10 @@ class DataBufferDoubleTest
     void testCanStore()
     {
         assertTrue(buffer.canStore(MissingValue.MIS));
-        assertTrue(buffer.canStore(Double.valueOf(1.5)));
-        assertTrue(buffer.canStore(Integer.valueOf(3)));
+        assertTrue(buffer.canStore(1.5));
+        assertTrue(buffer.canStore(3));
         // A long whose double value round-trips.
-        assertTrue(buffer.canStore(Long.valueOf(100L)));
+        assertTrue(buffer.canStore(100L));
 
         // A non-number cannot be stored.
         assertFalse(buffer.canStore("text"));
@@ -330,12 +330,12 @@ class DataBufferDoubleTest
     {
         DataBufferDouble buf = new DataBufferDouble();
 
-        assertTrue(buf.canStore(Long.valueOf(1L)));
+        assertTrue(buf.canStore(1L));
         // 2^53 + 1 has no exact double representation, so storing it would silently change the
         // value; the buffer must refuse it rather than round it
-        assertFalse(buf.canStore(Long.valueOf((1L << 53) + 1L)));
+        assertFalse(buf.canStore((1L << 53) + 1L));
         assertThrows(IllegalArgumentException.class,
-                () -> buf.setValue(0, Long.valueOf((1L << 53) + 1L)));
+                () -> buf.setValue(0, (Object) ((1L << 53) + 1L)));
     }
 
 }

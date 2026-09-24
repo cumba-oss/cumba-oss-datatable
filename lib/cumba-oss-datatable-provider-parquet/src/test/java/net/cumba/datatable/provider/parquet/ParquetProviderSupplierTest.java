@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
@@ -69,16 +70,8 @@ class ParquetProviderSupplierTest
         List<FileInfo> fis = ParquetProviderSupplier.FIS;
         assertNotNull(fis);
 
-        try
-        {
-            fis.add(FileInfo.createFor("csv", "CSV"));
-            // Should not reach here
-            assertTrue(false, "Expected UnsupportedOperationException");
-        }
-        catch (UnsupportedOperationException _)
-        {
-            // expected
-        }
+        FileInfo csv = FileInfo.createFor("csv", "CSV");
+        assertThrows(UnsupportedOperationException.class, () -> fis.add(csv));
     }
 
 

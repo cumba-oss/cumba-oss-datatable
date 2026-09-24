@@ -61,12 +61,13 @@ class DataBrowserLibraryProviderTest
         Path dblibFile = tempDir.resolve("test.dblib");
         Files.writeString(dblibFile, json);
 
-        IDataTableLibrary lib = provider.provide(dblibFile.toUri(), null);
-
-        assertNotNull(lib);
-        assertInstanceOf(DataBrowserLibrary.class, lib);
-        assertEquals("TestLib", lib.getName());
-        assertEquals("Test Library", lib.getLabel());
+        try (IDataTableLibrary lib = provider.provide(dblibFile.toUri(), null))
+        {
+            assertNotNull(lib);
+            assertInstanceOf(DataBrowserLibrary.class, lib);
+            assertEquals("TestLib", lib.getName());
+            assertEquals("Test Library", lib.getLabel());
+        }
     }
 
 
@@ -88,11 +89,14 @@ class DataBrowserLibraryProviderTest
         Path dblibFile = tempDir.resolve("test.dblib");
         Files.writeString(dblibFile, json);
 
-        DataBrowserLibrary lib = (DataBrowserLibrary) provider.provide(dblibFile.toUri(), null);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = (DataBrowserLibrary) provider.provide(dblibFile.toUri(),
+                null))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        assertEquals(1, members.size());
-        assertEquals("DM", members.get(0).getName());
+            assertEquals(1, members.size());
+            assertEquals("DM", members.get(0).getName());
+        }
     }
 
     // ==================== provideLibraryMembers ====================
@@ -112,11 +116,12 @@ class DataBrowserLibraryProviderTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"), bean);
-
-        Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(lib);
-
-        assertEquals(1, members.count());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"),
+                bean);
+                Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(lib))
+        {
+            assertEquals(1, members.count());
+        }
     }
 
 
@@ -124,7 +129,7 @@ class DataBrowserLibraryProviderTest
     void testProvideLibraryMembersWithNonDataBrowserLibrary() throws IOException
     {
         // Mock a non-DataBrowserLibrary
-        IDataTableLibrary otherLib = new IDataTableLibrary()
+        try (IDataTableLibrary otherLib = new IDataTableLibrary()
         {
 
             @Override
@@ -154,10 +159,14 @@ class DataBrowserLibraryProviderTest
                 return "other";
             }
 
-        };
-
-        Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(otherLib);
-        assertEquals(0, members.count());
+        })
+        {
+            try (Stream<? extends ILibraryMember> members = provider
+                    .provideLibraryMembers(otherLib))
+            {
+                assertEquals(0, members.count());
+            }
+        }
     }
 
     // ==================== provideLibraryMemberColumns ====================
@@ -184,20 +193,22 @@ class DataBrowserLibraryProviderTest
                         col1, col2, col3
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        List<? extends DataTableColumnMeta> columns = provider.provideLibraryMemberColumns(member)
-                .toList();
+            List<? extends DataTableColumnMeta> columns = provider
+                    .provideLibraryMemberColumns(member).toList();
 
-        assertEquals(2, columns.size());
-        assertEquals("SUBJID", columns.get(0).getName());
-        assertEquals("Subject ID", columns.get(0).getLabel());
-        assertEquals("$20.", columns.get(0).getDisplayFormat());
-        assertEquals(0, columns.get(0).getIndex());
-        assertEquals("AGE", columns.get(1).getName());
-        assertEquals("Age", columns.get(1).getLabel());
-        assertEquals(1, columns.get(1).getIndex());
+            assertEquals(2, columns.size());
+            assertEquals("SUBJID", columns.get(0).getName());
+            assertEquals("Subject ID", columns.get(0).getLabel());
+            assertEquals("$20.", columns.get(0).getDisplayFormat());
+            assertEquals(0, columns.get(0).getIndex());
+            assertEquals("AGE", columns.get(1).getName());
+            assertEquals("Age", columns.get(1).getLabel());
+            assertEquals(1, columns.get(1).getIndex());
+        }
     }
 
 
@@ -216,14 +227,16 @@ class DataBrowserLibraryProviderTest
                         null, col
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        List<? extends DataTableColumnMeta> columns = assertDoesNotThrow(
-                () -> provider.provideLibraryMemberColumns(member).toList());
+            List<? extends DataTableColumnMeta> columns = assertDoesNotThrow(
+                    () -> provider.provideLibraryMemberColumns(member).toList());
 
-        assertEquals(1, columns.size());
-        assertEquals("AGE", columns.get(0).getName());
+            assertEquals(1, columns.size());
+            assertEquals("AGE", columns.get(0).getName());
+        }
     }
 
 
@@ -245,14 +258,16 @@ class DataBrowserLibraryProviderTest
                         col
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        List<? extends DataTableColumnMeta> columns = provider.provideLibraryMemberColumns(member)
-                .toList();
+            List<? extends DataTableColumnMeta> columns = provider
+                    .provideLibraryMemberColumns(member).toList();
 
-        assertEquals(1, columns.size());
-        assertEquals("AGE", columns.get(0).getName());
+            assertEquals(1, columns.size());
+            assertEquals("AGE", columns.get(0).getName());
+        }
     }
 
 
@@ -272,15 +287,17 @@ class DataBrowserLibraryProviderTest
                         col
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        List<? extends DataTableColumnMeta> columns = provider.provideLibraryMemberColumns(member)
-                .toList();
+            List<? extends DataTableColumnMeta> columns = provider
+                    .provideLibraryMemberColumns(member).toList();
 
-        assertEquals(1, columns.size());
-        assertEquals("CRF", columns.get(0).getMetaData("origin"));
-        assertEquals("Identifier", columns.get(0).getMetaData("role"));
+            assertEquals(1, columns.size());
+            assertEquals("CRF", columns.get(0).getMetaData("origin"));
+            assertEquals("Identifier", columns.get(0).getMetaData("role"));
+        }
     }
 
 
@@ -292,13 +309,15 @@ class DataBrowserLibraryProviderTest
 
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib").build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        Stream<? extends DataTableColumnMeta> columns = provider
-                .provideLibraryMemberColumns(member);
+            Stream<? extends DataTableColumnMeta> columns = provider
+                    .provideLibraryMemberColumns(member);
 
-        assertEquals(0, columns.count());
+            assertEquals(0, columns.count());
+        }
     }
 
 
@@ -352,47 +371,48 @@ class DataBrowserLibraryProviderTest
         // Bean with no column metadata
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib").build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            // Set up mock metadata library
+            IColumnMetadata col1 = mock(IColumnMetadata.class);
+            when(col1.getName()).thenReturn("STUDYID");
+            when(col1.getLabel()).thenReturn("Study Identifier");
+            when(col1.getType()).thenReturn(DataValueType.STRING);
+            when(col1.getDisplayFormat()).thenReturn(null);
+            when(col1.getNativeType()).thenReturn("text");
+            when(col1.getIndex()).thenReturn(0);
+            when(col1.getLength()).thenReturn(20);
 
-        // Set up mock metadata library
-        IColumnMetadata col1 = mock(IColumnMetadata.class);
-        when(col1.getName()).thenReturn("STUDYID");
-        when(col1.getLabel()).thenReturn("Study Identifier");
-        when(col1.getType()).thenReturn(DataValueType.STRING);
-        when(col1.getDisplayFormat()).thenReturn(null);
-        when(col1.getNativeType()).thenReturn("text");
-        when(col1.getIndex()).thenReturn(0);
-        when(col1.getLength()).thenReturn(20);
+            IColumnMetadata col2 = mock(IColumnMetadata.class);
+            when(col2.getName()).thenReturn("AGE");
+            when(col2.getLabel()).thenReturn("Age");
+            when(col2.getType()).thenReturn(DataValueType.DOUBLE);
+            when(col2.getDisplayFormat()).thenReturn(null);
+            when(col2.getNativeType()).thenReturn("float");
+            when(col2.getIndex()).thenReturn(1);
+            when(col2.getLength()).thenReturn(8);
 
-        IColumnMetadata col2 = mock(IColumnMetadata.class);
-        when(col2.getName()).thenReturn("AGE");
-        when(col2.getLabel()).thenReturn("Age");
-        when(col2.getType()).thenReturn(DataValueType.DOUBLE);
-        when(col2.getDisplayFormat()).thenReturn(null);
-        when(col2.getNativeType()).thenReturn("float");
-        when(col2.getIndex()).thenReturn(1);
-        when(col2.getLength()).thenReturn(8);
+            IDataTableMetadata tableMeta = mock(IDataTableMetadata.class);
+            when(tableMeta.getColumns()).thenReturn(List.of(col1, col2));
 
-        IDataTableMetadata tableMeta = mock(IDataTableMetadata.class);
-        when(tableMeta.getColumns()).thenReturn(List.of(col1, col2));
+            IMetadataLibrary metadata = mock(IMetadataLibrary.class);
+            when(metadata.getDataTable("DM")).thenReturn(Optional.of(tableMeta));
 
-        IMetadataLibrary metadata = mock(IMetadataLibrary.class);
-        when(metadata.getDataTable("DM")).thenReturn(Optional.of(tableMeta));
+            lib.setMetadata(metadata);
 
-        lib.setMetadata(metadata);
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+            List<? extends DataTableColumnMeta> columns = provider
+                    .provideLibraryMemberColumns(member).toList();
 
-        List<? extends DataTableColumnMeta> columns = provider.provideLibraryMemberColumns(member)
-                .toList();
-
-        assertEquals(2, columns.size());
-        assertEquals("STUDYID", columns.get(0).getName());
-        assertEquals("Study Identifier", columns.get(0).getLabel());
-        assertEquals(DataValueType.STRING, columns.get(0).getType());
-        assertEquals(20, columns.get(0).getLength());
-        assertEquals("AGE", columns.get(1).getName());
-        assertEquals(DataValueType.DOUBLE, columns.get(1).getType());
+            assertEquals(2, columns.size());
+            assertEquals("STUDYID", columns.get(0).getName());
+            assertEquals("Study Identifier", columns.get(0).getLabel());
+            assertEquals(DataValueType.STRING, columns.get(0).getType());
+            assertEquals(20, columns.get(0).getLength());
+            assertEquals("AGE", columns.get(1).getName());
+            assertEquals(DataValueType.DOUBLE, columns.get(1).getType());
+        }
     }
 
 
@@ -404,61 +424,68 @@ class DataBrowserLibraryProviderTest
 
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib").build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            // Metadata present but no matching table
+            IMetadataLibrary metadata = mock(IMetadataLibrary.class);
+            when(metadata.getDataTable("DM")).thenReturn(Optional.empty());
+            lib.setMetadata(metadata);
 
-        // Metadata present but no matching table
-        IMetadataLibrary metadata = mock(IMetadataLibrary.class);
-        when(metadata.getDataTable("DM")).thenReturn(Optional.empty());
-        lib.setMetadata(metadata);
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+            Stream<? extends DataTableColumnMeta> columns = provider
+                    .provideLibraryMemberColumns(member);
 
-        Stream<? extends DataTableColumnMeta> columns = provider
-                .provideLibraryMemberColumns(member);
-
-        assertEquals(0, columns.count());
+            assertEquals(0, columns.count());
+        }
     }
 
     // ==================== getLibraryAttribute ====================
 
 
     @Test
-    void testGetLibraryAttributeReturnsNullForNoAttributes()
+    void testGetLibraryAttributeReturnsNullForNoAttributes() throws IOException
     {
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib").build();
-        DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"), bean);
-
-        assertNull(provider.getLibraryAttribute(lib, "anything"));
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"),
+                bean))
+        {
+            assertNull(provider.getLibraryAttribute(lib, "anything"));
+        }
     }
 
 
     @Test
-    void testGetLibraryAttributeReturnsValue()
+    void testGetLibraryAttributeReturnsValue() throws IOException
     {
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib")
                 .attributes(Map.of("study", "ABC-123", "sponsor", "Acme")).build();
-        DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"), bean);
-
-        assertEquals("ABC-123", provider.getLibraryAttribute(lib, "study"));
-        assertEquals("Acme", provider.getLibraryAttribute(lib, "sponsor"));
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"),
+                bean))
+        {
+            assertEquals("ABC-123", provider.getLibraryAttribute(lib, "study"));
+            assertEquals("Acme", provider.getLibraryAttribute(lib, "sponsor"));
+        }
     }
 
 
     @Test
-    void testGetLibraryAttributeReturnsNullForMissingKey()
+    void testGetLibraryAttributeReturnsNullForMissingKey() throws IOException
     {
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib")
                 .attributes(Map.of("study", "ABC-123")).build();
-        DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"), bean);
-
-        assertNull(provider.getLibraryAttribute(lib, "nonexistent"));
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(URI.create("file:///lib/test.dblib"),
+                bean))
+        {
+            assertNull(provider.getLibraryAttribute(lib, "nonexistent"));
+        }
     }
 
 
     @Test
-    void testGetLibraryAttributeReturnsNullForNonDataBrowserLibrary()
+    void testGetLibraryAttributeReturnsNullForNonDataBrowserLibrary() throws IOException
     {
-        IDataTableLibrary otherLib = new IDataTableLibrary()
+        try (IDataTableLibrary otherLib = new IDataTableLibrary()
         {
 
             @Override
@@ -488,8 +515,9 @@ class DataBrowserLibraryProviderTest
                 return "other";
             }
 
-        };
-
-        assertNull(provider.getLibraryAttribute(otherLib, "anything"));
+        })
+        {
+            assertNull(provider.getLibraryAttribute(otherLib, "anything"));
+        }
     }
 }

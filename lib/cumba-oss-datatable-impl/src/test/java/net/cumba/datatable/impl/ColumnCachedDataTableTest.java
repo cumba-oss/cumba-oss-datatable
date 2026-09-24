@@ -2,9 +2,9 @@ package net.cumba.datatable.impl;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
@@ -343,7 +343,7 @@ class ColumnCachedDataTableTest
         // Without scanner annotation, the flag must default to false on every column.
         for (int i = 0; i < orig.getMetaData().getColumnCount(); i++)
         {
-            assertTrue(!orig.getMetaData().getColumn(i).hasUnmappedFormatValues());
+            assertFalse(orig.getMetaData().getColumn(i).hasUnmappedFormatValues());
         }
     }
 }

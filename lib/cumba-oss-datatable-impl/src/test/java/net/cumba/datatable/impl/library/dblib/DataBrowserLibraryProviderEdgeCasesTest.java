@@ -51,8 +51,10 @@ class DataBrowserLibraryProviderEdgeCasesTest
         Path dblibFile = tempDir.resolve("t.dblib");
         Files.writeString(dblibFile, json);
 
-        IDataTableLibrary lib = provider.provide(dblibFile.toUri(), null);
-        assertNotNull(lib);
+        try (IDataTableLibrary lib = provider.provide(dblibFile.toUri(), null))
+        {
+            assertNotNull(lib);
+        }
     }
 
     // ============================================================
@@ -75,13 +77,15 @@ class DataBrowserLibraryProviderEdgeCasesTest
                         "missing.csv"
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean);
-        DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
 
-        // No internal column meta and the external table is missing → empty stream
-        List<? extends DataTableColumnMeta> cols = provider.provideLibraryMemberColumns(member)
-                .toList();
-        assertTrue(cols.isEmpty());
+            // No internal column meta and the external table is missing → empty stream
+            List<? extends DataTableColumnMeta> cols = provider.provideLibraryMemberColumns(member)
+                    .toList();
+            assertTrue(cols.isEmpty());
+        }
     }
 
     // ============================================================
@@ -96,10 +100,11 @@ class DataBrowserLibraryProviderEdgeCasesTest
         Path dblibFile = tempDir.resolve("t.dblib");
         Files.writeString(dblibFile, json);
 
-        IDataTableLibrary lib = provider.provide(dblibFile.toUri(), null);
-
-        // The stored name is resolved as the default library name
-        assertEquals("StoredName", lib.getName());
+        try (IDataTableLibrary lib = provider.provide(dblibFile.toUri(), null))
+        {
+            // The stored name is resolved as the default library name
+            assertEquals("StoredName", lib.getName());
+        }
     }
 
     // ============================================================

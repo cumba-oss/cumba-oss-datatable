@@ -329,20 +329,22 @@ class CdtProvidersTest
     {
         Path p = write(tmp, "study.cdt", MULTI);
         CdtLibraryProvider lp = new CdtLibraryProvider();
-        IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT);
-        assertTrue(lib instanceof CdtLibrary);
-        assertEquals("Cdt", lib.getType());
-        // Library name derived from the file name, upper-cased.
-        assertEquals("STUDY", lib.getName());
+        try (IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT))
+        {
+            assertTrue(lib instanceof CdtLibrary);
+            assertEquals("Cdt", lib.getType());
+            // Library name derived from the file name, upper-cased.
+            assertEquals("STUDY", lib.getName());
 
-        ILibraryMember[] members = lp.provideLibraryMembers(lib).toArray(ILibraryMember[]::new);
-        assertEquals(2, members.length);
-        assertEquals("DM", members[0].getName());
-        assertEquals("Demographics", members[0].getLabel());
-        assertEquals("AE", members[1].getName());
-        // Member URI carries the dataset name as the fragment.
-        assertEquals("DM", members[0].getUri().getFragment());
-        assertEquals(lib, members[0].getLibrary());
+            ILibraryMember[] members = lp.provideLibraryMembers(lib).toArray(ILibraryMember[]::new);
+            assertEquals(2, members.length);
+            assertEquals("DM", members[0].getName());
+            assertEquals("Demographics", members[0].getLabel());
+            assertEquals("AE", members[1].getName());
+            // Member URI carries the dataset name as the fragment.
+            assertEquals("DM", members[0].getUri().getFragment());
+            assertEquals(lib, members[0].getLibrary());
+        }
     }
 
 
@@ -351,19 +353,21 @@ class CdtProvidersTest
     {
         Path p = write(tmp, "study.cdt", MULTI);
         CdtLibraryProvider lp = new CdtLibraryProvider();
-        IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT);
-        ILibraryMember dm = lp.provideLibraryMembers(lib).filter(m -> "DM".equals(m.getName()))
-                .findFirst().orElseThrow();
+        try (IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT))
+        {
+            ILibraryMember dm = lp.provideLibraryMembers(lib).filter(m -> "DM".equals(m.getName()))
+                    .findFirst().orElseThrow();
 
-        DataTableColumnMeta[] cols = lp.provideLibraryMemberColumns(dm)
-                .toArray(DataTableColumnMeta[]::new);
-        assertEquals(2, cols.length);
-        assertEquals("USUBJID", cols[0].getName());
-        assertEquals("Subject", cols[0].getLabel());
-        assertEquals(DataValueType.STRING, cols[0].getType());
-        assertEquals(10, cols[0].getLength());
-        assertEquals("NO", cols[0].getMetaData(CdtTableBuilder.COLUMN_META_CODELIST));
-        assertEquals(DataValueType.DOUBLE, cols[1].getType());
+            DataTableColumnMeta[] cols = lp.provideLibraryMemberColumns(dm)
+                    .toArray(DataTableColumnMeta[]::new);
+            assertEquals(2, cols.length);
+            assertEquals("USUBJID", cols[0].getName());
+            assertEquals("Subject", cols[0].getLabel());
+            assertEquals(DataValueType.STRING, cols[0].getType());
+            assertEquals(10, cols[0].getLength());
+            assertEquals("NO", cols[0].getMetaData(CdtTableBuilder.COLUMN_META_CODELIST));
+            assertEquals(DataValueType.DOUBLE, cols[1].getType());
+        }
     }
 
 
@@ -372,8 +376,10 @@ class CdtProvidersTest
     {
         CdtLibraryProvider lp = new CdtLibraryProvider();
         // A non-CdtLibrary argument yields an empty stream rather than throwing.
-        IDataTableLibrary foreign = new IDataTableLibraryStub();
-        assertEquals(0, lp.provideLibraryMembers(foreign).count());
+        try (IDataTableLibrary foreign = new IDataTableLibraryStub())
+        {
+            assertEquals(0, lp.provideLibraryMembers(foreign).count());
+        }
     }
 
 

@@ -29,15 +29,16 @@ class DataBrowserLibraryTest
 
 
     @Test
-    void testConstructor()
+    void testConstructor() throws IOException
     {
         DataBrowserLibraryBean bean = createMinimalBean();
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-
-        assertEquals("TestLib", lib.getName());
-        assertEquals("Test Library", lib.getLabel());
-        assertEquals(LIB_URI, lib.getUri());
-        assertSame(bean, lib.getBean());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            assertEquals("TestLib", lib.getName());
+            assertEquals("Test Library", lib.getLabel());
+            assertEquals(LIB_URI, lib.getUri());
+            assertSame(bean, lib.getBean());
+        }
     }
 
 
@@ -62,20 +63,24 @@ class DataBrowserLibraryTest
 
 
     @Test
-    void testFileInfo()
+    void testFileInfo() throws IOException
     {
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, createMinimalBean());
-        assertSame(DataBrowserLibrarySupplier.FI_DBLIB, lib.getFileInfo());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, createMinimalBean()))
+        {
+            assertSame(DataBrowserLibrarySupplier.FI_DBLIB, lib.getFileInfo());
+        }
     }
 
     // ==================== getType ====================
 
 
     @Test
-    void testGetType()
+    void testGetType() throws IOException
     {
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, createMinimalBean());
-        assertEquals("databrowser", lib.getType());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, createMinimalBean()))
+        {
+            assertEquals("databrowser", lib.getType());
+        }
     }
 
     // ==================== getMembers empty ====================
@@ -84,10 +89,12 @@ class DataBrowserLibraryTest
     @Test
     void testGetMembersEmptyBean() throws IOException
     {
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, createMinimalBean());
-        Stream<DataBrowserMember> members = lib.getMembers();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, createMinimalBean()))
+        {
+            Stream<DataBrowserMember> members = lib.getMembers();
 
-        assertEquals(0, members.count());
+            assertEquals(0, members.count());
+        }
     }
 
 
@@ -97,8 +104,10 @@ class DataBrowserLibraryTest
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib")
                 .sources(new DataBrowserSourceBean[0]).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        assertEquals(0, lib.getMembers().count());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            assertEquals(0, lib.getMembers().count());
+        }
     }
 
     // ==================== getMembers with file source ====================
@@ -118,13 +127,15 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        assertEquals(1, members.size());
-        assertEquals("DM", members.get(0).getName());
-        assertEquals("Demographics", members.get(0).getLabel());
-        assertEquals(file.toUri(), members.get(0).getUri());
+            assertEquals(1, members.size());
+            assertEquals("DM", members.get(0).getName());
+            assertEquals("Demographics", members.get(0).getLabel());
+            assertEquals(file.toUri(), members.get(0).getUri());
+        }
     }
 
 
@@ -142,12 +153,14 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        assertEquals(1, members.size());
-        assertEquals("DEMOGRAPHICS", members.get(0).getName());
-        assertNull(members.get(0).getLabel());
+            assertEquals(1, members.size());
+            assertEquals("DEMOGRAPHICS", members.get(0).getName());
+            assertNull(members.get(0).getLabel());
+        }
     }
 
     // ==================== getMembers with directory source ====================
@@ -168,15 +181,17 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        // Should have 2 file members (subdir excluded), sorted by name
-        assertEquals(2, members.size());
-        assertEquals("AE", members.get(0).getName());
-        assertNull(members.get(0).getLabel());
-        assertEquals("DM", members.get(1).getName());
-        assertNull(members.get(1).getLabel());
+            // Should have 2 file members (subdir excluded), sorted by name
+            assertEquals(2, members.size());
+            assertEquals("AE", members.get(0).getName());
+            assertNull(members.get(0).getLabel());
+            assertEquals("DM", members.get(1).getName());
+            assertNull(members.get(1).getLabel());
+        }
     }
 
     // ==================== getMembers with non-existing path ====================
@@ -193,10 +208,12 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        assertEquals(0, members.size());
+            assertEquals(0, members.size());
+        }
     }
 
     // ==================== getMembers with non-file URI ====================
@@ -213,13 +230,15 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        assertEquals(1, members.size());
-        assertEquals("AE", members.get(0).getName());
-        assertEquals("Adverse Events", members.get(0).getLabel());
-        assertEquals(URI.create("https://example.com/data/ae.csv"), members.get(0).getUri());
+            assertEquals(1, members.size());
+            assertEquals("AE", members.get(0).getName());
+            assertEquals("Adverse Events", members.get(0).getLabel());
+            assertEquals(URI.create("https://example.com/data/ae.csv"), members.get(0).getUri());
+        }
     }
 
 
@@ -234,11 +253,13 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        assertEquals(1, members.size());
-        assertEquals(uri, members.get(0).getName());
+            assertEquals(1, members.size());
+            assertEquals(uri, members.get(0).getName());
+        }
     }
 
     // ==================== getMembers mixed sources ====================
@@ -263,13 +284,15 @@ class DataBrowserLibraryTest
                         fileSrc, nonExist, httpSrc
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = lib.getMembers().toList();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = lib.getMembers().toList();
 
-        // Non-existing silently skipped, remaining 2 sorted by name
-        assertEquals(2, members.size());
-        assertEquals("DM", members.get(0).getName());
-        assertEquals("VS", members.get(1).getName());
+            // Non-existing silently skipped, remaining 2 sorted by name
+            assertEquals(2, members.size());
+            assertEquals("DM", members.get(0).getName());
+            assertEquals("VS", members.get(1).getName());
+        }
     }
 
     // ==================== Dynamic re-evaluation ====================
@@ -286,24 +309,25 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            // Initially empty directory
+            assertEquals(0, lib.getMembers().count());
 
-        // Initially empty directory
-        assertEquals(0, lib.getMembers().count());
+            // Add a file
+            Files.writeString(tempDir.resolve("dm.csv"), "test");
+            assertEquals(1, lib.getMembers().count());
 
-        // Add a file
-        Files.writeString(tempDir.resolve("dm.csv"), "test");
-        assertEquals(1, lib.getMembers().count());
+            // Add another file
+            Files.writeString(tempDir.resolve("ae.csv"), "test");
+            assertEquals(2, lib.getMembers().count());
 
-        // Add another file
-        Files.writeString(tempDir.resolve("ae.csv"), "test");
-        assertEquals(2, lib.getMembers().count());
-
-        // Remove a file
-        Files.delete(tempDir.resolve("dm.csv"));
-        List<DataBrowserMember> members = lib.getMembers().toList();
-        assertEquals(1, members.size());
-        assertEquals("AE", members.get(0).getName());
+            // Remove a file
+            Files.delete(tempDir.resolve("dm.csv"));
+            List<DataBrowserMember> members = lib.getMembers().toList();
+            assertEquals(1, members.size());
+            assertEquals("AE", members.get(0).getName());
+        }
     }
 
     // ==================== getMembers with invalid URI ====================
@@ -320,8 +344,10 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        assertEquals(0, lib.getMembers().count());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            assertEquals(0, lib.getMembers().count());
+        }
     }
 
     // ==================== Members are DataBrowserMember instances ====================
@@ -340,10 +366,12 @@ class DataBrowserLibraryTest
                         source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        ILibraryMember member = lib.getMembers().findFirst().orElseThrow();
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            ILibraryMember member = lib.getMembers().findFirst().orElseThrow();
 
-        assertInstanceOf(DataBrowserMember.class, member);
+            assertInstanceOf(DataBrowserMember.class, member);
+        }
     }
 
 
@@ -362,10 +390,12 @@ class DataBrowserLibraryTest
                         null, source
                 }).build();
 
-        DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean);
-        List<DataBrowserMember> members = assertDoesNotThrow(() -> lib.getMembers().toList());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(LIB_URI, bean))
+        {
+            List<DataBrowserMember> members = assertDoesNotThrow(() -> lib.getMembers().toList());
 
-        assertEquals(1, members.size());
-        assertEquals("DM", members.get(0).getName());
+            assertEquals(1, members.size());
+            assertEquals("DM", members.get(0).getName());
+        }
     }
 }

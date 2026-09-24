@@ -212,11 +212,9 @@ class DsjTableProviderParallelTest
             assertEquals(refDisplay, parDisplay, "display index diverges for real row " + real);
             // J2: an integer-declared column (FILEORDER) is stored as a floating-point value
             // (getTypeFor(INTEGER) -> DOUBLE), so getValue returns a Double, not a Long.
-            assertEquals(Double.valueOf((double) real),
-                    reference.getValue(refDisplay, fileOrderColIdx),
+            assertEquals((double) real, reference.getValue(refDisplay, fileOrderColIdx),
                     "reference: FILEORDER@real=" + real + " is not " + real);
-            assertEquals(Double.valueOf((double) real),
-                    parallel.getValue(parDisplay, fileOrderColIdx),
+            assertEquals((double) real, parallel.getValue(parDisplay, fileOrderColIdx),
                     "parallel: FILEORDER@real=" + real + " is not " + real);
         }
 

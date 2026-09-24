@@ -74,16 +74,16 @@ class DataBufferLongTest
     {
         assertTrue(buffer.canStore(null));
         assertTrue(buffer.canStore(MissingValue.MIS));
-        assertTrue(buffer.canStore(Long.valueOf(42L)));
+        assertTrue(buffer.canStore(42L));
         // Integer fits because its double value equals its long value.
-        assertTrue(buffer.canStore(Integer.valueOf(42)));
+        assertTrue(buffer.canStore(42));
         // A whole-number double is storable.
-        assertTrue(buffer.canStore(Double.valueOf(5.0)));
+        assertTrue(buffer.canStore(5.0));
 
         // Non-number rejected.
         assertFalse(buffer.canStore("nope"));
         // Fractional double rejected.
-        assertFalse(buffer.canStore(Double.valueOf(5.5)));
+        assertFalse(buffer.canStore(5.5));
     }
 
 
@@ -107,7 +107,7 @@ class DataBufferLongTest
     @Test
     void testSetValueRejectsFractionalDouble()
     {
-        assertThrows(IllegalArgumentException.class, () -> buffer.setValue(0, Double.valueOf(1.1)));
+        assertThrows(IllegalArgumentException.class, () -> buffer.setValue(0, (Object) 1.1));
     }
 
 
@@ -187,7 +187,7 @@ class DataBufferLongTest
     {
         for (int i = 0; i < 1000; i++)
         {
-            buffer.setLongValue(i, (long) i * 1_000_000_000L);
+            buffer.setLongValue(i, i * 1_000_000_000L);
         }
         assertEquals(1000, buffer.size());
         assertEquals(999_000_000_000L, buffer.getValue(999));

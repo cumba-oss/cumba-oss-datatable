@@ -127,15 +127,16 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
-
-        assertNotNull(lib);
-        DataBrowserLibrary dbLib = assertInstanceOf(DataBrowserLibrary.class, lib);
-        assertEquals("STUDY-B - SDTM-IG 3.4", dbLib.getName());
-        assertEquals(1, dbLib.getBean().getSources().length);
-        assertEquals("DM", dbLib.getBean().getSources()[0].getName());
-        // no validation-report supplemental doc → no attribute
-        assertNull(dbLib.getBean().getAttributes());
+        try (IDataTableLibrary lib = provider.provide(uri, null))
+        {
+            assertNotNull(lib);
+            assertInstanceOf(DataBrowserLibrary.class, lib);
+            assertEquals("STUDY-B - SDTM-IG 3.4", lib.getName());
+            assertEquals(1, ((DataBrowserLibrary) lib).getBean().getSources().length);
+            assertEquals("DM", ((DataBrowserLibrary) lib).getBean().getSources()[0].getName());
+            // no validation-report supplemental doc → no attribute
+            assertNull(((DataBrowserLibrary) lib).getBean().getAttributes());
+        }
     }
 
 
@@ -152,11 +153,11 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
-
-        DataBrowserLibrary dbLib = (DataBrowserLibrary) lib;
-        assertEquals(1, dbLib.getBean().getSources().length);
-        assertEquals("A", dbLib.getBean().getSources()[0].getName());
+        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        {
+            assertEquals(1, dbLib.getBean().getSources().length);
+            assertEquals("A", dbLib.getBean().getSources()[0].getName());
+        }
     }
 
 
@@ -172,11 +173,11 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
-
-        DataBrowserLibrary dbLib = (DataBrowserLibrary) lib;
-        assertEquals(1, dbLib.getBean().getSources().length);
-        assertEquals("A", dbLib.getBean().getSources()[0].getName());
+        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        {
+            assertEquals(1, dbLib.getBean().getSources().length);
+            assertEquals("A", dbLib.getBean().getSources()[0].getName());
+        }
     }
 
 
@@ -191,8 +192,10 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
-        assertEquals("PLAIN-STUDY", lib.getName());
+        try (IDataTableLibrary lib = provider.provide(uri, null))
+        {
+            assertEquals("PLAIN-STUDY", lib.getName());
+        }
     }
 
 
@@ -207,8 +210,10 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
-        assertEquals("S - SDTM-IG", lib.getName());
+        try (IDataTableLibrary lib = provider.provide(uri, null))
+        {
+            assertEquals("S - SDTM-IG", lib.getName());
+        }
     }
 
     // ==================== Validation report discovery ====================
@@ -227,19 +232,19 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
+        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        {
+            Map<String, String> attrs = dbLib.getBean().getAttributes();
+            assertNotNull(attrs);
+            String reportUri = attrs.get(ILibraryProvider.ATTRIBUTE_VALIDATION_REPORT);
+            assertNotNull(reportUri);
+            assertTrue(reportUri.endsWith("p21-report.xlsx"), reportUri);
 
-        DataBrowserLibrary dbLib = (DataBrowserLibrary) lib;
-        Map<String, String> attrs = dbLib.getBean().getAttributes();
-        assertNotNull(attrs);
-        String reportUri = attrs.get(ILibraryProvider.ATTRIBUTE_VALIDATION_REPORT);
-        assertNotNull(reportUri);
-        assertTrue(reportUri.endsWith("p21-report.xlsx"), reportUri);
-
-        // and exposed via getLibraryAttribute as well
-        Object lookup = provider.getLibraryAttribute(lib,
-                ILibraryProvider.ATTRIBUTE_VALIDATION_REPORT);
-        assertEquals(reportUri, lookup);
+            // and exposed via getLibraryAttribute as well
+            Object lookup = provider.getLibraryAttribute(dbLib,
+                    ILibraryProvider.ATTRIBUTE_VALIDATION_REPORT);
+            assertEquals(reportUri, lookup);
+        }
     }
 
 
@@ -261,10 +266,10 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
-
-        DataBrowserLibrary dbLib = (DataBrowserLibrary) lib;
-        assertNull(dbLib.getBean().getAttributes());
+        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        {
+            assertNull(dbLib.getBean().getAttributes());
+        }
     }
 
 
@@ -308,8 +313,9 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        IDataTableLibrary lib = provider.provide(uri, null);
-
-        assertNull(provider.getLibraryAttribute(lib, "any-key"));
+        try (IDataTableLibrary lib = provider.provide(uri, null))
+        {
+            assertNull(provider.getLibraryAttribute(lib, "any-key"));
+        }
     }
 }

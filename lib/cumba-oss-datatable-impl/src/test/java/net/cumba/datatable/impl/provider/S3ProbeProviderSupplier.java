@@ -26,6 +26,9 @@ import net.cumba.datatable.provider.IProviderSupplier;
  * assert that the factory has cleared {@code metadata} after a failed probe — without needing
  * reflection into the factory's internals.
  */
+// The service loader instantiates this supplier reflectively, so the tests can only steer it
+// through static control fields; reset() restores them before each test.
+@SuppressWarnings("PMD.MutableStaticState")
 public class S3ProbeProviderSupplier implements IProviderSupplier
 {
 
@@ -70,12 +73,6 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
         successMeta = null;
         throwOnSetters = false;
         LAST_PROVIDER.set(null);
-    }
-
-
-    public S3ProbeProviderSupplier()
-    {
-        // required by the service-loader-style createSupplier mechanism
     }
 
 

@@ -40,7 +40,7 @@ class BdatTableProviderReadTest
         // The metadata row count must agree with the streamed row count.
         assertEquals(table.getRowCount(), table.getMetaData().getRowCount());
         // Reading a value through the populated column must not throw.
-        assertTrue(table.getColumnCount() == table.getMetaData().getColumnCount());
+        assertEquals(table.getMetaData().getColumnCount(), table.getColumnCount());
         table.getValue(0, 0);
     }
 

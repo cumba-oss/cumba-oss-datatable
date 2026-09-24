@@ -133,8 +133,7 @@ class CdtWriterForeignValueTest
         // double would not.
         assertTrue(body(foreignTable(DataValueType.DOUBLE, null, new BigDecimal("0.10"))).contains(
                 "0.10"), "a non-Double Number must be written through its own toString()");
-        assertTrue(
-                body(foreignTable(DataValueType.DOUBLE, null, Integer.valueOf(42))).contains("42"),
+        assertTrue(body(foreignTable(DataValueType.DOUBLE, null, 42)).contains("42"),
                 "an Integer cell must be written as 42");
     }
 

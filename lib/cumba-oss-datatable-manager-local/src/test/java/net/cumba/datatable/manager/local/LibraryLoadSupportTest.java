@@ -117,10 +117,12 @@ class LibraryLoadSupportTest
 
 
     @Test
-    void getURI_library_returnsLibraryUri()
+    void getURI_library_returnsLibraryUri() throws IOException
     {
-        FolderLibrary lib = new FolderLibrary(tempDir);
-        assertEquals(tempDir.toURI(), support.getURI(lib));
+        try (FolderLibrary lib = new FolderLibrary(tempDir))
+        {
+            assertEquals(tempDir.toURI(), support.getURI(lib));
+        }
     }
 
 
@@ -145,6 +147,8 @@ class LibraryLoadSupportTest
 
 
     @Test
+    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    @SuppressWarnings("PMD.CloseResource")
     void getLibrary_directory_loadsFolderLibrary() throws IOException
     {
         IDataTableLibrary lib = support.getLibrary(tempDir.toURI(), null);
@@ -155,6 +159,8 @@ class LibraryLoadSupportTest
 
 
     @Test
+    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    @SuppressWarnings("PMD.CloseResource")
     void getLibrary_secondCall_returnsCachedInstance() throws IOException
     {
         IDataTableLibrary first = support.getLibrary(tempDir.toURI(), null);
@@ -191,22 +197,26 @@ class LibraryLoadSupportTest
     {
         writeCsv("dm.csv", "ID\n1\n");
         writeCsv("ae.csv", "ID\n2\n");
-        FolderLibrary lib = new FolderLibrary(tempDir);
-        List<String> names = support.getLibraryMembers(lib).map(ILibraryMember::getName)
-                .collect(Collectors.toList());
-        assertTrue(names.contains("DM"), names.toString());
-        assertTrue(names.contains("AE"), names.toString());
-        assertEquals(2, names.size());
+        try (FolderLibrary lib = new FolderLibrary(tempDir))
+        {
+            List<String> names = support.getLibraryMembers(lib).map(ILibraryMember::getName)
+                    .collect(Collectors.toList());
+            assertTrue(names.contains("DM"), names.toString());
+            assertTrue(names.contains("AE"), names.toString());
+            assertEquals(2, names.size());
+        }
     }
 
 
     @Test
-    void getLibraryMembers_nonFolderLibrary_isEmpty()
+    void getLibraryMembers_nonFolderLibrary_isEmpty() throws IOException
     {
-        IDataTableLibrary foreign = new StubLibrary(tempDir.toURI());
-        // No folder provider matches a non-FolderLibrary instance whose URI is a directory:
-        // the FolderLibraryProvider returns an empty stream for foreign library types.
-        assertEquals(0L, support.getLibraryMembers(foreign).count());
+        try (IDataTableLibrary foreign = new StubLibrary(tempDir.toURI()))
+        {
+            // No folder provider matches a non-FolderLibrary instance whose URI is a directory:
+            // the FolderLibraryProvider returns an empty stream for foreign library types.
+            assertEquals(0L, support.getLibraryMembers(foreign).count());
+        }
     }
 
     // ------------------------------------------------------------------
@@ -240,6 +250,8 @@ class LibraryLoadSupportTest
 
 
     @Test
+    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    @SuppressWarnings("PMD.CloseResource")
     void getMetadataLibrary_cachedMetadataWins() throws IOException
     {
         IDataTableLibrary lib = support.getLibrary(tempDir.toURI(), null);
@@ -251,6 +263,8 @@ class LibraryLoadSupportTest
 
 
     @Test
+    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    @SuppressWarnings("PMD.CloseResource")
     void getMetadataLibrary_fallsBackToAdapterWhenNothingAttached() throws IOException
     {
         IDataTableLibrary lib = support.getLibrary(tempDir.toURI(), null);

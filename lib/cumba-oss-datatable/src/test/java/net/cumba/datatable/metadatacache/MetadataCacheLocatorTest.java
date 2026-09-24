@@ -34,6 +34,8 @@ class MetadataCacheLocatorTest
                     + "</dependency\\.cdisc-rules-engine-cache\\.tag>");
 
     /** Environment lookup that reports nothing set — a JVM cannot change its own environment. */
+    // The parameter gives this the shape of the env-lookup function the locator takes.
+    @SuppressWarnings("PMD.UnusedFormalParameter")
     private static @Nullable String noEnv(String aName)
     {
         return null;
@@ -292,7 +294,7 @@ class MetadataCacheLocatorTest
         Matcher matcher = POM_CACHE_TAG.matcher(Files.readString(rootPom));
         assertTrue(matcher.find(), "the repo root pom (" + rootPom.toAbsolutePath()
                 + ") must record the cache pin beside <dependency.corej-rules.tag>");
-        assertEquals(matcher.group(1), MetadataCacheLocator.DEFAULT_CACHE_REF,
+        assertEquals(MetadataCacheLocator.DEFAULT_CACHE_REF, matcher.group(1),
                 "bump MetadataCacheLocator.DEFAULT_CACHE_REF and the root pom's "
                         + "<dependency.cdisc-rules-engine-cache.tag> together");
     }

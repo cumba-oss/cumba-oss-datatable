@@ -1,5 +1,6 @@
 package net.cumba.datatable.provider.dsj;
 
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -102,7 +103,7 @@ class DsjTableProviderLoggingTest
         DsjTableProvider provider = new DsjTableProvider();
         ColumnDataType result = provider.getColumnDataTypeFor("not-a-real-type");
 
-        assertTrue(result == ColumnDataType.OTHER);
+        assertSame(ColumnDataType.OTHER, result);
         assertTrue(anyRecordContains("Found unexpected data type: not-a-real-type"));
     }
 
@@ -115,7 +116,7 @@ class DsjTableProviderLoggingTest
         DsjTableProvider provider = new DsjTableProvider();
         ColumnTargetDataType result = provider.getColumnTargetDataTypeFor("not-a-real-target");
 
-        assertTrue(result == ColumnTargetDataType.OTHER);
+        assertSame(ColumnTargetDataType.OTHER, result);
         assertTrue(anyRecordContains("Found unexpected target data type: not-a-real-target"));
     }
 

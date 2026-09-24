@@ -90,11 +90,6 @@ class DataBufferFactoryTest
     public static final class StubFactory implements DataBufferFactory
     {
 
-        public StubFactory()
-        {
-        }
-
-
         @Override
         public IDataBuffer createColumnBuffer(DataValueType aType)
         {

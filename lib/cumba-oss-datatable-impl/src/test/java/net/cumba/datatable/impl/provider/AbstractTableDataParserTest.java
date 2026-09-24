@@ -82,9 +82,9 @@ class AbstractTableDataParserTest
 
 
         @Override
-        public java.util.List<net.cumba.datatable.io.FileInfo> getSupportedFileInfos()
+        public List<net.cumba.datatable.io.FileInfo> getSupportedFileInfos()
         {
-            return java.util.List.of();
+            return List.of();
         }
 
 
@@ -97,7 +97,7 @@ class AbstractTableDataParserTest
 
 
         @Override
-        public net.cumba.datatable.DataTableMeta provideMetaData(java.net.URI aUri,
+        public DataTableMeta provideMetaData(java.net.URI aUri,
                 net.cumba.datatable.io.FileInfo aFileInfo)
             throws IOException
         {

@@ -59,8 +59,7 @@ class DsjTableProviderMetadataAssertionsTest
 
         assertEquals("DATASET-JSON", meta.getMetaData(DataTableMetaSupport.META_KEY_FILE_FORMAT),
                 "provide() must record the DATASET-JSON file_format metadata key");
-        assertEquals(Long.valueOf(expectedSize),
-                meta.getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE),
+        assertEquals(expectedSize, meta.getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE),
                 "provide() must record the actual on-disk size as dataset_size metadata");
     }
 
@@ -77,8 +76,7 @@ class DsjTableProviderMetadataAssertionsTest
 
         assertEquals("DATASET-JSON", meta.getMetaData(DataTableMetaSupport.META_KEY_FILE_FORMAT),
                 "provideMetaData() must record the DATASET-JSON file_format metadata key");
-        assertEquals(Long.valueOf(expectedSize),
-                meta.getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE),
+        assertEquals(expectedSize, meta.getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE),
                 "provideMetaData() must record the actual on-disk size as dataset_size metadata");
     }
 

@@ -10,7 +10,7 @@ import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-public class MethodDefTest
+class MethodDefTest
 {
 
     // =========================================================================
@@ -190,8 +190,8 @@ public class MethodDefTest
 
             assertEquals("10-20", pageRef.getPageRefs());
             assertEquals("PhysicalRef", pageRef.getType());
-            assertEquals(Integer.valueOf(10), pageRef.getFirstPage());
-            assertEquals(Integer.valueOf(20), pageRef.getLastPage());
+            assertEquals(10, pageRef.getFirstPage());
+            assertEquals(20, pageRef.getLastPage());
             assertEquals("Section A", pageRef.getTitle());
         }
 
@@ -216,8 +216,8 @@ public class MethodDefTest
                     .lastPage(5).build();
 
             assertEquals("5", pageRef.getPageRefs());
-            assertEquals(Integer.valueOf(5), pageRef.getFirstPage());
-            assertEquals(Integer.valueOf(5), pageRef.getLastPage());
+            assertEquals(5, pageRef.getFirstPage());
+            assertEquals(5, pageRef.getLastPage());
         }
     }
 
@@ -500,7 +500,7 @@ public class MethodDefTest
             assertNotNull(pageRefs);
             assertEquals(1, pageRefs.size());
             assertEquals("1-10", pageRefs.get(0).getPageRefs());
-            assertEquals(Integer.valueOf(1), pageRefs.get(0).getFirstPage());
+            assertEquals(1, pageRefs.get(0).getFirstPage());
         }
 
 

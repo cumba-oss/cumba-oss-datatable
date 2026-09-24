@@ -22,7 +22,6 @@ import net.cumba.datatable.values.DataValueType;
 import net.cumba.sasutils.VariableType;
 import net.cumba.sasutils.xpt.VariableXpt;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class XptLibraryProviderTest
@@ -110,11 +109,12 @@ class XptLibraryProviderTest
 
 
     @Test
-    @Disabled("Requires a mock VariableXpt — behaviour is covered indirectly via integration tests")
-    void testGetFullFormatNameReturnsNullWhenNoFormat() // NOSONAR S2699 — @Disabled placeholder; no
-                                                        // body by design
+    void testGetFullFormatNameReturnsNullWhenNoFormat()
     {
-        // Would need a mock VariableXpt - skip for now, covered indirectly
+        // No format name: there is no display format, however the width and decimals are set.
+        VariableXpt v = makeVar("X", VariableType.NUMERIC, "", (short) 8, null, (short) 12,
+                (short) 2);
+        assertNull(provider.getFullFormatName(v));
     }
 
     // ==================== provideLibraryMembers ====================
@@ -123,23 +123,25 @@ class XptLibraryProviderTest
     @Test
     void testProvideLibraryMembersWithXptLibrary() throws IOException
     {
-        XptLibrary lib = new XptLibrary("TEST", null, URI.create("file:///test.xpt"));
-        XptLibraryMember m = XptLibraryMember.builder().library(lib).name("DM")
-                .uri(URI.create("file:///test.xpt#DM")).build();
-        lib.setMembers(List.of(m));
+        try (XptLibrary lib = new XptLibrary("TEST", null, URI.create("file:///test.xpt")))
+        {
+            XptLibraryMember m = XptLibraryMember.builder().library(lib).name("DM")
+                    .uri(URI.create("file:///test.xpt#DM")).build();
+            lib.setMembers(List.of(m));
 
-        Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(lib);
-        assertEquals(1, members.count());
+            assertEquals(1, provider.provideLibraryMembers(lib).count());
+        }
     }
 
 
     @Test
     void testProvideLibraryMembersWithNonXptLibrary() throws IOException
     {
-        IDataTableLibrary other = stubLibrary();
-
-        Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(other);
-        assertEquals(0, members.count());
+        try (IDataTableLibrary other = stubLibrary();
+                Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(other))
+        {
+            assertEquals(0, members.count());
+        }
     }
 
     // ==================== provideLibraryMemberColumns ====================
@@ -186,10 +188,12 @@ class XptLibraryProviderTest
 
 
     @Test
-    void testGetLibraryAttributeAlwaysNull()
+    void testGetLibraryAttributeAlwaysNull() throws IOException
     {
-        XptLibrary lib = new XptLibrary("TEST", null, URI.create("file:///test.xpt"));
-        assertNull(provider.getLibraryAttribute(lib, "any-key"));
+        try (XptLibrary lib = new XptLibrary("TEST", null, URI.create("file:///test.xpt")))
+        {
+            assertNull(provider.getLibraryAttribute(lib, "any-key"));
+        }
     }
 
     // ==================== provide non-file scheme ====================
@@ -314,31 +318,31 @@ class XptLibraryProviderTest
         File f = new File(System.getProperty("repoRoot"), "testdata/xpt/05_multiple/sdtm.xpt");
         assertTrue(f.isFile(), () -> "expected fixture: " + f.getAbsolutePath());
 
-        IDataTableLibrary lib = provider.provide(f.toURI(), XptProviderSupplier.FI_XPT);
-
-        assertNotNull(lib);
-        assertInstanceOf(XptLibrary.class, lib);
-        assertEquals("SDTM", lib.getName());
-        assertEquals(f.toURI(), lib.getUri());
-
-        XptLibrary xptLib = (XptLibrary) lib;
-        List<XptLibraryMember> members = xptLib.getMembers().toList();
-        assertFalse(members.isEmpty(), "multi-dataset XPT should have at least one member");
-
-        // every member should have:
-        // - a name and parent library set
-        // - a URI with the dataset name as fragment
-        // - at least one column
-        // - the charset that was resolved from properties
-        for (XptLibraryMember m : members)
+        try (IDataTableLibrary lib = provider.provide(f.toURI(), XptProviderSupplier.FI_XPT))
         {
-            assertNotNull(m.getName());
-            assertSame(xptLib, m.getLibrary());
-            assertEquals(m.getName(), m.getUri().getFragment());
-            assertNotNull(m.getColumns());
-            assertTrue(m.getColumns().length > 0);
-            // default charset should have been resolved
-            assertNotNull(m.getCharset());
+            assertNotNull(lib);
+            assertInstanceOf(XptLibrary.class, lib);
+            assertEquals("SDTM", lib.getName());
+            assertEquals(f.toURI(), lib.getUri());
+
+            List<XptLibraryMember> members = ((XptLibrary) lib).getMembers().toList();
+            assertFalse(members.isEmpty(), "multi-dataset XPT should have at least one member");
+
+            // every member should have:
+            // - a name and parent library set
+            // - a URI with the dataset name as fragment
+            // - at least one column
+            // - the charset that was resolved from properties
+            for (XptLibraryMember m : members)
+            {
+                assertNotNull(m.getName());
+                assertSame(lib, m.getLibrary());
+                assertEquals(m.getName(), m.getUri().getFragment());
+                assertNotNull(m.getColumns());
+                assertTrue(m.getColumns().length > 0);
+                // default charset should have been resolved
+                assertNotNull(m.getCharset());
+            }
         }
     }
 
@@ -349,18 +353,18 @@ class XptLibraryProviderTest
         File f = new File(System.getProperty("repoRoot"), "testdata/xpt/01_plain/adsl.xpt");
         assertTrue(f.isFile(), () -> "expected fixture: " + f.getAbsolutePath());
 
-        IDataTableLibrary lib = provider.provide(f.toURI(), XptProviderSupplier.FI_XPT);
+        try (IDataTableLibrary lib = provider.provide(f.toURI(), XptProviderSupplier.FI_XPT))
+        {
+            assertNotNull(lib);
+            assertInstanceOf(XptLibrary.class, lib);
+            assertEquals("ADSL", lib.getName());
 
-        assertNotNull(lib);
-        assertInstanceOf(XptLibrary.class, lib);
-        assertEquals("ADSL", lib.getName());
-
-        XptLibrary xptLib = (XptLibrary) lib;
-        List<XptLibraryMember> members = xptLib.getMembers().toList();
-        assertEquals(1, members.size(), "single-dataset XPT should have exactly one member");
-        XptLibraryMember only = members.get(0);
-        assertNotNull(only.getColumns());
-        assertTrue(only.getColumns().length > 0);
+            List<XptLibraryMember> members = ((XptLibrary) lib).getMembers().toList();
+            assertEquals(1, members.size(), "single-dataset XPT should have exactly one member");
+            XptLibraryMember only = members.get(0);
+            assertNotNull(only.getColumns());
+            assertTrue(only.getColumns().length > 0);
+        }
     }
 
 
@@ -373,13 +377,15 @@ class XptLibraryProviderTest
         Map<Property, String> props = new HashMap<>();
         props.put(XptTableProvider.PROP_CHARSET, StandardCharsets.ISO_8859_1.name());
 
-        IDataTableLibrary lib = provider.provide(f.toURI(), XptProviderSupplier.FI_XPT, props);
-        assertNotNull(lib);
-        assertInstanceOf(XptLibrary.class, lib);
+        try (IDataTableLibrary lib = provider.provide(f.toURI(), XptProviderSupplier.FI_XPT, props))
+        {
+            assertNotNull(lib);
+            assertInstanceOf(XptLibrary.class, lib);
 
-        // every member should carry the requested charset
-        Charset expected = StandardCharsets.ISO_8859_1;
-        ((XptLibrary) lib).getMembers().forEach(m -> assertEquals(expected, m.getCharset()));
+            // every member should carry the requested charset
+            Charset expected = StandardCharsets.ISO_8859_1;
+            ((XptLibrary) lib).getMembers().forEach(m -> assertEquals(expected, m.getCharset()));
+        }
     }
 
     // ==================== helpers ====================
@@ -492,29 +498,32 @@ class XptLibraryProviderTest
         File f = new File(System.getProperty("repoRoot"), "testdata/xpt/01_plain/adsl.xpt");
         assertTrue(f.isFile(), f::getAbsolutePath);
 
-        IDataTableLibrary lib = new XptLibraryProvider().provide(f.toURI(),
-                XptProviderSupplier.FI_XPT);
-        assertNotNull(lib);
-        List<XptLibraryMember> members = ((XptLibrary) lib).getMembers().toList();
-        assertEquals(1, members.size());
-
-        DataTableColumnMeta[] viaLibrary = members.get(0).getColumns();
-        var viaOpen = new XptTableProvider().provideMetaData(f.toURI(), XptProviderSupplier.FI_XPT);
-        assertEquals(viaOpen.getColumnCount(), viaLibrary.length);
-
-        for (int c = 0; c < viaLibrary.length; c++)
+        try (IDataTableLibrary lib = new XptLibraryProvider().provide(f.toURI(),
+                XptProviderSupplier.FI_XPT))
         {
-            DataTableColumnMeta lm = viaLibrary[c];
-            DataTableColumnMeta om = viaOpen.getColumn(c);
-            assertEquals(om.getName(), lm.getName());
-            assertEquals(om.getType(), lm.getType());
-            assertEquals(om.getNativeType(), lm.getNativeType());
-            assertEquals(om.getLabel(), lm.getLabel());
-            assertEquals(om.getDisplayFormat(), lm.getDisplayFormat());
-            assertEquals(om.getLength(), lm.getLength(), () -> "length of " + om.getName());
+            assertNotNull(lib);
+            List<XptLibraryMember> members = ((XptLibrary) lib).getMembers().toList();
+            assertEquals(1, members.size());
+
+            DataTableColumnMeta[] viaLibrary = members.get(0).getColumns();
+            var viaOpen = new XptTableProvider().provideMetaData(f.toURI(),
+                    XptProviderSupplier.FI_XPT);
+            assertEquals(viaOpen.getColumnCount(), viaLibrary.length);
+
+            for (int c = 0; c < viaLibrary.length; c++)
+            {
+                DataTableColumnMeta lm = viaLibrary[c];
+                DataTableColumnMeta om = viaOpen.getColumn(c);
+                assertEquals(om.getName(), lm.getName());
+                assertEquals(om.getType(), lm.getType());
+                assertEquals(om.getNativeType(), lm.getNativeType());
+                assertEquals(om.getLabel(), lm.getLabel());
+                assertEquals(om.getDisplayFormat(), lm.getDisplayFormat());
+                assertEquals(om.getLength(), lm.getLength(), () -> "length of " + om.getName());
+            }
+            // and it is a real length, not a coincidental pair of zeros
+            assertEquals(12, viaLibrary[0].getLength());
         }
-        // and it is a real length, not a coincidental pair of zeros
-        assertEquals(12, viaLibrary[0].getLength());
     }
 
 }

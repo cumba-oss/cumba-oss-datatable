@@ -39,7 +39,11 @@ import org.junit.jupiter.api.io.TempDir;
  * BigDecimal, NaN, enums).
  */
 // Test-only address lookup; getAllByName would not improve the test.
-@SuppressWarnings("AddressSelection")
+// PMD: 127.0.0.1 is a test fixture address, the loopback HTTP server the test itself starts.
+@SuppressWarnings(
+{
+        "AddressSelection", "PMD.AvoidUsingHardCodedIP"
+})
 class ParquetTableProviderCoverageTest
 {
 
@@ -279,12 +283,10 @@ class ParquetTableProviderCoverageTest
         ParquetTableProvider provider = new ParquetTableProvider();
 
         // Mock two parquet schema Types: one with a real name, one returning null.
-        org.apache.parquet.schema.Type real = org.mockito.Mockito
-                .mock(org.apache.parquet.schema.Type.class);
+        Type real = org.mockito.Mockito.mock(Type.class);
         org.mockito.Mockito.when(real.getName()).thenReturn("FOO");
 
-        org.apache.parquet.schema.Type unnamed = org.mockito.Mockito
-                .mock(org.apache.parquet.schema.Type.class);
+        Type unnamed = org.mockito.Mockito.mock(Type.class);
         org.mockito.Mockito.when(unnamed.getName()).thenReturn(null);
 
         // Build a minimal meta so the inner-class constructor's super(...) call has what it needs.
@@ -293,14 +295,12 @@ class ParquetTableProviderCoverageTest
         support.setTable(URI.create("file:///tmp/test2.parquet"));
         support.addColumn("FOO", net.cumba.datatable.values.DataValueType.STRING);
         support.addColumn("V2", net.cumba.datatable.values.DataValueType.STRING);
-        net.cumba.datatable.DataTableMeta meta = support.getTableMeta().rowCount(0).totalRowCount(0)
-                .build();
+        DataTableMeta meta = support.getTableMeta().rowCount(0).totalRowCount(0).build();
 
         Class<?> inner = Class.forName(
                 "net.cumba.datatable.provider.parquet.ParquetTableProvider$ParquetTableDataParser");
         java.lang.reflect.Constructor<?> ctor = inner.getDeclaredConstructor(
-                ParquetTableProvider.class, net.cumba.datatable.DataTableMeta.class,
-                java.util.List.class);
+                ParquetTableProvider.class, DataTableMeta.class, java.util.List.class);
         ctor.setAccessible(true);
         Object parser = ctor.newInstance(provider, meta, java.util.List.of(real, unnamed));
 

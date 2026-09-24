@@ -190,14 +190,14 @@ class ExcelLibraryTest
         URI uri = writeTempXlsx("Sheet1", "Sheet2", "Sheet3");
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
 
-        IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        try (IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX))
+        {
+            assertNotNull(library);
+            assertInstanceOf(ExcelLibrary.class, library);
 
-        assertNotNull(library);
-        assertInstanceOf(ExcelLibrary.class, library);
-
-        ExcelLibrary exLib = (ExcelLibrary) library;
-        long memberCount = exLib.getMembers().count();
-        assertEquals(3, memberCount);
+            long memberCount = ((ExcelLibrary) library).getMembers().count();
+            assertEquals(3, memberCount);
+        }
     }
 
 
@@ -213,9 +213,10 @@ class ExcelLibraryTest
         URI uri = writeTempXlsx("Sheet1");
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
 
-        IDataTableLibrary library = provider.provide(uri, null);
-
-        assertEquals(ExcelProviderSupplier.FI_XLSX, library.getFileInfo());
+        try (IDataTableLibrary library = provider.provide(uri, null))
+        {
+            assertEquals(ExcelProviderSupplier.FI_XLSX, library.getFileInfo());
+        }
     }
 
 
@@ -225,12 +226,13 @@ class ExcelLibraryTest
         URI uri = writeTempXlsx("Demographics", "Vitals");
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
 
-        IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
-        ExcelLibrary exLib = (ExcelLibrary) library;
-
-        List<String> names = exLib.getMembers().map(ILibraryMember::getName).toList();
-        assertTrue(names.contains("Demographics"));
-        assertTrue(names.contains("Vitals"));
+        try (ExcelLibrary exLib = (ExcelLibrary) provider.provide(uri,
+                ExcelProviderSupplier.FI_XLSX))
+        {
+            List<String> names = exLib.getMembers().map(ILibraryMember::getName).toList();
+            assertTrue(names.contains("Demographics"));
+            assertTrue(names.contains("Vitals"));
+        }
     }
 
 
@@ -239,11 +241,12 @@ class ExcelLibraryTest
     {
         URI uri = writeTempXlsx("SheetA");
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
-        IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
-
-        Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(library);
-        assertNotNull(members);
-        assertEquals(1, members.count());
+        try (IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+                Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(library))
+        {
+            assertNotNull(members);
+            assertEquals(1, members.count());
+        }
     }
 
 
@@ -306,19 +309,23 @@ class ExcelLibraryTest
 
 
     @Test
-    void testExcelLibraryType()
+    void testExcelLibraryType() throws IOException
     {
-        ExcelLibrary lib = new ExcelLibrary("TEST", "Test", null, null);
-        assertEquals("Excel", lib.getType());
+        try (ExcelLibrary lib = new ExcelLibrary("TEST", "Test", null, null))
+        {
+            assertEquals("Excel", lib.getType());
+        }
     }
 
 
     @Test
-    void testExcelLibraryGetMembersWhenNull()
+    void testExcelLibraryGetMembersWhenNull() throws IOException
     {
-        ExcelLibrary lib = new ExcelLibrary("TEST", "Test", null, null);
-        // members not set → stream should be empty
-        assertEquals(0, lib.getMembers().count());
+        try (ExcelLibrary lib = new ExcelLibrary("TEST", "Test", null, null))
+        {
+            // members not set → stream should be empty
+            assertEquals(0, lib.getMembers().count());
+        }
     }
 
     // ==================== F-B16: cache columns at library open ====================
@@ -373,22 +380,23 @@ class ExcelLibraryTest
         URI uri = writeTypedXlsx();
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
 
-        IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
-        ExcelLibrary exLib = (ExcelLibrary) library;
+        try (ExcelLibrary exLib = (ExcelLibrary) provider.provide(uri,
+                ExcelProviderSupplier.FI_XLSX))
+        {
+            ExcelLibraryMember demo = exLib.getMembers()
+                    .filter(m -> "Demographics".equals(m.getName())).findFirst()
+                    .orElseThrow(() -> new AssertionError("Demographics sheet member missing"));
 
-        ExcelLibraryMember demo = exLib.getMembers().filter(m -> "Demographics".equals(m.getName()))
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("Demographics sheet member missing"));
-
-        DataTableColumnMeta[] cols = demo.getColumns();
-        assertNotNull(cols, "F-B16 requires columns to be cached on each member");
-        assertEquals(2, cols.length);
-        assertEquals("USUBJID", cols[0].getName());
-        assertEquals("AGE", cols[1].getName());
-        // AGE column has all-numeric data → inferred as DOUBLE.
-        assertEquals(DataValueType.DOUBLE, cols[1].getType());
-        // USUBJID is all-string → STRING.
-        assertEquals(DataValueType.STRING, cols[0].getType());
+            DataTableColumnMeta[] cols = demo.getColumns();
+            assertNotNull(cols, "F-B16 requires columns to be cached on each member");
+            assertEquals(2, cols.length);
+            assertEquals("USUBJID", cols[0].getName());
+            assertEquals("AGE", cols[1].getName());
+            // AGE column has all-numeric data → inferred as DOUBLE.
+            assertEquals(DataValueType.DOUBLE, cols[1].getType());
+            // USUBJID is all-string → STRING.
+            assertEquals(DataValueType.STRING, cols[0].getType());
+        }
     }
 
 
@@ -401,17 +409,18 @@ class ExcelLibraryTest
     {
         URI uri = writeTypedXlsx();
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
-        IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
-        ExcelLibrary exLib = (ExcelLibrary) library;
+        try (ExcelLibrary exLib = (ExcelLibrary) provider.provide(uri,
+                ExcelProviderSupplier.FI_XLSX))
+        {
+            ExcelLibraryMember demo = exLib.getMembers()
+                    .filter(m -> "Demographics".equals(m.getName())).findFirst().orElseThrow();
 
-        ExcelLibraryMember demo = exLib.getMembers().filter(m -> "Demographics".equals(m.getName()))
-                .findFirst().orElseThrow();
-
-        List<? extends DataTableColumnMeta> streamed = provider.provideLibraryMemberColumns(demo)
-                .toList();
-        assertEquals(2, streamed.size());
-        assertEquals("USUBJID", streamed.get(0).getName());
-        assertEquals("AGE", streamed.get(1).getName());
+            List<? extends DataTableColumnMeta> streamed = provider
+                    .provideLibraryMemberColumns(demo).toList();
+            assertEquals(2, streamed.size());
+            assertEquals("USUBJID", streamed.get(0).getName());
+            assertEquals("AGE", streamed.get(1).getName());
+        }
     }
 
 
@@ -452,19 +461,21 @@ class ExcelLibraryTest
         }
         URI uri = tmpFile.toURI();
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
-        IDataTableLibrary library = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
-        ExcelLibrary exLib = (ExcelLibrary) library;
-        ExcelLibraryMember m = exLib.getMembers().findFirst().orElseThrow();
-        DataTableColumnMeta[] cols = m.getColumns();
-        // Header is present; with zero sampled data rows the type-detector's "possibly double"
-        // flag stays true and the inferred type defaults to DOUBLE — consistent with the same
-        // edge-case behaviour in ExcelTableProvider.buildMeta. The test pins this so a future
-        // change to the default surface area is intentional.
-        assertNotNull(cols);
-        assertEquals(1, cols.length);
-        assertEquals("COL1", cols[0].getName());
-        // Pin the documented (and quirky) edge-case: no data rows seen → DOUBLE.
-        assertEquals(DataValueType.DOUBLE, cols[0].getType());
+        try (ExcelLibrary exLib = (ExcelLibrary) provider.provide(uri,
+                ExcelProviderSupplier.FI_XLSX))
+        {
+            ExcelLibraryMember m = exLib.getMembers().findFirst().orElseThrow();
+            DataTableColumnMeta[] cols = m.getColumns();
+            // Header is present; with zero sampled data rows the type-detector's "possibly double"
+            // flag stays true and the inferred type defaults to DOUBLE — consistent with the same
+            // edge-case behaviour in ExcelTableProvider.buildMeta. The test pins this so a future
+            // change to the default surface area is intentional.
+            assertNotNull(cols);
+            assertEquals(1, cols.length);
+            assertEquals("COL1", cols[0].getName());
+            // Pin the documented (and quirky) edge-case: no data rows seen → DOUBLE.
+            assertEquals(DataValueType.DOUBLE, cols[0].getType());
+        }
     }
 
     // ==================== one bad sheet must not take the library open down ====================
@@ -547,25 +558,25 @@ class ExcelLibraryTest
         Files.write(tmpFile.toPath(), patchWorksheetXml(bytes, "<v>987654.0</v>", "<v>N/A</v>"));
 
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
-        ExcelLibrary lib;
-        try (LoggerCapture log = LoggerCapture.attach(ExcelLibraryProvider.class.getName()))
+        try (LoggerCapture log = LoggerCapture.attach(ExcelLibraryProvider.class.getName());
+                ExcelLibrary lib = (ExcelLibrary) provider.provide(tmpFile.toURI(),
+                        ExcelProviderSupplier.FI_XLSX))
         {
-            lib = (ExcelLibrary) provider.provide(tmpFile.toURI(), ExcelProviderSupplier.FI_XLSX);
             assertTrue(log.containsMessageContaining("Column inference failed for sheet 'BAD'"),
                     "the skipped sheet must be logged by name: " + log.messages());
-        }
 
-        List<ExcelLibraryMember> members = lib.getMembers().toList();
-        assertEquals(2, members.size(), "both sheets must still be listed");
-        ExcelLibraryMember good = members.stream().filter(m -> "GOOD".equals(m.getName()))
-                .findFirst().orElseThrow();
-        ExcelLibraryMember bad = members.stream().filter(m -> "BAD".equals(m.getName())).findFirst()
-                .orElseThrow();
-        assertNotNull(good.getColumns(), "the healthy sheet must keep its inferred columns");
-        assertEquals("USUBJID", good.getColumns()[0].getName());
-        assertNull(bad.getColumns(),
-                "the sheet whose inference failed must carry no cached columns");
-        assertEquals(0, provider.provideLibraryMemberColumns(bad).count());
+            List<ExcelLibraryMember> members = lib.getMembers().toList();
+            assertEquals(2, members.size(), "both sheets must still be listed");
+            ExcelLibraryMember good = members.stream().filter(m -> "GOOD".equals(m.getName()))
+                    .findFirst().orElseThrow();
+            ExcelLibraryMember bad = members.stream().filter(m -> "BAD".equals(m.getName()))
+                    .findFirst().orElseThrow();
+            assertNotNull(good.getColumns(), "the healthy sheet must keep its inferred columns");
+            assertEquals("USUBJID", good.getColumns()[0].getName());
+            assertNull(bad.getColumns(),
+                    "the sheet whose inference failed must carry no cached columns");
+            assertEquals(0, provider.provideLibraryMemberColumns(bad).count());
+        }
     }
 
 
@@ -630,22 +641,24 @@ class ExcelLibraryTest
         }
 
         ExcelLibraryProvider provider = new ExcelLibraryProvider();
-        ExcelLibrary lib = (ExcelLibrary) provider.provide(tmpFile.toURI(),
-                ExcelProviderSupplier.FI_XLSX);
-        List<ExcelLibraryMember> members = lib.getMembers().toList();
-        assertEquals(3, members.size());
-        for (String sheet : List.of("NOROWS", "SPACER"))
+        try (ExcelLibrary lib = (ExcelLibrary) provider.provide(tmpFile.toURI(),
+                ExcelProviderSupplier.FI_XLSX))
         {
-            ExcelLibraryMember m = members.stream().filter(x -> sheet.equals(x.getName()))
+            List<ExcelLibraryMember> members = lib.getMembers().toList();
+            assertEquals(3, members.size());
+            for (String sheet : List.of("NOROWS", "SPACER"))
+            {
+                ExcelLibraryMember m = members.stream().filter(x -> sheet.equals(x.getName()))
+                        .findFirst().orElseThrow();
+                assertNotNull(m.getColumns(),
+                        sheet + ": inference succeeded, it just found no columns");
+                assertEquals(0, m.getColumns().length, sheet + " must contribute no columns");
+            }
+            ExcelLibraryMember good = members.stream().filter(m -> "GOOD".equals(m.getName()))
                     .findFirst().orElseThrow();
-            assertNotNull(m.getColumns(),
-                    sheet + ": inference succeeded, it just found no columns");
-            assertEquals(0, m.getColumns().length, sheet + " must contribute no columns");
+            assertEquals(1, good.getColumns().length);
+            assertEquals("USUBJID", good.getColumns()[0].getName());
         }
-        ExcelLibraryMember good = members.stream().filter(m -> "GOOD".equals(m.getName()))
-                .findFirst().orElseThrow();
-        assertEquals(1, good.getColumns().length);
-        assertEquals("USUBJID", good.getColumns()[0].getName());
     }
 
 }

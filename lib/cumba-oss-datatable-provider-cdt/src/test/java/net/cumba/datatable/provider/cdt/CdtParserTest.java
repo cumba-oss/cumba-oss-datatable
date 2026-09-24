@@ -175,7 +175,7 @@ class CdtParserTest
                 ---
                 """;
         CdtDataset ds = CdtParser.parseFirst(content, "t");
-        assertEquals(Integer.valueOf(20), ds.getColumns().get(0).getLength());
+        assertEquals(20, ds.getColumns().get(0).getLength());
     }
 
 

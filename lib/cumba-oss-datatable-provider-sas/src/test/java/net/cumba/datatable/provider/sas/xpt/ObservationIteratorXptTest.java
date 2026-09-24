@@ -54,8 +54,8 @@ class ObservationIteratorXptTest
         ObservationIteratorXpt iter = new ObservationIteratorXpt(ds, in);
         assertEquals(StandardCharsets.UTF_8, iter.getCharset());
 
-        iter.setCharset(StandardCharsets.ISO_8859_1);
-        assertEquals(StandardCharsets.ISO_8859_1, iter.getCharset());
+        iter.setCharset(ISO_8859_1);
+        assertEquals(ISO_8859_1, iter.getCharset());
     }
 
 
@@ -65,9 +65,8 @@ class ObservationIteratorXptTest
         DatasetXpt ds = createMockDataset(4);
         ByteArrayInputStream in = new ByteArrayInputStream(new byte[0]);
 
-        ObservationIteratorXpt iter = new ObservationIteratorXpt(ds, StandardCharsets.ISO_8859_1,
-                in);
-        assertEquals(StandardCharsets.ISO_8859_1, iter.getCharset());
+        ObservationIteratorXpt iter = new ObservationIteratorXpt(ds, ISO_8859_1, in);
+        assertEquals(ISO_8859_1, iter.getCharset());
     }
 
 
@@ -87,7 +86,7 @@ class ObservationIteratorXptTest
     {
         // A buffer full of spaces (SENTINEL) means no real data
         DatasetXpt ds = createMockDataset(4);
-        byte[] data = new byte[]
+        byte[] data =
         {
                 ' ', ' ', ' ', ' '
         };
@@ -150,7 +149,7 @@ class ObservationIteratorXptTest
     void testPartialReadOfObservationDataThrows()
     {
         DatasetXpt ds = createMockDataset(8);
-        byte[] data = new byte[]
+        byte[] data =
         {
                 'A', 'B'
         }; // only 2 bytes of DATA, need 8 -> truncated
@@ -199,13 +198,13 @@ class ObservationIteratorXptTest
 
 
     @Test
-    void testReadIfNecessaryWrapsIoExceptionWithCausePreserved()
+    void testReadIfNecessaryWrapsIoExceptionWithCausePreserved() throws IOException
     {
         DatasetXpt ds = createMockDataset(4);
         // A stream whose read() throws synchronously. IOUtils.read() will propagate the
         // IOException up to readIfNecessary's catch block.
         IOException synthetic = new IOException("synthetic disk failure");
-        InputStream failing = new InputStream()
+        try (InputStream failing = new InputStream()
         {
 
             @Override
@@ -220,13 +219,14 @@ class ObservationIteratorXptTest
             {
                 throw synthetic;
             }
-        };
-
-        ObservationIteratorXpt iter = new ObservationIteratorXpt(ds, failing);
-        IllegalStateException ex = assertThrows(IllegalStateException.class, iter::hasNext);
-        assertInstanceOf(IOException.class, ex.getCause(),
-                "F-D16: cause must be the original IOException so callers can unwrap it");
-        assertEquals("synthetic disk failure", ex.getCause().getMessage());
+        })
+        {
+            ObservationIteratorXpt iter = new ObservationIteratorXpt(ds, failing);
+            IllegalStateException ex = assertThrows(IllegalStateException.class, iter::hasNext);
+            assertInstanceOf(IOException.class, ex.getCause(),
+                    "F-D16: cause must be the original IOException so callers can unwrap it");
+            assertEquals("synthetic disk failure", ex.getCause().getMessage());
+        }
     }
 
     // --- F-prov-11: the trailing "HEADER RECORD*******" that ends a member's observation

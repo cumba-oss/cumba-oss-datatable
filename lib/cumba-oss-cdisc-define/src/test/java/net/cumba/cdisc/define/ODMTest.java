@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  * Test cases for the define package bean classes: ODM, Study, GlobalVariables, and MetaDataVersion.
  * These tests verify the Lombok @Builder pattern, getters, null handling, and list population.
  */
-public class ODMTest
+class ODMTest
 {
 
     // ========================
@@ -353,7 +353,7 @@ public class ODMTest
             assertEquals(2, mdv.getItemDefs().size());
             assertEquals("IT.DM.USUBJID", mdv.getItemDefs().get(0).getOid());
             assertEquals("text", mdv.getItemDefs().get(0).getDataType());
-            assertEquals(Integer.valueOf(40), mdv.getItemDefs().get(0).getLength());
+            assertEquals(40, mdv.getItemDefs().get(0).getLength());
         }
 
 
@@ -723,7 +723,7 @@ public class ODMTest
             assertEquals("IT.DM.SUBJID", itemDef.getOid());
             assertEquals("SUBJID", itemDef.getName());
             assertEquals("text", itemDef.getDataType());
-            assertEquals(Integer.valueOf(8), itemDef.getLength());
+            assertEquals(8, itemDef.getLength());
             assertNull(itemDef.getSignificantDigits());
             assertEquals("$8.", itemDef.getDisplayFormat());
             assertEquals("Subject Identifier", itemDef.getLabel());
@@ -737,8 +737,8 @@ public class ODMTest
                     .length(3).significantDigits(0).build();
 
             assertEquals("integer", itemDef.getDataType());
-            assertEquals(Integer.valueOf(3), itemDef.getLength());
-            assertEquals(Integer.valueOf(0), itemDef.getSignificantDigits());
+            assertEquals(3, itemDef.getLength());
+            assertEquals(0, itemDef.getSignificantDigits());
         }
 
 

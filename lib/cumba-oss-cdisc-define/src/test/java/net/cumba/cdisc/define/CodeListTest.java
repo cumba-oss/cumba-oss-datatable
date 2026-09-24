@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 /**
  * JUnit 5 tests for the define package bean classes.
  */
-public class CodeListTest
+class CodeListTest
 {
 
     // ========================================================================

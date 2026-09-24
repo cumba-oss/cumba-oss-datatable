@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -183,17 +184,20 @@ class LocalCacheSupportTest
 
 
     @Test
-    void storeTable_returningStrongEntry_preservesLibraryAndMemberFields()
+    void storeTable_returningStrongEntry_preservesLibraryAndMemberFields() throws IOException
     {
         // Library + member should be retrievable via the strong-entry path
         URI uri = URI.create("file:///t.csv");
-        IDataTableLibrary lib = stubLibrary(URI.create("file:///lib"));
-        ILibraryMember mem = stubMember("dm", lib);
-        IDataTable table = simpleTable("dm");
-        cache.storeTable(uri, table, lib, mem, 50L);
-        // Re-lookup; the underlying entry still carries the library/member references through the
-        // weak→strong rebuild round-trip.
-        assertSame(table, cache.lookupTable(uri, 50L));
+        try (IDataTableLibrary lib = stubLibrary(URI.create("file:///lib")))
+        {
+            ILibraryMember mem = stubMember("dm", lib);
+            IDataTable table = simpleTable("dm");
+            cache.storeTable(uri, table, lib, mem, 50L);
+            // Re-lookup; the underlying entry still carries the library/member references through
+            // the
+            // weak→strong rebuild round-trip.
+            assertSame(table, cache.lookupTable(uri, 50L));
+        }
     }
 
     // ====================================================================
@@ -216,38 +220,45 @@ class LocalCacheSupportTest
 
 
     @Test
-    void storeThenLookupLibrary_freshEntry_returnsSameInstance()
+    void storeThenLookupLibrary_freshEntry_returnsSameInstance() throws IOException
     {
         URI uri = URI.create("file:///lib1");
-        IDataTableLibrary lib = stubLibrary(uri);
-        cache.storeLibrary(uri, lib, null, 100L);
-        assertSame(lib, cache.lookupLibrary(uri, 100L));
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            cache.storeLibrary(uri, lib, null, 100L);
+            assertSame(lib, cache.lookupLibrary(uri, 100L));
+        }
     }
 
 
     @Test
-    void lookupLibrary_staleTimestamp_evictsAndReturnsNull()
+    void lookupLibrary_staleTimestamp_evictsAndReturnsNull() throws IOException
     {
         URI uri = URI.create("file:///lib1");
-        IDataTableLibrary lib = stubLibrary(uri);
-        cache.storeLibrary(uri, lib, null, 100L);
-        assertNull(cache.lookupLibrary(uri, 200L));
-        assertNull(cache.lookupLibrary(uri, 100L),
-                "stale entry must be evicted (subsequent timestamp-matching lookup also misses)");
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            cache.storeLibrary(uri, lib, null, 100L);
+            assertNull(cache.lookupLibrary(uri, 200L));
+            assertNull(cache.lookupLibrary(uri, 100L),
+                    "stale entry must be evicted (subsequent timestamp-matching lookup also misses)");
+        }
     }
 
 
     @Test
-    void removeLibrary_alsoClearsMemoryLockForSameUri()
+    void removeLibrary_alsoClearsMemoryLockForSameUri() throws IOException
     {
         URI uri = URI.create("file:///lib1");
-        IDataTableLibrary lib = stubLibrary(uri);
-        cache.storeLibrary(uri, lib, null, 100L);
-        cache.lockLibrary(lib, List.of(simpleTable("a")));
-        assertTrue(cache.isLocked(lib));
-        cache.removeLibrary(uri);
-        assertFalse(cache.isLocked(lib), "removeLibrary must drop the matching memory lock too");
-        assertNull(cache.lookupLibrary(uri, 100L));
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            cache.storeLibrary(uri, lib, null, 100L);
+            cache.lockLibrary(lib, List.of(simpleTable("a")));
+            assertTrue(cache.isLocked(lib));
+            cache.removeLibrary(uri);
+            assertFalse(cache.isLocked(lib),
+                    "removeLibrary must drop the matching memory lock too");
+            assertNull(cache.lookupLibrary(uri, 100L));
+        }
     }
 
 
@@ -259,21 +270,25 @@ class LocalCacheSupportTest
 
 
     @Test
-    void lookupMetadata_byLibrary_uncachedLibrary_returnsNull()
+    void lookupMetadata_byLibrary_uncachedLibrary_returnsNull() throws IOException
     {
-        IDataTableLibrary lib = stubLibrary(URI.create("file:///not-cached"));
-        assertNull(cache.lookupMetadata(lib));
+        try (IDataTableLibrary lib = stubLibrary(URI.create("file:///not-cached")))
+        {
+            assertNull(cache.lookupMetadata(lib));
+        }
     }
 
 
     @Test
-    void lookupMetadata_byLibrary_cachedWithMetadata_returnsIt()
+    void lookupMetadata_byLibrary_cachedWithMetadata_returnsIt() throws IOException
     {
         URI uri = URI.create("file:///lib1");
-        IDataTableLibrary lib = stubLibrary(uri);
-        IMetadataLibrary meta = mock(IMetadataLibrary.class);
-        cache.storeLibrary(uri, lib, meta, 100L);
-        assertSame(meta, cache.lookupMetadata(lib));
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            IMetadataLibrary meta = mock(IMetadataLibrary.class);
+            cache.storeLibrary(uri, lib, meta, 100L);
+            assertSame(meta, cache.lookupMetadata(lib));
+        }
     }
 
 
@@ -285,46 +300,61 @@ class LocalCacheSupportTest
 
 
     @Test
-    void lookupMetadata_byMember_delegatesToLibraryLookup()
+    void lookupMetadata_byMember_delegatesToLibraryLookup() throws IOException
     {
         URI libUri = URI.create("file:///lib1");
-        IDataTableLibrary lib = stubLibrary(libUri);
-        IMetadataLibrary meta = mock(IMetadataLibrary.class);
-        cache.storeLibrary(libUri, lib, meta, 100L);
-        ILibraryMember mem = stubMember("dm", lib);
-        assertSame(meta, cache.lookupMetadata(mem));
+        try (IDataTableLibrary lib = stubLibrary(libUri))
+        {
+            IMetadataLibrary meta = mock(IMetadataLibrary.class);
+            cache.storeLibrary(libUri, lib, meta, 100L);
+            ILibraryMember mem = stubMember("dm", lib);
+            assertSame(meta, cache.lookupMetadata(mem));
+        }
     }
 
 
     @Test
-    void updateMetadata_uncachedLibrary_isNoOp()
+    void updateMetadata_uncachedLibrary_isNoOp() throws IOException
     {
-        IDataTableLibrary lib = stubLibrary(URI.create("file:///nope"));
-        IMetadataLibrary meta = mock(IMetadataLibrary.class);
-        cache.updateMetadata(lib, meta);
-        // Was never stored, so still null
-        assertNull(cache.lookupMetadata(lib));
+        try (IDataTableLibrary lib = stubLibrary(URI.create("file:///nope")))
+        {
+            IMetadataLibrary meta = mock(IMetadataLibrary.class);
+            cache.updateMetadata(lib, meta);
+            // Was never stored, so still null
+            assertNull(cache.lookupMetadata(lib));
+        }
     }
 
 
     @Test
-    void updateMetadata_cachedLibrary_replacesMetadata()
+    void updateMetadata_cachedLibrary_replacesMetadata() throws IOException
     {
         URI uri = URI.create("file:///lib1");
-        IDataTableLibrary lib = stubLibrary(uri);
-        cache.storeLibrary(uri, lib, null, 100L);
-        assertNull(cache.lookupMetadata(lib));
-        IMetadataLibrary meta = mock(IMetadataLibrary.class);
-        cache.updateMetadata(lib, meta);
-        assertSame(meta, cache.lookupMetadata(lib));
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            cache.storeLibrary(uri, lib, null, 100L);
+            assertNull(cache.lookupMetadata(lib));
+            IMetadataLibrary meta = mock(IMetadataLibrary.class);
+            cache.updateMetadata(lib, meta);
+            assertSame(meta, cache.lookupMetadata(lib));
+        }
     }
 
 
     @Test
-    void updateMetadata_nullLibrary_isNoOp()
+    void updateMetadata_nullLibrary_isNoOp() throws IOException
     {
-        // Should not throw; idempotent no-op.
-        cache.updateMetadata(null, mock(IMetadataLibrary.class));
+        URI uri = URI.create("file:///lib1");
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            IMetadataLibrary meta = mock(IMetadataLibrary.class);
+            cache.storeLibrary(uri, lib, meta, 100L);
+
+            // A null library is ignored: no entry's metadata is replaced.
+            cache.updateMetadata(null, mock(IMetadataLibrary.class));
+
+            assertSame(meta, cache.lookupMetadata(lib));
+        }
     }
 
     // ====================================================================
@@ -333,21 +363,25 @@ class LocalCacheSupportTest
 
 
     @Test
-    void lockLibrary_thenIsLocked_returnsTrue()
+    void lockLibrary_thenIsLocked_returnsTrue() throws IOException
     {
-        IDataTableLibrary lib = stubLibrary(URI.create("file:///lib1"));
-        cache.lockLibrary(lib, List.of(simpleTable("a")));
-        assertTrue(cache.isLocked(lib));
+        try (IDataTableLibrary lib = stubLibrary(URI.create("file:///lib1")))
+        {
+            cache.lockLibrary(lib, List.of(simpleTable("a")));
+            assertTrue(cache.isLocked(lib));
+        }
     }
 
 
     @Test
-    void unlockLibrary_unlocks()
+    void unlockLibrary_unlocks() throws IOException
     {
-        IDataTableLibrary lib = stubLibrary(URI.create("file:///lib1"));
-        cache.lockLibrary(lib, List.of(simpleTable("a")));
-        cache.unlockLibrary(lib);
-        assertFalse(cache.isLocked(lib));
+        try (IDataTableLibrary lib = stubLibrary(URI.create("file:///lib1")))
+        {
+            cache.lockLibrary(lib, List.of(simpleTable("a")));
+            cache.unlockLibrary(lib);
+            assertFalse(cache.isLocked(lib));
+        }
     }
 
 
@@ -359,44 +393,63 @@ class LocalCacheSupportTest
 
 
     @Test
-    void isLocked_libraryWithNullUri_returnsFalse()
+    void isLocked_libraryWithNullUri_returnsFalse() throws IOException
     {
-        IDataTableLibrary lib = stubLibrary(null);
-        assertFalse(cache.isLocked(lib));
+        try (IDataTableLibrary lib = stubLibrary(null))
+        {
+            assertFalse(cache.isLocked(lib));
+        }
     }
 
 
     @Test
-    void lockLibrary_nullLibrary_isNoOp()
+    void lockLibrary_nullLibrary_isNoOp() throws IOException
     {
-        cache.lockLibrary(null, List.of(simpleTable("a")));
-        // No way to observe other than that no exception was thrown and isLocked returns false
-        // when probed with anything reasonable.
+        try (IDataTableLibrary other = stubLibrary(URI.create("file:///other")))
+        {
+            cache.lockLibrary(null, List.of(simpleTable("a")));
+
+            // Nothing was locked under any key a real library could probe.
+            assertFalse(cache.isLocked(null));
+            assertFalse(cache.isLocked(other));
+        }
     }
 
 
     @Test
-    void lockLibrary_nullUri_isNoOp()
+    void lockLibrary_nullUri_isNoOp() throws IOException
     {
-        IDataTableLibrary lib = stubLibrary(null);
-        cache.lockLibrary(lib, List.of(simpleTable("a")));
-        assertFalse(cache.isLocked(lib));
+        try (IDataTableLibrary lib = stubLibrary(null))
+        {
+            cache.lockLibrary(lib, List.of(simpleTable("a")));
+            assertFalse(cache.isLocked(lib));
+        }
     }
 
 
     @Test
-    void unlockLibrary_nullLibrary_isNoOp()
+    void unlockLibrary_nullLibrary_isNoOp() throws IOException
     {
-        cache.unlockLibrary(null);
+        try (IDataTableLibrary lib = stubLibrary(URI.create("file:///lib1")))
+        {
+            cache.lockLibrary(lib, List.of(simpleTable("a")));
+
+            // A null library unlocks nothing: the existing lock survives.
+            cache.unlockLibrary(null);
+
+            assertTrue(cache.isLocked(lib));
+        }
     }
 
 
     @Test
-    void unlockLibrary_nullUri_isNoOp()
+    void unlockLibrary_nullUri_isNoOp() throws IOException
     {
-        IDataTableLibrary lib = stubLibrary(null);
-        cache.unlockLibrary(lib);
-        assertFalse(cache.isLocked(lib));
+        try (IDataTableLibrary lib = stubLibrary(null))
+        {
+            cache.unlockLibrary(lib);
+            assertFalse(cache.isLocked(lib));
+        }
     }
 
     // ====================================================================
@@ -412,16 +465,18 @@ class LocalCacheSupportTest
 
 
     @Test
-    void streamLibraries_returnsAllCached()
+    void streamLibraries_returnsAllCached() throws IOException
     {
-        IDataTableLibrary l1 = stubLibrary(URI.create("file:///l1"));
-        IDataTableLibrary l2 = stubLibrary(URI.create("file:///l2"));
-        cache.storeLibrary(l1.getUri(), l1, null, 100L);
-        cache.storeLibrary(l2.getUri(), l2, null, 100L);
-        List<IDataTableLibrary> all = cache.streamLibraries().toList();
-        assertEquals(2, all.size());
-        assertTrue(all.contains(l1));
-        assertTrue(all.contains(l2));
+        try (IDataTableLibrary l1 = stubLibrary(URI.create("file:///l1"));
+                IDataTableLibrary l2 = stubLibrary(URI.create("file:///l2")))
+        {
+            cache.storeLibrary(l1.getUri(), l1, null, 100L);
+            cache.storeLibrary(l2.getUri(), l2, null, 100L);
+            List<IDataTableLibrary> all = cache.streamLibraries().toList();
+            assertEquals(2, all.size());
+            assertTrue(all.contains(l1));
+            assertTrue(all.contains(l2));
+        }
     }
 
     // ====================================================================
@@ -435,63 +490,65 @@ class LocalCacheSupportTest
     void concurrentStoreAndLookup_isSafe() throws Exception
     {
         // Sanity check that the ConcurrentHashMap-backed cache survives parallel access.
-        ExecutorService pool = Executors.newFixedThreadPool(8);
-        try
+        try (ExecutorService pool = Executors.newFixedThreadPool(8))
         {
-            int writers = 4;
-            int writesPerWriter = 50;
-            CountDownLatch start = new CountDownLatch(1);
-            CountDownLatch done = new CountDownLatch(writers * 2);
-            for (int w = 0; w < writers; w++)
+            try
             {
-                final int wid = w;
-                pool.submit(() ->
+                int writers = 4;
+                int writesPerWriter = 50;
+                CountDownLatch start = new CountDownLatch(1);
+                CountDownLatch done = new CountDownLatch(writers * 2);
+                for (int w = 0; w < writers; w++)
                 {
-                    try
+                    final int wid = w;
+                    pool.submit(() ->
                     {
-                        start.await();
-                        for (int i = 0; i < writesPerWriter; i++)
+                        try
                         {
-                            URI uri = URI.create("file:///t-" + wid + "-" + i);
-                            cache.storeTable(uri, simpleTable("t"), null, null, i);
+                            start.await();
+                            for (int i = 0; i < writesPerWriter; i++)
+                            {
+                                URI uri = URI.create("file:///t-" + wid + "-" + i);
+                                cache.storeTable(uri, simpleTable("t"), null, null, i);
+                            }
                         }
-                    }
-                    catch (Exception ignored)
-                    {
-                        // fall through
-                    }
-                    finally
-                    {
-                        done.countDown();
-                    }
-                });
-                pool.submit(() ->
-                {
-                    try
-                    {
-                        start.await();
-                        for (int i = 0; i < writesPerWriter; i++)
+                        catch (Exception ignored)
                         {
-                            URI uri = URI.create("file:///t-" + wid + "-" + i);
-                            cache.findCachedTable(uri);
+                            // fall through
                         }
-                    }
-                    catch (Exception ignored)
+                        finally
+                        {
+                            done.countDown();
+                        }
+                    });
+                    pool.submit(() ->
                     {
-                        // fall through
-                    }
-                    finally
-                    {
-                        done.countDown();
-                    }
-                });
+                        try
+                        {
+                            start.await();
+                            for (int i = 0; i < writesPerWriter; i++)
+                            {
+                                URI uri = URI.create("file:///t-" + wid + "-" + i);
+                                cache.findCachedTable(uri);
+                            }
+                        }
+                        catch (Exception ignored)
+                        {
+                            // fall through
+                        }
+                        finally
+                        {
+                            done.countDown();
+                        }
+                    });
+                }
+                start.countDown();
+                assertTrue(done.await(10, TimeUnit.SECONDS), "workers stalled");
             }
-            start.countDown();
-            assertTrue(done.await(10, TimeUnit.SECONDS), "workers stalled");
-        }
-        finally
-        {
-            pool.shutdownNow();
+            finally
+            {
+                pool.shutdownNow();
+            }
         }
         // Spot-check: at least some entries survived without throwing.
         // (Exact count depends on GC + cleanCache races, so we just assert no exception.)

@@ -7,11 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Date;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 
-// Test exercises legacy java.util.Date code paths in the production code.
-@SuppressWarnings("JavaUtilDate")
 class DataValueOtherTest
 {
 
@@ -60,7 +58,7 @@ class DataValueOtherTest
     void testGetValueAsDoubleWithNumber()
     {
         // With a Number object, default IDataValue implementation should work
-        DataValueOther dv = new DataValueOther(Integer.valueOf(42));
+        DataValueOther dv = new DataValueOther(42);
         assertEquals(42.0, dv.getValueAsDouble(), 0.0001);
     }
 
@@ -84,7 +82,7 @@ class DataValueOtherTest
     @Test
     void testToStringInteger()
     {
-        DataValueOther dv = new DataValueOther(Integer.valueOf(99));
+        DataValueOther dv = new DataValueOther(99);
         assertEquals("99", dv.toString());
     }
 
@@ -92,9 +90,9 @@ class DataValueOtherTest
     @Test
     void testToStringCustomObject()
     {
-        Date date = new Date(0); // epoch
-        DataValueOther dv = new DataValueOther(date);
-        assertEquals(date.toString(), dv.toString());
+        Instant epoch = Instant.EPOCH;
+        DataValueOther dv = new DataValueOther(epoch);
+        assertEquals(epoch.toString(), dv.toString());
     }
 
 

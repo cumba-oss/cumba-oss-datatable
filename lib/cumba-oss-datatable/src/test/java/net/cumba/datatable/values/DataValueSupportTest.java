@@ -111,7 +111,7 @@ class DataValueSupportTest
         IDataValue resultZero = DataValueSupport.getAsDataValueBoolean(0);
 
         assertTrue(((DataValueBoolean) resultNonZero).getBoolean());
-        assertTrue(!((DataValueBoolean) resultZero).getBoolean());
+        assertFalse(((DataValueBoolean) resultZero).getBoolean());
     }
 
 
@@ -122,7 +122,7 @@ class DataValueSupportTest
         IDataValue resultFalse = DataValueSupport.getAsDataValueBoolean("FALSE");
 
         assertTrue(((DataValueBoolean) resultTrue).getBoolean());
-        assertTrue(!((DataValueBoolean) resultFalse).getBoolean());
+        assertFalse(((DataValueBoolean) resultFalse).getBoolean());
     }
 
 

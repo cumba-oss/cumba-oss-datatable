@@ -259,11 +259,13 @@ class DataTableLoadSupportTest
         IDataTable tbl = support.getDataTable(uri, null);
         assertSame(tbl, cache.findCachedTable(uri));
 
-        StubLibrary lib = new StubLibrary(tempDir.toURI());
-        StubMember member = new StubMember(uri, "DM", null, lib);
-        List<String> names = support.getColumns(member).map(DataTableColumnMeta::getName)
-                .collect(Collectors.toList());
-        assertEquals(List.of("ID", "NAME"), names);
+        try (StubLibrary lib = new StubLibrary(tempDir.toURI()))
+        {
+            StubMember member = new StubMember(uri, "DM", null, lib);
+            List<String> names = support.getColumns(member).map(DataTableColumnMeta::getName)
+                    .collect(Collectors.toList());
+            assertEquals(List.of("ID", "NAME"), names);
+        }
     }
 
 
@@ -273,11 +275,13 @@ class DataTableLoadSupportTest
         URI uri = sampleCsv();
         // No table cached; library provider does not enumerate columns for this library, so the
         // fallback path (provideMetaData on the data-table factory) must supply them.
-        StubLibrary lib = new StubLibrary(tempDir.toURI());
-        StubMember member = new StubMember(uri, "DM", null, lib);
-        List<String> names = support.getColumns(member).map(DataTableColumnMeta::getName)
-                .collect(Collectors.toList());
-        assertEquals(List.of("ID", "NAME"), names);
+        try (StubLibrary lib = new StubLibrary(tempDir.toURI()))
+        {
+            StubMember member = new StubMember(uri, "DM", null, lib);
+            List<String> names = support.getColumns(member).map(DataTableColumnMeta::getName)
+                    .collect(Collectors.toList());
+            assertEquals(List.of("ID", "NAME"), names);
+        }
     }
 
     // ------------------------------------------------------------------

@@ -79,7 +79,7 @@ class IDataTableDefaultsTest
         DataTableMeta meta = DataTableMeta.builder().name("t")
                 .setColumns(col(0, "S", DataValueType.STRING), col(1, "L", DataValueType.LONG))
                 .rowCount(3).totalRowCount(3).build();
-        Object[][] vals = new Object[][]
+        Object[][] vals =
         {
                 {
                         "a", 1L

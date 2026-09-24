@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.io.IOException;
 import java.net.URI;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
@@ -184,112 +185,132 @@ class LocalRefTest
 
 
     @Test
-    void testLocalDataTableLibraryRef_getName()
+    void testLocalDataTableLibraryRef_getName() throws IOException
     {
         URI uri = URI.create("file:///lib/");
-        IDataTableLibrary lib = createStubLibrary("MyLib", "My Library", uri);
-        LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+        try (IDataTableLibrary lib = createStubLibrary("MyLib", "My Library", uri))
+        {
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
 
-        assertEquals("MyLib", ref.getName());
+            assertEquals("MyLib", ref.getName());
+        }
     }
 
 
     @Test
-    void testLocalDataTableLibraryRef_getLabel()
+    void testLocalDataTableLibraryRef_getLabel() throws IOException
     {
-        IDataTableLibrary lib = createStubLibrary("Lib", "Label", null);
-        LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", "Label", null))
+        {
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
 
-        assertEquals("Label", ref.getLabel());
+            assertEquals("Label", ref.getLabel());
+        }
     }
 
 
     @Test
-    void testLocalDataTableLibraryRef_getManager()
+    void testLocalDataTableLibraryRef_getManager() throws IOException
     {
-        IDataTableLibrary lib = createStubLibrary("Lib", null, null);
-        LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
+        {
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
 
-        assertSame(manager, ref.getManager());
+            assertSame(manager, ref.getManager());
+        }
     }
 
 
     @Test
-    void testLocalDataTableLibraryRef_getUri()
+    void testLocalDataTableLibraryRef_getUri() throws IOException
     {
         URI uri = URI.create("file:///lib/");
-        IDataTableLibrary lib = createStubLibrary("Lib", null, uri);
-        LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, uri))
+        {
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
 
-        assertEquals("file:///lib/", ref.getUri());
+            assertEquals("file:///lib/", ref.getUri());
+        }
     }
 
 
     @Test
-    void testLocalDataTableLibraryRef_getUriNull()
+    void testLocalDataTableLibraryRef_getUriNull() throws IOException
     {
-        IDataTableLibrary lib = createStubLibrary("Lib", null, null);
-        LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
+        {
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
 
-        assertNull(ref.getUri());
+            assertNull(ref.getUri());
+        }
     }
 
     // ==================== LocalLibraryMemberRef ====================
 
 
     @Test
-    void testLocalLibraryMemberRef_getName()
+    void testLocalLibraryMemberRef_getName() throws IOException
     {
-        IDataTableLibrary lib = createStubLibrary("Lib", null, null);
-        ILibraryMember member = createStubMember("DM", "Demographics", null, lib);
-        LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
+        {
+            ILibraryMember member = createStubMember("DM", "Demographics", null, lib);
+            LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
 
-        assertEquals("DM", ref.getName());
+            assertEquals("DM", ref.getName());
+        }
     }
 
 
     @Test
-    void testLocalLibraryMemberRef_getLabel()
+    void testLocalLibraryMemberRef_getLabel() throws IOException
     {
-        IDataTableLibrary lib = createStubLibrary("Lib", null, null);
-        ILibraryMember member = createStubMember("DM", "Demographics", null, lib);
-        LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
+        {
+            ILibraryMember member = createStubMember("DM", "Demographics", null, lib);
+            LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
 
-        assertEquals("Demographics", ref.getLabel());
+            assertEquals("Demographics", ref.getLabel());
+        }
     }
 
 
     @Test
-    void testLocalLibraryMemberRef_getUri()
+    void testLocalLibraryMemberRef_getUri() throws IOException
     {
         URI uri = URI.create("file:///dm.sas7bdat");
-        IDataTableLibrary lib = createStubLibrary("Lib", null, null);
-        ILibraryMember member = createStubMember("DM", null, uri, lib);
-        LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
+        {
+            ILibraryMember member = createStubMember("DM", null, uri, lib);
+            LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
 
-        assertEquals("file:///dm.sas7bdat", ref.getUri());
+            assertEquals("file:///dm.sas7bdat", ref.getUri());
+        }
     }
 
 
     @Test
-    void testLocalLibraryMemberRef_getUriNull()
+    void testLocalLibraryMemberRef_getUriNull() throws IOException
     {
-        IDataTableLibrary lib = createStubLibrary("Lib", null, null);
-        ILibraryMember member = createStubMember("DM", null, null, lib);
-        LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
+        {
+            ILibraryMember member = createStubMember("DM", null, null, lib);
+            LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
 
-        assertNull(ref.getUri());
+            assertNull(ref.getUri());
+        }
     }
 
 
     @Test
-    void testLocalLibraryMemberRef_getManager()
+    void testLocalLibraryMemberRef_getManager() throws IOException
     {
-        IDataTableLibrary lib = createStubLibrary("Lib", null, null);
-        ILibraryMember member = createStubMember("DM", null, null, lib);
-        LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
+        try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
+        {
+            ILibraryMember member = createStubMember("DM", null, null, lib);
+            LocalLibraryMemberRef ref = new LocalLibraryMemberRef(manager, member);
 
-        assertSame(manager, ref.getManager());
+            assertSame(manager, ref.getManager());
+        }
     }
 
 }

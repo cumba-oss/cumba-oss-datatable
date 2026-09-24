@@ -207,7 +207,7 @@ class CdtWriterTest
         CdtDataset back = CdtParser.parseFirst(out, "t");
         CdtColumn c = back.getColumns().get(0);
         assertEquals("Subject ID", c.getLabel());
-        assertEquals(Integer.valueOf(20), c.getLength());
+        assertEquals(20, c.getLength());
         assertEquals("NO", c.getCodelist());
     }
 
@@ -840,14 +840,17 @@ class CdtWriterTest
                 ---
                 """);
         net.cumba.datatable.provider.cdt.library.CdtLibraryProvider p = new net.cumba.datatable.provider.cdt.library.CdtLibraryProvider();
-        net.cumba.datatable.library.IDataTableLibrary lib = p.provide(file.toUri(),
+        try (net.cumba.datatable.library.IDataTableLibrary lib = p.provide(file.toUri(),
                 CdtProviderSupplier.FI_CDT,
-                java.util.Map.<net.cumba.datatable.io.Property, String> of());
-        net.cumba.datatable.library.ILibraryMember m = p.provideLibraryMembers(lib).findFirst()
-                .orElseThrow();
-        DataTableColumnMeta col = p.provideLibraryMemberColumns(m).findFirst().orElseThrow();
-        assertEquals("BEST8.", col.getDisplayFormat(), "displayFormat is a typed field");
-        assertEquals("Covariate", col.getMetaData("role"), "unrecognised keys land in metadata");
+                java.util.Map.<net.cumba.datatable.io.Property, String> of()))
+        {
+            net.cumba.datatable.library.ILibraryMember m = p.provideLibraryMembers(lib).findFirst()
+                    .orElseThrow();
+            DataTableColumnMeta col = p.provideLibraryMemberColumns(m).findFirst().orElseThrow();
+            assertEquals("BEST8.", col.getDisplayFormat(), "displayFormat is a typed field");
+            assertEquals("Covariate", col.getMetaData("role"),
+                    "unrecognised keys land in metadata");
+        }
     }
 
 

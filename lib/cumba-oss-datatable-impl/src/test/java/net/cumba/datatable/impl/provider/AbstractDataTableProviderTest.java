@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.net.URI;
@@ -14,6 +15,7 @@ import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
+import net.cumba.datatable.impl.testsupport.LoggerCapture;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.values.DataValueType;
@@ -58,8 +60,7 @@ class AbstractDataTableProviderTest
 
 
         @Override
-        public net.cumba.datatable.DataTableMeta provideMetaData(URI aUri, FileInfo aFileInfo)
-            throws IOException
+        public DataTableMeta provideMetaData(URI aUri, FileInfo aFileInfo) throws IOException
         {
             return tableToReturn != null ? tableToReturn.getMetaData() : null;
         }
@@ -192,8 +193,7 @@ class AbstractDataTableProviderTest
         NullPointerException ex = org.junit.jupiter.api.Assertions.assertThrows(
                 NullPointerException.class,
                 () -> provider.provide((net.cumba.datatable.library.ILibraryMember) null, null));
-        org.junit.jupiter.api.Assertions.assertTrue(
-                ex.getMessage().toLowerCase(java.util.Locale.ROOT).contains("amember"),
+        assertTrue(ex.getMessage().toLowerCase(java.util.Locale.ROOT).contains("amember"),
                 ex.getMessage());
     }
 
@@ -209,8 +209,7 @@ class AbstractDataTableProviderTest
         NullPointerException ex = org.junit.jupiter.api.Assertions
                 .assertThrows(NullPointerException.class, () -> provider
                         .provideMetaData((net.cumba.datatable.library.ILibraryMember) null, null));
-        org.junit.jupiter.api.Assertions.assertTrue(
-                ex.getMessage().toLowerCase(java.util.Locale.ROOT).contains("amember"),
+        assertTrue(ex.getMessage().toLowerCase(java.util.Locale.ROOT).contains("amember"),
                 ex.getMessage());
     }
 
@@ -268,11 +267,14 @@ class AbstractDataTableProviderTest
         col1.addElement(1.0);
         col1.addElement(2.0);
 
-        // Should not throw
+        assertEquals(0, col0.getMaxValueLength(), "not yet completed");
         provider.testCompleteParsedColumns(Arrays.stream(new CachedDataTableColumn[]
         {
                 col0, col1
         }));
+
+        // complete() ran on the STRING column: its maximum value length is now measured.
+        assertEquals(1, col0.getMaxValueLength());
     }
 
     // ==================== debugCalcDataSize ====================
@@ -294,7 +296,18 @@ class AbstractDataTableProviderTest
         col.complete();
         ColumnCachedDataTable table = new ColumnCachedDataTable(meta, col);
 
-        // Should not throw — just logs debug info
-        provider.testDebugCalcDataSize(table);
+        // Logs one line per cached column and the total, at DEBUG.
+        try (LoggerCapture log = LoggerCapture.attach(AbstractDataTableProvider.class.getName()))
+        {
+            provider.testDebugCalcDataSize(table);
+
+            long bytes = col.getDataBuffer().getEstimatedMemoryBytes();
+            assertTrue(log.messages().contains("VAL[STRING]: " + bytes + " bytes"),
+                    log.messages()::toString);
+            assertTrue(
+                    log.messages()
+                            .contains("Calculated a total data size of: " + bytes + " bytes!"),
+                    log.messages()::toString);
+        }
     }
 }

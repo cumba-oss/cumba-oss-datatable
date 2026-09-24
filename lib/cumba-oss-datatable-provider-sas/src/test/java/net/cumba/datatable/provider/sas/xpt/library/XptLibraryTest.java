@@ -3,6 +3,7 @@ package net.cumba.datatable.provider.sas.xpt.library;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 import java.util.stream.Stream;
@@ -18,74 +19,83 @@ class XptLibraryTest
     // ==================== Constructor ====================
 
     @Test
-    void testConstructor()
+    void testConstructor() throws IOException
     {
 
-        XptLibrary lib = new XptLibrary("TEST", "Test Library", TEST_URI);
-
-        assertEquals("TEST", lib.getName());
-        assertEquals("Test Library", lib.getLabel());
-        assertEquals(TEST_URI, lib.getUri());
+        try (XptLibrary lib = new XptLibrary("TEST", "Test Library", TEST_URI))
+        {
+            assertEquals("TEST", lib.getName());
+            assertEquals("Test Library", lib.getLabel());
+            assertEquals(TEST_URI, lib.getUri());
+        }
     }
 
 
     @Test
-    void testFileInfo()
+    void testFileInfo() throws IOException
     {
-        XptLibrary lib = new XptLibrary("TEST", null, TEST_URI);
-        assertSame(XptProviderSupplier.FI_XPT, lib.getFileInfo());
+        try (XptLibrary lib = new XptLibrary("TEST", null, TEST_URI))
+        {
+            assertSame(XptProviderSupplier.FI_XPT, lib.getFileInfo());
+        }
     }
 
     // ==================== getType ====================
 
 
     @Test
-    void testGetType()
+    void testGetType() throws IOException
     {
-        XptLibrary lib = new XptLibrary("TEST", null, TEST_URI);
-        assertEquals("Xport", lib.getType());
+        try (XptLibrary lib = new XptLibrary("TEST", null, TEST_URI))
+        {
+            assertEquals("Xport", lib.getType());
+        }
     }
 
     // ==================== getMembers ====================
 
 
     @Test
-    void testGetMembersEmptyWhenNotSet()
+    void testGetMembersEmptyWhenNotSet() throws IOException
     {
-        XptLibrary lib = new XptLibrary("TEST", null, TEST_URI);
-        Stream<XptLibraryMember> members = lib.getMembers();
-        assertEquals(0, members.count());
+        try (XptLibrary lib = new XptLibrary("TEST", null, TEST_URI))
+        {
+            Stream<XptLibraryMember> members = lib.getMembers();
+            assertEquals(0, members.count());
+        }
     }
 
 
     @Test
-    void testGetMembersAfterSet()
+    void testGetMembersAfterSet() throws IOException
     {
-        XptLibrary lib = new XptLibrary("TEST", null, TEST_URI);
+        try (XptLibrary lib = new XptLibrary("TEST", null, TEST_URI))
+        {
+            XptLibraryMember m = XptLibraryMember.builder().library(lib).name("DM")
+                    .label("Demographics").uri(URI.create("file:///data/test.xpt#DM")).build();
 
-        XptLibraryMember m = XptLibraryMember.builder().library(lib).name("DM")
-                .label("Demographics").uri(URI.create("file:///data/test.xpt#DM")).build();
+            lib.setMembers(List.of(m));
 
-        lib.setMembers(List.of(m));
-
-        List<XptLibraryMember> members = lib.getMembers().toList();
-        assertEquals(1, members.size());
-        assertEquals("DM", members.get(0).getName());
+            List<XptLibraryMember> members = lib.getMembers().toList();
+            assertEquals(1, members.size());
+            assertEquals("DM", members.get(0).getName());
+        }
     }
 
 
     @Test
-    void testGetMembersMultiple()
+    void testGetMembersMultiple() throws IOException
     {
-        XptLibrary lib = new XptLibrary("TEST", null, TEST_URI);
+        try (XptLibrary lib = new XptLibrary("TEST", null, TEST_URI))
+        {
+            XptLibraryMember m1 = XptLibraryMember.builder().library(lib).name("DM")
+                    .uri(URI.create("file:///test.xpt#DM")).build();
+            XptLibraryMember m2 = XptLibraryMember.builder().library(lib).name("AE")
+                    .uri(URI.create("file:///test.xpt#AE")).build();
 
-        XptLibraryMember m1 = XptLibraryMember.builder().library(lib).name("DM")
-                .uri(URI.create("file:///test.xpt#DM")).build();
-        XptLibraryMember m2 = XptLibraryMember.builder().library(lib).name("AE")
-                .uri(URI.create("file:///test.xpt#AE")).build();
+            lib.setMembers(List.of(m1, m2));
 
-        lib.setMembers(List.of(m1, m2));
-
-        assertEquals(2, lib.getMembers().count());
+            assertEquals(2, lib.getMembers().count());
+        }
     }
 }

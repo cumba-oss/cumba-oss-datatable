@@ -102,11 +102,13 @@ class CdtBomStrippingTest
     {
         Path p = writeWithBom(tmp, "lib.cdt", DM_BODY);
         CdtLibraryProvider lp = new CdtLibraryProvider();
-        IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT,
-                Map.<Property, String> of());
-        ILibraryMember[] members = lp.provideLibraryMembers(lib).toArray(ILibraryMember[]::new);
-        assertEquals(1, members.length);
-        assertEquals("DM", members[0].getName());
+        try (IDataTableLibrary lib = lp.provide(p.toUri(), CdtProviderSupplier.FI_CDT,
+                Map.<Property, String> of()))
+        {
+            ILibraryMember[] members = lp.provideLibraryMembers(lib).toArray(ILibraryMember[]::new);
+            assertEquals(1, members.length);
+            assertEquals("DM", members[0].getName());
+        }
     }
 
 

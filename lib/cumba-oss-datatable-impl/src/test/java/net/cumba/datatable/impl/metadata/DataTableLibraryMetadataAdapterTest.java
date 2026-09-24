@@ -182,7 +182,7 @@ class DataTableLibraryMetadataAdapterTest
         // registered ILibrarySupplier. The factory returns no providers, so the
         // adapter ends up with no tables.
         URI uri = tempDir.resolve("not-a-dblib.txt").toUri();
-        net.cumba.datatable.library.IDataTableLibrary lib = new net.cumba.datatable.library.IDataTableLibrary()
+        try (net.cumba.datatable.library.IDataTableLibrary lib = new net.cumba.datatable.library.IDataTableLibrary()
         {
 
             @Override
@@ -212,13 +212,14 @@ class DataTableLibraryMetadataAdapterTest
                 return "custom";
             }
 
-        };
+        })
+        {
+            IMetadataLibrary adapter = DataTableLibraryMetadataAdapter.of(lib);
 
-        IMetadataLibrary adapter = DataTableLibraryMetadataAdapter.of(lib);
-
-        assertEquals("L", adapter.getName());
-        assertNotNull(adapter.getDataTables());
-        assertTrue(adapter.getDataTables().isEmpty());
+            assertEquals("L", adapter.getName());
+            assertNotNull(adapter.getDataTables());
+            assertTrue(adapter.getDataTables().isEmpty());
+        }
     }
 
 
@@ -247,13 +248,14 @@ class DataTableLibraryMetadataAdapterTest
 
         DataBrowserLibraryBean bean = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readValue(json, DataBrowserLibraryBean.class);
-        DataBrowserLibrary lib = new DataBrowserLibrary(dblibFile.toUri(), bean);
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(dblibFile.toUri(), bean))
+        {
+            IMetadataLibrary adapter = DataTableLibraryMetadataAdapter.of(lib);
+            IColumnMetadata col = adapter.getDataTables().get(0).getColumns().get(0);
 
-        IMetadataLibrary adapter = DataTableLibraryMetadataAdapter.of(lib);
-        IColumnMetadata col = adapter.getDataTables().get(0).getColumns().get(0);
-
-        assertEquals(DataValueType.STRING, col.getType());
-        assertEquals("WHATEVER", col.getName());
+            assertEquals(DataValueType.STRING, col.getType());
+            assertEquals("WHATEVER", col.getName());
+        }
     }
 
 
@@ -280,11 +282,12 @@ class DataTableLibraryMetadataAdapterTest
 
         DataBrowserLibraryBean bean = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readValue(json, DataBrowserLibraryBean.class);
-        DataBrowserLibrary lib = new DataBrowserLibrary(dblibFile.toUri(), bean);
-
-        IMetadataLibrary adapter = DataTableLibraryMetadataAdapter.of(lib);
-        IColumnMetadata sex = adapter.getDataTables().get(0).getColumn("SEX").orElseThrow();
-        assertEquals("C66731", sex.getCodelist());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(dblibFile.toUri(), bean))
+        {
+            IMetadataLibrary adapter = DataTableLibraryMetadataAdapter.of(lib);
+            IColumnMetadata sex = adapter.getDataTables().get(0).getColumn("SEX").orElseThrow();
+            assertEquals("C66731", sex.getCodelist());
+        }
     }
 
 
@@ -301,15 +304,18 @@ class DataTableLibraryMetadataAdapterTest
 
 
     @Test
-    void testUnusedDataBrowserMemberConstructor(@TempDir Path tempDir)
+    void testUnusedDataBrowserMemberConstructor(@TempDir Path tempDir) throws IOException
     {
         // Smoke-test that DataBrowserMember constructed manually does not break
         // adapter integration. Members built outside the library are still valid
         // ILibraryMember instances.
         DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("L").build();
-        DataBrowserLibrary lib = new DataBrowserLibrary(tempDir.resolve("x.dblib").toUri(), bean);
-        DataBrowserMember m = new DataBrowserMember(lib, tempDir.resolve("x.csv").toUri(), "X",
-                "Label");
-        assertNotNull(m.getUri());
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(tempDir.resolve("x.dblib").toUri(),
+                bean))
+        {
+            DataBrowserMember m = new DataBrowserMember(lib, tempDir.resolve("x.csv").toUri(), "X",
+                    "Label");
+            assertNotNull(m.getUri());
+        }
     }
 }

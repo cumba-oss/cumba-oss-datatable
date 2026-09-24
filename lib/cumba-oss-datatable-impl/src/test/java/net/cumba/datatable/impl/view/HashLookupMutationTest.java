@@ -40,7 +40,7 @@ class HashLookupMutationTest
         Set<Integer> mixed = new HashSet<>();
         for (int i = 0; i < 1000; i++)
         {
-            mixed.add(Integer.valueOf(HashLookup.mix(31 * 31 + i)));
+            mixed.add(HashLookup.mix(31 * 31 + i));
         }
         assertEquals(1000, mixed.size(),
                 "mix folded distinct structured keys onto the same value - every such pair is a "

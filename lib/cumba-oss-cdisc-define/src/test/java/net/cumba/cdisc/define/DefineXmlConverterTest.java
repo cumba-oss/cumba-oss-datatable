@@ -168,7 +168,12 @@ class DefineXmlConverterTest
     @Test
     void contextAcceptsSubmissionAndOther() throws Exception
     {
-        of(V20).context("Submission").context("Other");
+        // Both values are accepted; the last one set is what the 2.0 -> 2.1 step writes.
+        DefineXmlConverter c = of(V20).context("Submission").context("Other").to(Version.V2_1)
+                .convert();
+        assertEquals("Other",
+                DefineDomUtil.attrIgnoreNs(c.getDocument().getDocumentElement(), "Context"));
+        assertTrue(c.getLog().contains("added def:Context=\"Other\""), c.getLog()::toString);
     }
 
 

@@ -11,7 +11,7 @@ import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-public class ValueListDefTest
+class ValueListDefTest
 {
 
     // ========================================================================
@@ -394,9 +394,9 @@ public class ValueListDefTest
                     .whereClauseRefs(Collections.singletonList(wcRef)).build();
 
             assertEquals("IT.SUBJID", itemRef.getItemOID());
-            assertEquals(Integer.valueOf(1), itemRef.getOrderNumber());
+            assertEquals(1, itemRef.getOrderNumber());
             assertEquals("Yes", itemRef.getMandatory());
-            assertEquals(Integer.valueOf(1), itemRef.getKeySequence());
+            assertEquals(1, itemRef.getKeySequence());
             assertEquals("MT.DERIVE", itemRef.getMethodOID());
             assertEquals("Identifier", itemRef.getRole());
             assertEquals("CL.ROLE", itemRef.getRoleCodeListOID());

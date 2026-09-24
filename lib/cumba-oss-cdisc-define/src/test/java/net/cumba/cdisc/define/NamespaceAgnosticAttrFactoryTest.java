@@ -14,6 +14,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.io.StringReader;
@@ -157,16 +158,18 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLStreamReader_reader_wrapped() throws XMLStreamException
+    void createXMLStreamReader_reader_wrapped() throws XMLStreamException, IOException
     {
         XMLStreamReader inner = mock(XMLStreamReader.class);
-        Reader r = new StringReader("");
-        when(delegate.createXMLStreamReader(r)).thenReturn(inner);
+        try (Reader r = new StringReader(""))
+        {
+            when(delegate.createXMLStreamReader(r)).thenReturn(inner);
 
-        XMLStreamReader wrapped = factory.createXMLStreamReader(r);
+            XMLStreamReader wrapped = factory.createXMLStreamReader(r);
 
-        assertNotNull(wrapped);
-        verify(delegate, times(1)).createXMLStreamReader(r);
+            assertNotNull(wrapped);
+            verify(delegate, times(1)).createXMLStreamReader(r);
+        }
     }
 
 
@@ -185,16 +188,18 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLStreamReader_systemIdAndReader_wrapped() throws XMLStreamException
+    void createXMLStreamReader_systemIdAndReader_wrapped() throws XMLStreamException, IOException
     {
         XMLStreamReader inner = mock(XMLStreamReader.class);
-        Reader r = new StringReader("");
-        when(delegate.createXMLStreamReader("sid", r)).thenReturn(inner);
+        try (Reader r = new StringReader(""))
+        {
+            when(delegate.createXMLStreamReader("sid", r)).thenReturn(inner);
 
-        XMLStreamReader wrapped = factory.createXMLStreamReader("sid", r);
+            XMLStreamReader wrapped = factory.createXMLStreamReader("sid", r);
 
-        assertNotNull(wrapped);
-        verify(delegate, times(1)).createXMLStreamReader("sid", r);
+            assertNotNull(wrapped);
+            verify(delegate, times(1)).createXMLStreamReader("sid", r);
+        }
     }
 
 
@@ -241,15 +246,17 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLEventReader_reader_delegated() throws XMLStreamException
+    void createXMLEventReader_reader_delegated() throws XMLStreamException, IOException
     {
         XMLEventReader inner = mock(XMLEventReader.class);
-        Reader r = new StringReader("");
-        when(delegate.createXMLEventReader(r)).thenReturn(inner);
+        try (Reader r = new StringReader(""))
+        {
+            when(delegate.createXMLEventReader(r)).thenReturn(inner);
 
-        XMLEventReader result = factory.createXMLEventReader(r);
+            XMLEventReader result = factory.createXMLEventReader(r);
 
-        assertSame(inner, result);
+            assertSame(inner, result);
+        }
     }
 
 
@@ -267,15 +274,17 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLEventReader_systemIdAndReader_delegated() throws XMLStreamException
+    void createXMLEventReader_systemIdAndReader_delegated() throws XMLStreamException, IOException
     {
         XMLEventReader inner = mock(XMLEventReader.class);
-        Reader r = new StringReader("");
-        when(delegate.createXMLEventReader("sid", r)).thenReturn(inner);
+        try (Reader r = new StringReader(""))
+        {
+            when(delegate.createXMLEventReader("sid", r)).thenReturn(inner);
 
-        XMLEventReader result = factory.createXMLEventReader("sid", r);
+            XMLEventReader result = factory.createXMLEventReader("sid", r);
 
-        assertSame(inner, result);
+            assertSame(inner, result);
+        }
     }
 
 

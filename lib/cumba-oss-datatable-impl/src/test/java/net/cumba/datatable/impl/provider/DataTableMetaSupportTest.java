@@ -383,7 +383,7 @@ class DataTableMetaSupportTest
         s.setTable(f.toUri(), "LB");
         s.setDatasetSize(f.toUri());
 
-        assertEquals(Long.valueOf(1234L),
+        assertEquals(1234L,
                 s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
     }
 
@@ -400,7 +400,7 @@ class DataTableMetaSupportTest
         s.setTable(URI.create("https://example.org/lb.xpt"), "LB");
         s.setDatasetSize(parsed.toFile(), URI.create("https://example.org/lb.xpt"));
 
-        assertEquals(Long.valueOf(77L),
+        assertEquals(77L,
                 s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
     }
 
@@ -445,7 +445,7 @@ class DataTableMetaSupportTest
         s.setTable(member, "DM");
         s.setDatasetSize(member);
 
-        assertEquals(Long.valueOf(4096L),
+        assertEquals(4096L,
                 s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
     }
 
@@ -460,7 +460,7 @@ class DataTableMetaSupportTest
         s.setTable(f.toUri(), "E");
         s.setDatasetSize(f.toUri());
 
-        assertEquals(Long.valueOf(0L),
+        assertEquals(0L,
                 s.getTableMeta().build().getMetaData(DataTableMetaSupport.META_KEY_DATASET_SIZE));
     }
 

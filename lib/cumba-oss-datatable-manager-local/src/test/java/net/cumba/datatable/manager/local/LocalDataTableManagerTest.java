@@ -272,6 +272,8 @@ class LocalDataTableManagerTest
 
 
     @Test
+    // The library belongs to the manager's ref; the manager releases and closes it.
+    @SuppressWarnings("PMD.CloseResource")
     void getLibraryRef_directory_wrapsFolderLibrary() throws IOException
     {
         IDataTableLibraryRef ref = manager.getLibraryRef(tempDir.toURI(), null);

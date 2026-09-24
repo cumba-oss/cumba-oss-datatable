@@ -140,7 +140,7 @@ class DefaultDataTableColumnMetaTest
     @Test
     void testGetMetaTable()
     {
-        Object[] original = new Object[]
+        Object[] original =
         {
                 "k", "v"
         };
@@ -237,7 +237,7 @@ class DefaultDataTableColumnMetaTest
     @Test
     void testAllFields()
     {
-        Object[] table = new Object[]
+        Object[] table =
         {
                 "info", "details"
         };

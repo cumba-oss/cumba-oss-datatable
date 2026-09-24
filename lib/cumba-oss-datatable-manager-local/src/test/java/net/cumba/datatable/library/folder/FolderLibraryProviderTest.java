@@ -58,9 +58,11 @@ class FolderLibraryProviderTest
         FolderLibraryProvider provider = new FolderLibraryProvider();
         URI dirUri = tempDir.toURI();
 
-        IDataTableLibrary library = provider.provide(dirUri, null);
-        assertNotNull(library);
-        assertTrue(library instanceof FolderLibrary);
+        try (IDataTableLibrary library = provider.provide(dirUri, null))
+        {
+            assertNotNull(library);
+            assertTrue(library instanceof FolderLibrary);
+        }
     }
 
 
@@ -84,10 +86,11 @@ class FolderLibraryProviderTest
     void testProvideLibraryMembersWithFolderLibrary() throws IOException
     {
         FolderLibraryProvider provider = new FolderLibraryProvider();
-        FolderLibrary library = new FolderLibrary(tempDir);
-
-        Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(library);
-        assertNotNull(members);
+        try (FolderLibrary library = new FolderLibrary(tempDir);
+                Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(library))
+        {
+            assertNotNull(members);
+        }
     }
 
 
@@ -96,10 +99,11 @@ class FolderLibraryProviderTest
     {
         FolderLibraryProvider provider = new FolderLibraryProvider();
         // A foreign (non-folder) library: the provider must handle it gracefully (non-null result).
-        IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test"));
-
-        Stream<? extends ILibraryMember> result = provider.provideLibraryMembers(otherLib);
-        assertNotNull(result);
+        try (IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test"));
+                Stream<? extends ILibraryMember> result = provider.provideLibraryMembers(otherLib))
+        {
+            assertNotNull(result);
+        }
     }
 
     // ==================== provideLibraryMemberColumns ====================
@@ -109,13 +113,16 @@ class FolderLibraryProviderTest
     void testProvideLibraryMemberColumnsWithFolderMember() throws IOException
     {
         FolderLibraryProvider provider = new FolderLibraryProvider();
-        FolderLibrary library = new FolderLibrary(tempDir);
-        File file = new File(tempDir, "data.csv");
-        file.createNewFile();
-        FolderMember member = new FolderMember(library, file.toPath());
+        try (FolderLibrary library = new FolderLibrary(tempDir))
+        {
+            File file = new File(tempDir, "data.csv");
+            file.createNewFile();
+            FolderMember member = new FolderMember(library, file.toPath());
 
-        Stream<? extends DataTableColumnMeta> cols = provider.provideLibraryMemberColumns(member);
-        assertNotNull(cols);
+            Stream<? extends DataTableColumnMeta> cols = provider
+                    .provideLibraryMemberColumns(member);
+            assertNotNull(cols);
+        }
     }
 
 
@@ -135,13 +142,14 @@ class FolderLibraryProviderTest
 
 
     @Test
-    void testGetLibraryAttributeAlwaysNull()
+    void testGetLibraryAttributeAlwaysNull() throws IOException
     {
         FolderLibraryProvider provider = new FolderLibraryProvider();
-        FolderLibrary library = new FolderLibrary(tempDir);
-
-        assertNull(provider.getLibraryAttribute(library, "any-key"));
-        assertNull(provider.getLibraryAttribute(library, "define.xml"));
+        try (FolderLibrary library = new FolderLibrary(tempDir))
+        {
+            assertNull(provider.getLibraryAttribute(library, "any-key"));
+            assertNull(provider.getLibraryAttribute(library, "define.xml"));
+        }
     }
 
     // ==================== Helpers ====================

@@ -1,6 +1,7 @@
 package net.cumba.datatable.provider.cdt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -75,7 +76,7 @@ class CdtRoundTripTest
         URI withFrag = URI.create("file:///tmp/foo.cdt#DM");
         CdtLibrarySupplier s = new CdtLibrarySupplier();
         assertTrue(s.canProvideFor(bare, CdtProviderSupplier.FI_CDT));
-        assertTrue(!s.canProvideFor(withFrag, CdtProviderSupplier.FI_CDT));
+        assertFalse(s.canProvideFor(withFrag, CdtProviderSupplier.FI_CDT));
     }
 
 
@@ -83,14 +84,16 @@ class CdtRoundTripTest
     void libraryProviderReturnsAllMembers(@TempDir Path tmp) throws IOException
     {
         Path p = write(tmp, "lib.cdt", DM + "\n" + AE);
-        IDataTableLibrary lib = new CdtLibraryProvider().provide(p.toUri(),
-                CdtProviderSupplier.FI_CDT, Map.<Property, String> of());
-        ILibraryMember[] members = new CdtLibraryProvider().provideLibraryMembers(lib)
-                .toArray(ILibraryMember[]::new);
-        assertEquals(2, members.length);
-        assertEquals("DM", members[0].getName());
-        assertEquals("AE", members[1].getName());
-        assertEquals("DM", members[0].getUri().getFragment());
+        try (IDataTableLibrary lib = new CdtLibraryProvider().provide(p.toUri(),
+                CdtProviderSupplier.FI_CDT, Map.<Property, String> of()))
+        {
+            ILibraryMember[] members = new CdtLibraryProvider().provideLibraryMembers(lib)
+                    .toArray(ILibraryMember[]::new);
+            assertEquals(2, members.length);
+            assertEquals("DM", members[0].getName());
+            assertEquals("AE", members[1].getName());
+            assertEquals("DM", members[0].getUri().getFragment());
+        }
     }
 
 
@@ -139,12 +142,14 @@ class CdtRoundTripTest
                 x
                 """;
         Path p = write(tmp, "only.cdt", content);
-        IDataTableLibrary lib = new CdtLibraryProvider().provide(p.toUri(),
-                CdtProviderSupplier.FI_CDT, Map.<Property, String> of());
-        ILibraryMember[] members = new CdtLibraryProvider().provideLibraryMembers(lib)
-                .toArray(ILibraryMember[]::new);
-        assertEquals(1, members.length);
-        assertEquals("ONLY", members[0].getName());
+        try (IDataTableLibrary lib = new CdtLibraryProvider().provide(p.toUri(),
+                CdtProviderSupplier.FI_CDT, Map.<Property, String> of()))
+        {
+            ILibraryMember[] members = new CdtLibraryProvider().provideLibraryMembers(lib)
+                    .toArray(ILibraryMember[]::new);
+            assertEquals(1, members.length);
+            assertEquals("ONLY", members[0].getName());
+        }
     }
 
 

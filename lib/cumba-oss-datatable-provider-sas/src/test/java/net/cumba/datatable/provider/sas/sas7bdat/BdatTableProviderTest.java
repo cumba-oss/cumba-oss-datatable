@@ -204,7 +204,7 @@ class BdatTableProviderTest
     void testNumberBranchUnchanged() throws Exception
     {
         // Sanity guard: the F-D11 change must not break the Number branch.
-        CachedDataTableColumn col = invokeAddData2Column(DataValueType.DOUBLE, Double.valueOf(1.5));
+        CachedDataTableColumn col = invokeAddData2Column(DataValueType.DOUBLE, 1.5);
         assertEquals(1L, col.getRowCount());
         assertEquals(1.5, ((Number) col.getValue(0)).doubleValue(), 0.0);
     }

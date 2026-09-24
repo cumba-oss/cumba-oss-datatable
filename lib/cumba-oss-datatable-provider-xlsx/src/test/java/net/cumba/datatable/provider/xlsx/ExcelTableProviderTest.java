@@ -789,8 +789,7 @@ class ExcelTableProviderTest
             s.createRow(0).createCell(0).setCellValue("X");
             Row r1 = s.createRow(1);
             r1.createCell(0).setCellFormula("1/0");
-            org.apache.poi.ss.usermodel.FormulaEvaluator ev = wb.getCreationHelper()
-                    .createFormulaEvaluator();
+            FormulaEvaluator ev = wb.getCreationHelper().createFormulaEvaluator();
             ev.evaluateAll();
         });
 
@@ -1376,9 +1375,10 @@ class ExcelTableProviderTest
                     "exactly one WARNING per header cell whose name could not be read");
             assertTrue(log.containsMessageContaining("Excel column B"),
                     "the diagnostic must name the Excel column letter: " + log.messages());
-            assertTrue(log.containsMessageContaining("'V2'"), () -> "" + log.messages());
-            assertTrue(log.containsMessageContaining("Excel column C"), () -> "" + log.messages());
-            assertTrue(log.containsMessageContaining("'V3'"), () -> "" + log.messages());
+            assertTrue(log.containsMessageContaining("'V2'"), () -> String.valueOf(log.messages()));
+            assertTrue(log.containsMessageContaining("Excel column C"),
+                    () -> String.valueOf(log.messages()));
+            assertTrue(log.containsMessageContaining("'V3'"), () -> String.valueOf(log.messages()));
             assertTrue(log.containsMessageContaining("sheet 'DATA'"),
                     "the diagnostic must name the sheet: the URI carries no sheet fragment on this"
                             + " path, so nothing else identifies it in a multi-sheet workbook");
@@ -1451,7 +1451,12 @@ class ExcelTableProviderTest
      * handle is deliberately left open for the lifetime of the test — a streaming sheet cannot be
      * read after its workbook is closed, and these are temp files in a short-lived test JVM.
      */
-    @SuppressWarnings("resource")
+    // The returned streaming Sheet reads through this stream and workbook, so neither may be
+    // closed here; see above.
+    @SuppressWarnings(
+    {
+            "resource", "PMD.CloseResource"
+    })
     private static Sheet openSheet(URI aUri) throws IOException
     {
         InputStream in = aUri.toURL().openStream();
@@ -1840,8 +1845,6 @@ class ExcelTableProviderTest
 
 
     @Test
-    @SuppressWarnings("JavaUtilDate") // POI's Cell.setCellValue/getDateCellValue work in
-                                      // java.util.Date
     void testProvideHandlesDateBooleanAndFormulaCells() throws Exception
     {
         URI uri = writeTempXlsx(wb ->
@@ -1861,7 +1864,7 @@ class ExcelTableProviderTest
             {
                 Row row = s.createRow(r);
                 org.apache.poi.ss.usermodel.Cell dc = row.createCell(0);
-                dc.setCellValue(new java.util.Date(86_400_000L * r));
+                dc.setCellValue(java.time.LocalDate.of(1970, 1, 1).plusDays(r));
                 dc.setCellStyle(dateStyle);
                 row.createCell(1).setCellValue(r % 2 == 0);
                 row.createCell(2).setCellFormula("1+" + r);

@@ -14,7 +14,7 @@ class DataValueDoubleTest
     void testGetValue()
     {
         DataValueDouble dv = new DataValueDouble(3.14);
-        assertEquals(Double.valueOf(3.14), dv.getValue());
+        assertEquals(3.14, dv.getValue());
     }
 
 
