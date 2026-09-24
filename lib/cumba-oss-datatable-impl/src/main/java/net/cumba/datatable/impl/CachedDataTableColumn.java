@@ -1,13 +1,19 @@
 package net.cumba.datatable.impl;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Set;
 
 import lombok.Getter;
 import net.cumba.datatable.AbstractDataTableColumn;
 import net.cumba.datatable.ExMsgs;
 import net.cumba.datatable.IDataTableColumn;
+import net.cumba.datatable.impl.databuffer.DataBufferDouble;
 import net.cumba.datatable.impl.databuffer.DataBufferFactory;
+import net.cumba.datatable.impl.databuffer.DataBufferInt;
+import net.cumba.datatable.impl.databuffer.DataBufferLong;
+import net.cumba.datatable.impl.databuffer.DataBufferObject;
 import net.cumba.datatable.impl.databuffer.IDataBuffer;
+import net.cumba.datatable.impl.databuffer.IDataBufferNumeric;
 import net.cumba.datatable.values.DataValueMissing;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
@@ -21,6 +27,44 @@ import org.jspecify.annotations.Nullable;
  */
 public class CachedDataTableColumn extends AbstractDataTableColumn
 {
+
+    /**
+     * The buffers whose typed read is this repository's {@code AbstractDataBuffer.createDataValue}
+     * UNCHANGED — the class overrides neither {@code getDataValue} nor {@code createDataValue} — so
+     * a cell's data value is decided by its raw {@code getValue(idx)}. Derived for
+     * {@link #presentStringValue(long)} and {@link #presentNumericValue(long)}
+     * (PLAN-identity-safe-join-caches D6).
+     *
+     * <p>
+     * ⚠ Derived from THIS repository's value creation, which differs from the internal twin's: here
+     * the LONG arm has no NaN check, so a boxed NaN in a LONG column reads back as a PRESENT
+     * {@code DataValueLong(0)} (the internal twin answers {@code MIS_UNKNOWN}), and the STRING arm
+     * has none either ({@code DataValueString("NaN")}). The fast reads below answer every NaN the
+     * slow way, which is correct under either rule.
+     * </p>
+     *
+     * <p>
+     * Dispatch is on the EXACT class ({@code getClass()}), never {@code instanceof}: a subclass may
+     * override the typed read, and a buffer class that was not analysed here must fall back to the
+     * slow path. Package-private so the test can check that every concrete {@link IDataBuffer} is
+     * either handled here or knowingly excluded.
+     * </p>
+     */
+    static final Set<Class<? extends IDataBuffer>> FAST_OBJECT_BUFFERS = Set
+            .of(DataBufferObject.class);
+
+    /**
+     * The buffers whose typed read is this repository's
+     * {@code AbstractNumericDataBuffer.createDataValue} UNCHANGED: {@code isMissing} is tested
+     * FIRST for every type (so a {@code DataBufferLong} / {@code DataBufferInt} sentinel is missing
+     * even though its {@code getValueAsDouble} is an ordinary number), then DOUBLE is
+     * {@code getValueAsDouble} and LONG is {@code getValueAsLong}. Only the numeric arms are fast
+     * here: the raw value of these three buffers is never a {@code String}, so a STRING column
+     * backed by one always takes the slow path. See {@link #FAST_OBJECT_BUFFERS} for why the
+     * dispatch is on the exact class.
+     */
+    static final Set<Class<? extends IDataBuffer>> FAST_NUMERIC_BUFFERS = Set
+            .of(DataBufferDouble.class, DataBufferLong.class, DataBufferInt.class);
 
     /**
      * The data buffer that is used to store the values.
@@ -320,6 +364,124 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
             return new DataValueMissing(MissingValue.MIS_ERROR);
         }
         return dataBuffer.getDataValue(idx, type);
+    }
+
+
+    /**
+     * The cell as a PRESENT, non-empty character value, read without building a data value — or
+     * {@code null} when this method cannot say so cheaply, in which case the caller must read
+     * {@link #getDataValue(long)}.
+     *
+     * <p>
+     * Contract: for every row where the result is non-null, {@code getDataValue(aRow)} is a
+     * {@code DataValueString} whose value equals the result and is non-empty. Only for a
+     * {@link DataValueType#STRING} column; always {@code null} otherwise. Throws exactly as
+     * {@code getDataValue} does for an invalid row (it calls {@link #ensureValidRow(long)} first).
+     * </p>
+     *
+     * @param aRow
+     *            the row index.
+     * @return the present, non-empty string, or {@code null} for "read {@code getDataValue}".
+     * @throws IndexOutOfBoundsException
+     *             if the row is not a valid row of this column.
+     */
+    public @Nullable String presentStringValue(long aRow) throws IndexOutOfBoundsException
+    {
+        int idx = Math.toIntExact(ensureValidRow(aRow));
+        if (type != DataValueType.STRING)
+        {
+            return null;
+        }
+        // Read the field once per call and never cache it: a column may reassign it.
+        IDataBuffer buffer = dataBuffer;
+        if (idx >= buffer.size() || !FAST_OBJECT_BUFFERS.contains(buffer.getClass()))
+        {
+            // A short buffer answers MIS_ERROR; any other buffer class takes the slow path.
+            return null;
+        }
+        // AbstractDataBuffer.createDataValue's STRING arm: a String is DataValueString(s) -- a
+        // MissingValue or null never is -- and "" is present but EMPTY, so it goes the slow way.
+        return buffer.getValue(idx) instanceof String s && !s.isEmpty() ? s : null;
+    }
+
+
+    /**
+     * The cell as a PRESENT number, read without building a data value — or {@code NaN} when this
+     * method cannot say so cheaply, in which case the caller must read {@link #getDataValue(long)}.
+     *
+     * <p>
+     * Contract: for every row where the result is not NaN, {@code getDataValue(aRow)} is a
+     * non-missing {@code DataValueLong} ({@link DataValueType#LONG} column) or
+     * {@code DataValueDouble} ({@link DataValueType#DOUBLE} column) whose
+     * {@code getValue().doubleValue()} is exactly (bit for bit, {@code -0.0} included) the result.
+     * Only for a LONG or DOUBLE column; always NaN otherwise. Throws exactly as
+     * {@code getDataValue} does for an invalid row (it calls {@link #ensureValidRow(long)} first).
+     * </p>
+     *
+     * <p>
+     * ⚠ A NaN result means "slow path", so a present value that genuinely is NaN can never be
+     * answered here.
+     * </p>
+     *
+     * @param aRow
+     *            the row index.
+     * @return the present number, or NaN for "read {@code getDataValue}".
+     * @throws IndexOutOfBoundsException
+     *             if the row is not a valid row of this column.
+     */
+    public double presentNumericValue(long aRow) throws IndexOutOfBoundsException
+    {
+        int idx = Math.toIntExact(ensureValidRow(aRow));
+        boolean isLong = type == DataValueType.LONG;
+        if (!isLong && type != DataValueType.DOUBLE)
+        {
+            return Double.NaN;
+        }
+        // Read the field once per call and never cache it: a column may reassign it.
+        IDataBuffer buffer = dataBuffer;
+        if (idx >= buffer.size())
+        {
+            // getDataValue answers MIS_ERROR for a short buffer.
+            return Double.NaN;
+        }
+        Class<?> bufferClass = buffer.getClass();
+        if (FAST_OBJECT_BUFFERS.contains(bufferClass))
+        {
+            // AbstractDataBuffer.createDataValue: a Number is DataValueDouble(n.doubleValue()) or
+            // DataValueLong(n.longValue()); a MissingValue is not a Number. ⚠ This repository's
+            // LONG arm turns a NaN into a PRESENT DataValueLong(0); answering it the slow way is
+            // still correct, and keeps a NaN slow on both arms.
+            if (buffer.getValue(idx) instanceof Number n)
+            {
+                double d = n.doubleValue();
+                if (!Double.isNaN(d))
+                {
+                    if (isLong)
+                    {
+                        return n.longValue();
+                    }
+                    return d;
+                }
+            }
+            return Double.NaN;
+        }
+        if (FAST_NUMERIC_BUFFERS.contains(bufferClass))
+        {
+            // AbstractNumericDataBuffer.createDataValue tests isMissing BEFORE the type switch, so
+            // the missing sentinel of a long/int buffer (an ordinary number through
+            // getValueAsDouble) must be caught here for the DOUBLE arm too.
+            IDataBufferNumeric numeric = (IDataBufferNumeric) buffer;
+            if (numeric.isMissing(idx))
+            {
+                return Double.NaN;
+            }
+            if (isLong)
+            {
+                return numeric.getValueAsLong(idx);
+            }
+            return numeric.getValueAsDouble(idx);
+        }
+        return Double.NaN;
     }
 
 }
