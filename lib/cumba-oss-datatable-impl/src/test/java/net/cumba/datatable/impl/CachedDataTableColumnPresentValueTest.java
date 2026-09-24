@@ -28,6 +28,8 @@ import java.util.TreeSet;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
+import net.cumba.datatable.impl.databuffer.AbstractDataBuffer;
+import net.cumba.datatable.impl.databuffer.AbstractNumericDataBuffer;
 import net.cumba.datatable.impl.databuffer.DataBufferDouble;
 import net.cumba.datatable.impl.databuffer.DataBufferInt;
 import net.cumba.datatable.impl.databuffer.DataBufferLong;
@@ -446,6 +448,46 @@ class CachedDataTableColumnPresentValueTest
                         + "or add them to KNOWINGLY_EXCLUDED with the reason");
         assertEquals(Set.of(), minus(accounted, concrete),
                 "handled/excluded classes that no longer exist in the package");
+    }
+
+
+    /**
+     * The fast arms reproduce the value creation of each buffer's FAMILY base class. That holds
+     * only while nothing between a listed class and its base overrides {@code getDataValue} or
+     * {@code createDataValue} — a later override would change the slow answer and leave the fast
+     * one behind, and the grid would see it only if it happened to hold a value the override treats
+     * differently ({@code PLAN-identity-safe-join-caches} D6 review, LOW 3).
+     */
+    @Test
+    void noListedBufferOverridesValueCreationBelowItsFamilyBase()
+    {
+        for (Class<? extends IDataBuffer> c : CachedDataTableColumn.FAST_OBJECT_BUFFERS)
+        {
+            assertNoOverrideBelow(c, AbstractDataBuffer.class);
+        }
+        for (Class<? extends IDataBuffer> c : CachedDataTableColumn.FAST_NUMERIC_BUFFERS)
+        {
+            assertNoOverrideBelow(c, AbstractNumericDataBuffer.class);
+        }
+    }
+
+
+    private static void assertNoOverrideBelow(Class<?> aListed, Class<?> aBase)
+    {
+        assertTrue(aBase.isAssignableFrom(aListed),
+                aListed.getSimpleName() + " is not in the " + aBase.getSimpleName() + " family");
+        for (Class<?> c = aListed; c != aBase; c = c.getSuperclass())
+        {
+            for (java.lang.reflect.Method m : c.getDeclaredMethods())
+            {
+                boolean creates = (m.getName().equals("createDataValue")
+                        || m.getName().equals("getDataValue")) && m.getParameterCount() == 2;
+                assertFalse(creates,
+                        c.getSimpleName() + " (in the chain of " + aListed.getSimpleName()
+                                + ") declares its own " + m.getName()
+                                + " — re-derive the fast arm before keeping it listed");
+            }
+        }
     }
 
 
