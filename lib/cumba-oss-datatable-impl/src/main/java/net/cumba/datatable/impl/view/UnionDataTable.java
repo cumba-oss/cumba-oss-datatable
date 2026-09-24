@@ -301,6 +301,99 @@ public final class UnionDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * The number of member tables, zero-row members included.
+     *
+     * <p>
+     * Part of the read-only member API ({@code PLAN-identity-safe-join-caches} D8), which lets a
+     * reader bypass the union and read a member directly. See {@link #memberColumnOf(int, int)} for
+     * the invariant that ties the five member methods to {@link #getDataValue(long, int)}.
+     * </p>
+     *
+     * @return the number of members, at least {@code 1}.
+     */
+    public int memberCount()
+    {
+        return members.length;
+    }
+
+
+    /**
+     * The member table at the given index, exactly as it was handed to the constructor.
+     *
+     * @param aMember
+     *            the 0-based member index.
+     * @return the member table.
+     * @throws IndexOutOfBoundsException
+     *             if {@code aMember} is not in {@code [0, memberCount())}.
+     */
+    public IDataTable member(int aMember) throws IndexOutOfBoundsException
+    {
+        return members[checkMember(aMember)];
+    }
+
+
+    /**
+     * The union row index of the given member's first row. For a zero-row member this is the start
+     * of the next member that has rows (or the union's row count), and no union row maps to it
+     * through {@link #memberOf(long)}.
+     *
+     * @param aMember
+     *            the 0-based member index.
+     * @return the union row index of the member's row {@code 0}.
+     * @throws IndexOutOfBoundsException
+     *             if {@code aMember} is not in {@code [0, memberCount())}.
+     */
+    public long memberRowStart(int aMember) throws IndexOutOfBoundsException
+    {
+        return rowOffsets[checkMember(aMember)];
+    }
+
+
+    /**
+     * The given member's column index for a union column.
+     *
+     * <p>
+     * The member API ({@code PLAN-identity-safe-join-caches} D8) guarantees, for every union row
+     * {@code r} and union column {@code c}, with {@code m = memberOf(r)},
+     * {@code mc = memberColumnOf(m, c)} and {@code rr = r - memberRowStart(m)}:
+     * </p>
+     * <ul>
+     * <li>if {@code mc >= 0}, {@link #getDataValue(long, int) getDataValue(r, c)} is exactly
+     * {@code member(m).getDataValue(rr, mc)} — the union adds no conversion;</li>
+     * <li>if {@code mc < 0}, {@code getDataValue(r, c)} is the union's shared missing-column value
+     * (never {@code null}, {@code isMissingOrInvalid()} is {@code true}), and
+     * {@link #getValue(long, int)} is {@code null}.</li>
+     * </ul>
+     *
+     * @param aMember
+     *            the 0-based member index.
+     * @param aUnionColumn
+     *            the 0-based union column index.
+     * @return the member's column index, or {@code -1} when that member lacks the column.
+     * @throws IndexOutOfBoundsException
+     *             if {@code aMember} is not in {@code [0, memberCount())}, or {@code aUnionColumn}
+     *             is not a valid union column index.
+     */
+    public int memberColumnOf(int aMember, int aUnionColumn) throws IndexOutOfBoundsException
+    {
+        int m = checkMember(aMember);
+        checkColumn(aUnionColumn);
+        return memberColOfUnionCol[m][aUnionColumn];
+    }
+
+
+    private int checkMember(int aMember)
+    {
+        if (aMember < 0 || aMember >= members.length)
+        {
+            throw new IndexOutOfBoundsException(
+                    ExMsgs.indexOutOfBounds("member", aMember, 0, members.length));
+        }
+        return aMember;
+    }
+
+
     @Override
     public long getRowCount()
     {
