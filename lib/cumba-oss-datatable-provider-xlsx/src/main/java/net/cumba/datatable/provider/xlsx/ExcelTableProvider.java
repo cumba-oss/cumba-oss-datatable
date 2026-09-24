@@ -5,6 +5,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.System.Logger.Level;
 import java.net.URI;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -564,8 +566,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         /**
          * The datetime epoch, 1960-01-01 00:00:00 UTC, in milliseconds-since-1970-01-01-UTC. The
          * format catalog renders {@code E8601DT.} as ISO datetime from this base; we convert
-         * Excel-serial-derived {@code java.util.Date} values into SAS-datetime-seconds here so a
-         * date-formatted Excel column comes through as a {@code DOUBLE} that displays as ISO.
+         * Excel-serial-derived, zone-free {@code LocalDateTime} values (anchored at UTC) into
+         * SAS-datetime-seconds here so a date-formatted Excel column comes through as a
+         * {@code DOUBLE} that displays as ISO.
          *
          * <p>
          * F-prov-14: delegates to {@link TemporalOrigin#ORIGIN_EPOCH_MILLI}, the one place the
@@ -575,6 +578,14 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          */
         private static final long SAS_DATETIME_EPOCH_MILLIS = TemporalOrigin.ORIGIN_EPOCH_MILLI;
 
+        /**
+         * The first Excel serial past the last date Excel can represent, 9999-12-31 (serial 2958465
+         * in the 1900 date system). {@link #dateSecondsOf} treats a serial at or beyond it as not a
+         * date: POI's {@code DateUtil.getLocalDateTime} overflows for a large enough serial and
+         * answers a plausible but wrong {@code 1899-12-31}.
+         */
+        private static final double FIRST_SERIAL_PAST_EXCEL_MAX_DATE = 2_958_466.0;
+
         private final @Nullable Object[] values;
 
         /** Parallel array: true when the source cell was numeric AND date-formatted. */
@@ -583,8 +594,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         /**
          * Parallel array: the SAS-datetime-seconds equivalent of this cell's raw Excel serial,
          * computed for EVERY {@code NUMERIC} cell regardless of that cell's own style — {@code NaN}
-         * for a non-numeric cell, a missing cell, or one {@link Cell#getDateCellValue()} could not
-         * convert.
+         * for a non-numeric cell, a missing cell, or one {@link Cell#getLocalDateTimeCellValue()}
+         * could not convert.
          * <p>
          * Bug fix (H3, clinical-path hardening wave 3): a column is declared a date column when
          * {@code inferDateFormats} sees ANY sampled cell date-formatted, but the OLD code only
@@ -592,9 +603,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * with inconsistent per-cell styling (a common real shape: some header/data cells lose
          * their date format after a copy/paste or a partial re-format) silently mixed raw Excel
          * serials with SAS-seconds under one {@code E8601DT.} column, misreading a raw serial as a
-         * date up to ~63 years off. {@link Cell#getDateCellValue()} converts a {@code NUMERIC}
-         * cell's value correctly regardless of that cell's OWN style (verified empirically), so
-         * precomputing it here for every numeric cell — and having
+         * date up to ~63 years off. {@link Cell#getLocalDateTimeCellValue()} converts a
+         * {@code NUMERIC} cell's value correctly regardless of that cell's OWN style (verified
+         * empirically), so precomputing it here for every numeric cell — and having
          * {@link ExcelTableDataParser#addData2Column} choose this array over
          * {@link #getDoubleValue} once the COLUMN is decided to be a date column — makes the
          * conversion consistent for the whole column instead of per-cell.
@@ -660,11 +671,11 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * {@link ExcelTableProvider#inferDateFormats} gave it no {@code E8601DT.} and the raw
          * serial (~45274) was handed to the user as a plain number instead of a date.</li>
          * </ul>
-         * POI answers {@link DateUtil#isCellDateFormatted} and {@link Cell#getDateCellValue()}
-         * correctly for such a cell; the provider simply never asked. This also restores the
-         * invariant {@link #dateSasSeconds} documents - computed for EVERY cell whose value is
-         * numeric, {@code NaN} only for a non-numeric cell, a missing cell, or one POI could not
-         * convert.
+         * POI answers {@link DateUtil#isCellDateFormatted} and
+         * {@link Cell#getLocalDateTimeCellValue()} correctly for such a cell; the provider simply
+         * never asked. This also restores the invariant {@link #dateSasSeconds} documents -
+         * computed for EVERY cell whose value is numeric, {@code NaN} only for a non-numeric cell,
+         * a missing cell, or one POI could not convert.
          */
         private static CellType effectiveType(Cell aCell)
         {
@@ -681,24 +692,43 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * aborting the whole row — consistent with {@link #getCellValue}'s error handling.
          * <p>
          * ⚠ No input is known to enter that catch, for TWO reasons, and the second is the
-         * load-bearing one: {@code getDateCellValue()} does not throw for any value the reader can
-         * type as numeric (measured through {@code StreamingReader}: {@code 1e308} saturates at
-         * year 5881510, a negative serial returns {@code null}); and a cell whose stored value
-         * cannot be parsed at all makes {@link DateUtil#isCellDateFormatted} throw FIRST, one line
+         * load-bearing one: {@code getLocalDateTimeCellValue()} does not throw for any value the
+         * reader can type as numeric (measured through {@code StreamingReader}: {@code 1e308}
+         * overflows to 1899-12-31 instead of throwing - hence the range check in front of it, see
+         * below - and a negative serial returns {@code null}); and a cell whose stored value cannot
+         * be parsed at all makes {@link DateUtil#isCellDateFormatted} throw FIRST, one line
          * earlier, where the constructor's own probe catch takes it. Re-check both if that call
          * order ever changes.
+         * <p>
+         * Bug fix (TZ): this used {@code getDateCellValue()}, which places the serial in the JVM's
+         * DEFAULT time zone, and then read the resulting instant back as UTC - so every date moved
+         * by the machine's UTC offset (2023-03-15 read as 2023-03-14T23:00 in Berlin, as 05:00 in
+         * New York; CI runs in UTC and could not see it). An Excel date is a wall-clock value with
+         * no zone: {@code getLocalDateTimeCellValue()} keeps it one, the streaming cell applying
+         * the same type check and the same 1904-date-system flag, and it is anchored at UTC here,
+         * which is how the SAS datetime origin is defined. Pinned by
+         * {@code testDateCellsReadTheSameInEveryDefaultTimeZone}.
+         * <p>
+         * The switch changed one edge, measured through {@code StreamingReader}: for a serial as
+         * large as {@code 1e308} the old call saturated at year 5881510, but POI's
+         * {@code DateUtil.getLocalDateTime} overflows its day count and answers {@code 1899-12-31}
+         * - a plausible, wrong date. A serial past Excel's own last date (9999-12-31, serial
+         * 2958465) is not a date Excel can hold, so it now reads as missing (see
+         * {@link #FIRST_SERIAL_PAST_EXCEL_MAX_DATE}); a negative serial still answers {@code null}.
          */
-        // [JavaUtilDate] suppressed for the whole method, not the declaration: POI's
-        // Cell.getDateCellValue() returns a java.util.Date and there is no java.time overload, so
-        // both the call AND the getTime() that reads it are forced. The suppression used to sit on
-        // the local variable, which left the getTime() on the next line reported.
-        @SuppressWarnings("JavaUtilDate")
         private static double dateSecondsOf(Cell aCell)
         {
             try
             {
-                java.util.Date d = aCell.getDateCellValue();
-                return d != null ? (d.getTime() - SAS_DATETIME_EPOCH_MILLIS) / 1000.0 : Double.NaN;
+                if (aCell.getNumericCellValue() >= FIRST_SERIAL_PAST_EXCEL_MAX_DATE)
+                {
+                    return Double.NaN;
+                }
+                LocalDateTime ldt = aCell.getLocalDateTimeCellValue();
+                return ldt != null
+                        ? (ldt.toInstant(ZoneOffset.UTC).toEpochMilli() - SAS_DATETIME_EPOCH_MILLIS)
+                                / 1000.0
+                        : Double.NaN;
             }
             catch (RuntimeException ex)
             {

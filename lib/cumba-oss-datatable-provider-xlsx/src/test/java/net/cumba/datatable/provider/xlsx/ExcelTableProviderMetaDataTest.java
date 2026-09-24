@@ -226,8 +226,10 @@ class ExcelTableProviderMetaDataTest
             h.createCell(0).setCellValue("DT");
             Row r1 = s.createRow(1);
             org.apache.poi.ss.usermodel.Cell cell = r1.createCell(0);
-            cell.setCellValue(java.util.Date.from(java.time.LocalDate.of(2024, 1, 15)
-                    .atStartOfDay(java.time.ZoneOffset.UTC).toInstant()));
+            // A LocalDate is written as a zone-free serial, the way Excel stores a date. A
+            // java.util.Date would be converted in the JVM's DEFAULT zone - 01:00 in Berlin - and
+            // a reader with the mirror-image shift would read it back "correctly".
+            cell.setCellValue(java.time.LocalDate.of(2024, 1, 15));
             cell.setCellStyle(dateStyle);
         });
 

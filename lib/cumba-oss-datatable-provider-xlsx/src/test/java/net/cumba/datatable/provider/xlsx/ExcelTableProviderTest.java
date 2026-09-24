@@ -18,6 +18,7 @@ import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
 import java.util.List;
+import java.util.TimeZone;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
@@ -503,9 +504,10 @@ class ExcelTableProviderTest
             h.createCell(0).setCellValue("DT");
             Row r1 = s.createRow(1);
             org.apache.poi.ss.usermodel.Cell cell = r1.createCell(0);
-            // Use a deterministic UTC instant for Jan 15 2024.
-            cell.setCellValue(java.util.Date.from(java.time.LocalDate.of(2024, 1, 15)
-                    .atStartOfDay(java.time.ZoneOffset.UTC).toInstant()));
+            // A LocalDate is written as a zone-free serial, the way Excel stores a date. A
+            // java.util.Date would be converted in the JVM's DEFAULT zone - 01:00 in Berlin - and
+            // a reader with the mirror-image shift would read it back "correctly".
+            cell.setCellValue(java.time.LocalDate.of(2024, 1, 15));
             cell.setCellStyle(dateStyle);
         });
 
@@ -1961,4 +1963,103 @@ class ExcelTableProviderTest
         }
     }
 
+    // ============ TZ: a date reads the same in every JVM default time zone ============
+
+
+    /**
+     * DEFECT FIX (TZ): an Excel date is a wall-clock value with no zone, so the SAS datetime read
+     * from it must not depend on the JVM's default time zone. The reader used
+     * {@code Cell.getDateCellValue()}, which places the serial in the DEFAULT zone, and then read
+     * the resulting instant back as UTC - so every date moved by the machine's UTC offset:
+     * 2023-03-15 read as 2023-03-14T23:00 in Berlin and as 05:00 in New York. CI runs in UTC, where
+     * that offset is zero, so no test run there could see it; this one forces the zone instead.
+     * <p>
+     * The zones straddle UTC in both directions; under the old code Pacific/Kiritimati (UTC+14)
+     * moved a date-only value onto the previous calendar day, and 2023-03-26 02:30 does not exist
+     * at all in Berlin (the DST gap). Expected values are derived outside this stack: serial n is
+     * {@code 1899-12-30 + n days}, in seconds since 1960-01-01 (Python {@code datetime}: 45000 →
+     * 1994457600; 45011 + 2.5/24 → 2023-03-26T02:30 → 1995417000).
+     * </p>
+     */
+    @Test
+    void testDateCellsReadTheSameInEveryDefaultTimeZone() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            DataFormat df = wb.createDataFormat();
+            CellStyle dateStyle = wb.createCellStyle();
+            dateStyle.setDataFormat(df.getFormat("yyyy-mm-dd hh:mm"));
+
+            s.createRow(0).createCell(0).setCellValue("VISITDTM");
+            Row r1 = s.createRow(1);
+            r1.createCell(0).setCellValue(45000.0);
+            r1.getCell(0).setCellStyle(dateStyle);
+            Row r2 = s.createRow(2);
+            r2.createCell(0).setCellValue(45011.0 + 2.5 / 24.0);
+            r2.getCell(0).setCellStyle(dateStyle);
+        });
+
+        TimeZone saved = TimeZone.getDefault();
+        try
+        {
+            for (String zone : List.of("UTC", "Europe/Berlin", "America/New_York",
+                    "Pacific/Kiritimati"))
+            {
+                TimeZone.setDefault(TimeZone.getTimeZone(zone));
+                IDataTable table = new ExcelTableProvider().provide(uri,
+                        ExcelProviderSupplier.FI_XLSX);
+
+                assertEquals("E8601DT.", table.getMetaData().getColumn(0).getDisplayFormat(), zone);
+                assertEquals(1_994_457_600.0, (double) table.getValue(0, 0), 0.5,
+                        zone + ": 2023-03-15 must not move by the zone's UTC offset");
+                assertEquals(1_995_417_000.0, (double) table.getValue(1, 0), 0.5,
+                        zone + ": 2023-03-26T02:30 must survive a local DST gap");
+            }
+        }
+        finally
+        {
+            TimeZone.setDefault(saved);
+        }
+    }
+
+
+    /**
+     * The edges of the TZ fix's conversion: Excel's last representable date, 9999-12-31 (serial
+     * 2958465), still reads as that date, while a serial past it - here one day past, and
+     * {@code 1e308} - is missing rather than a date. Without the guard, POI's
+     * {@code DateUtil.getLocalDateTime} overflows on {@code 1e308} and answers 1899-12-31: a
+     * present, plausible and wrong date. Expected value: 9999-12-31 is 253717833600 seconds after
+     * 1960-01-01 (Python {@code datetime}).
+     */
+    @Test
+    void testASerialPastExcelsLastDateIsMissingNotAWrappedDate() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            CellStyle dateStyle = wb.createCellStyle();
+            dateStyle.setDataFormat(wb.createDataFormat().getFormat("yyyy-mm-dd"));
+            s.createRow(0).createCell(0).setCellValue("DT");
+            double[] serials =
+            {
+                    2_958_465.0, 2_958_466.0, 1e308
+            };
+            for (int i = 0; i < serials.length; i++)
+            {
+                Row r = s.createRow(i + 1);
+                r.createCell(0).setCellValue(serials[i]);
+                r.getCell(0).setCellStyle(dateStyle);
+            }
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(253_717_833_600.0, (double) table.getValue(0, 0), 0.5,
+                "Excel's last date, 9999-12-31, is still a date");
+        assertInstanceOf(MissingValue.class, table.getValue(1, 0),
+                "one day past Excel's last date is not a date");
+        assertInstanceOf(MissingValue.class, table.getValue(2, 0),
+                "1e308 must be missing, not POI's overflowed 1899-12-31");
+    }
 }
