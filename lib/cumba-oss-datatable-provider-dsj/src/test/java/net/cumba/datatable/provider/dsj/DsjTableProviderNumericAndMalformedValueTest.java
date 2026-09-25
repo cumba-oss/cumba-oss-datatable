@@ -133,6 +133,52 @@ class DsjTableProviderNumericAndMalformedValueTest
     }
 
 
+    /**
+     * A boolean column is backed by a {@code DataBufferInt}. Before
+     * PLAN-oss-numeric-buffer-missing-identity every missing it held read back as
+     * {@link MissingValue#MIS}; each now keeps its identity, and an integer cell equal to the
+     * buffer's raw sentinel ({@code Integer.MIN_VALUE}) is a present value like any other integer
+     * in this non-conformant column, not a missing.
+     */
+    @Test
+    void booleanColumnKeepsEachMissingsIdentity(@TempDir Path tmp) throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-25T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.BOO",
+                  "name": "BOO",
+                  "label": "Boolean column with malformed cells",
+                  "records": 5,
+                  "columns": [
+                    {"itemOID": "IT.BOO.FLAG", "name": "FLAG", "label": "Flag",
+                     "dataType": "boolean"}
+                  ],
+                  "rows": [
+                    [true],
+                    [1e400],
+                    [[1, 2]],
+                    [-2147483648],
+                    [null]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "boolean.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals(5, table.getRowCount());
+        assertEquals(1L, table.getValue(0, 0));
+        // 1e400 overflows to Infinity: a present value that cannot be represented.
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(1, 0));
+        // A nested array is outside the spec's row types: the defensive fallback.
+        assertEquals(MissingValue.MIS_UNKNOWN, table.getValue(2, 0));
+        assertEquals((long) Integer.MIN_VALUE, table.getValue(3, 0));
+        assertEquals(MissingValue.MIS, table.getValue(4, 0));
+    }
+
+
     @Test
     void mappedUnparseableDecimalStringBecomesMisError(@TempDir Path tmp) throws IOException
     {

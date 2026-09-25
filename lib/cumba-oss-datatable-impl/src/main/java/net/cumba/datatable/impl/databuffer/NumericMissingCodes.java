@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.databuffer;
 
+// OSS-IDENTITY datatable-buffers: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.util.Arrays;
 
 import net.cumba.datatable.values.MissingValue;
@@ -14,14 +17,16 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * The table is allocated on first need only. A plain missing ({@code null} or
  * {@link MissingValue#MIS}) is the sentinel alone and never allocates it, so a column holding only
- * ordinary values and plain missings costs nothing beyond its primitive array. The first special
- * missing ({@code .A}-{@code .Z}, {@code ._}, {@link MissingValue#MIS_UNKNOWN},
- * {@link MissingValue#MIS_ERROR}) or real {@code MIN_VALUE} allocates one {@code byte} per slot.
+ * ordinary values and plain missings costs nothing beyond its primitive array. The first other
+ * missing (any {@link MissingValue} but {@code MIS}: {@code .A}-{@code .Z}, {@code ._},
+ * {@link MissingValue#MIS_ERROR}, {@link MissingValue#NA}, ...) or real {@code MIN_VALUE} allocates
+ * one {@code byte} per slot.
  * </p>
  *
  * <p>
- * A slot's code is meaningful only while the buffer's raw slot holds the sentinel. The code is the
- * missing value's own {@link MissingValue#getValue()} byte, so
+ * A slot's code is read only while the buffer's raw slot holds the sentinel, and every sentinel
+ * write sets it, so a code left behind by an overwrite with an ordinary value is never read and
+ * needs no clearing. The code is the missing value's own {@link MissingValue#getValue()} byte, so
  * {@code missingFor(codeFor(mv)) == mv} for every constant; {@link #MIS_CODE} and
  * {@link #PRESENT_MIN} collide with none of them.
  * </p>
@@ -105,23 +110,6 @@ final class NumericMissingCodes
             codes = table;
         }
         table[aIndex] = aCode;
-    }
-
-
-    /**
-     * Reset a slot to {@link #MIS_CODE}, for a write that is not a sentinel. Without it an
-     * overwrite of a former special missing would keep its stale code.
-     *
-     * @param aIndex
-     *            the slot.
-     */
-    void clear(int aIndex)
-    {
-        byte[] table = codes;
-        if (table != null && aIndex < table.length)
-        {
-            table[aIndex] = MIS_CODE;
-        }
     }
 
 

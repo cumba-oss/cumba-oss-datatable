@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.databuffer;
 
+// OSS-IDENTITY datatable-buffers: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.util.Arrays;
 
 import net.cumba.datatable.values.MissingValue;
@@ -19,10 +22,12 @@ import org.jspecify.annotations.Nullable;
  * </p>
  *
  * <p>
- * The primitive reads ({@link #getValueAsLong(int)}, {@link #getValuesAsLong(int, int)}, ...)
- * return raw storage, so a missing reads as {@code MIN_VALUE} there: ask {@link #isMissing(int)}
- * first. Used for {@link net.cumba.datatable.values.DataValueType#LONG} value columns and for index
- * storage that exceeds {@code int} range.
+ * The primitive reads return raw storage, so a missing reads as {@code MIN_VALUE} through
+ * {@link #getValueAsLong(int)}, {@link #getValuesAsLong(int, int)} and
+ * {@link #getValueAsDouble(int)}, and as {@code 0} through the narrowing reads
+ * ({@code getValueAsInt/Short/Byte}): ask {@link #isMissing(int)} first. Used for
+ * {@link net.cumba.datatable.values.DataValueType#LONG} value columns and for index storage that
+ * exceeds {@code int} range.
  * </p>
  */
 public class DataBufferLong extends AbstractNumericDataBuffer
@@ -66,6 +71,10 @@ public class DataBufferLong extends AbstractNumericDataBuffer
         {
             return true;
         }
+        if (aValue instanceof Double || aValue instanceof Float)
+        {
+            return canStoreDouble(num.doubleValue());
+        }
         double dblVal = num.doubleValue();
         long longVal = num.longValue();
         return dblVal == longVal;
@@ -75,8 +84,11 @@ public class DataBufferLong extends AbstractNumericDataBuffer
     @Override
     public boolean canStoreDouble(double aValue)
     {
+        // (long) saturates: 2^63 and above truncate to Long.MAX_VALUE, which converts back to
+        // exactly 2^63, so the round trip alone would accept 2^63 and store MAX_VALUE instead.
+        // No double equals MAX_VALUE, so excluding it rejects exactly that case.
         long val = (long) aValue;
-        return val == aValue;
+        return val == aValue && val != Long.MAX_VALUE;
     }
 
 
@@ -115,10 +127,6 @@ public class DataBufferLong extends AbstractNumericDataBuffer
         if (aValue == MISSING_SENTINEL)
         {
             codes.set(aIndex, NumericMissingCodes.PRESENT_MIN, values.length);
-        }
-        else
-        {
-            codes.clear(aIndex);
         }
         size = Math.max(size, newSize);
     }

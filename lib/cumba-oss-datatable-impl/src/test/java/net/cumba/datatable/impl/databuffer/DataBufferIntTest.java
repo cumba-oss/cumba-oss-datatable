@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.databuffer;
 
+// OSS-IDENTITY datatable-buffers: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -478,6 +481,19 @@ class DataBufferIntTest
         buffer.setValue(2000, MissingValue.MIS_E);
         assertEquals(MissingValue.MIS_E, buffer.getValue(2000));
         assertEquals(MissingValue.MIS_C, buffer.getValue(0));
+    }
+
+
+    @Test
+    void testTruncatingSetExpectedSizeTruncatesTheCodeTableToo()
+    {
+        buffer.setValue(0, MissingValue.MIS_V);
+        buffer.setValue(3, MissingValue.MIS_A);
+        buffer.setExpectedSize(2);
+        buffer.setValue(3, MissingValue.MIS_B);
+        assertEquals(MissingValue.MIS_V, buffer.getValue(0));
+        assertEquals(MissingValue.MIS_B, buffer.getValue(3));
+        assertEquals(4L * BYTES + 4L, buffer.getEstimatedMemoryBytes());
     }
 
 

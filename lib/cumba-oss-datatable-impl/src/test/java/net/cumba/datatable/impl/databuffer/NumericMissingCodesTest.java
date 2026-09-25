@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.databuffer;
 
+// OSS-IDENTITY datatable-buffers: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -46,7 +49,6 @@ class NumericMissingCodesTest
     {
         NumericMissingCodes codes = new NumericMissingCodes();
         codes.set(3, NumericMissingCodes.MIS_CODE, 16);
-        codes.clear(3);
         codes.resize(32);
         assertFalse(codes.isAllocated());
         assertEquals(NumericMissingCodes.MIS_CODE, codes.get(3));
@@ -63,20 +65,9 @@ class NumericMissingCodesTest
         assertTrue(codes.isAllocated());
         assertEquals(a, codes.get(2));
         assertEquals(NumericMissingCodes.MIS_CODE, codes.get(1));
-        assertEquals(10L, codes.estimatedBytes(10));
-    }
-
-
-    @Test
-    void testClearResetsASlot()
-    {
-        NumericMissingCodes codes = new NumericMissingCodes();
-        codes.set(0, NumericMissingCodes.PRESENT_MIN, 4);
-        codes.clear(0);
-        assertEquals(NumericMissingCodes.MIS_CODE, codes.get(0));
-        // Beyond the table: a no-op, and a read answers the empty code.
-        codes.clear(100);
+        // Beyond the table a read answers the empty code.
         assertEquals(NumericMissingCodes.MIS_CODE, codes.get(100));
+        assertEquals(10L, codes.estimatedBytes(10));
     }
 
 

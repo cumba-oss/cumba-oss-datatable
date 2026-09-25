@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.databuffer;
 
+// OSS-IDENTITY datatable-buffers: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.util.Arrays;
 
 import net.cumba.datatable.values.MissingValue;
@@ -19,10 +22,11 @@ import org.jspecify.annotations.Nullable;
  * </p>
  *
  * <p>
- * The primitive reads ({@link #getValueAsLong(int)}, {@link #getValueAsInt(int)}, ...) return raw
- * storage, so a missing reads as {@code MIN_VALUE} there: ask {@link #isMissing(int)} first.
- * Suitable for boolean value columns and for compact index storage when the maximum stored value
- * fits in {@code int}.
+ * The primitive reads return raw storage, so a missing reads as {@code MIN_VALUE} through
+ * {@link #getValueAsLong(int)}, {@link #getValueAsInt(int)} and {@link #getValueAsDouble(int)}, and
+ * as {@code 0} through {@code getValueAsShort/Byte}: ask {@link #isMissing(int)} first. Suitable
+ * for boolean value columns and for compact index storage when the maximum stored value fits in
+ * {@code int}.
  * </p>
  */
 public class DataBufferInt extends AbstractNumericDataBuffer
@@ -114,10 +118,6 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         if (aValue == MISSING_SENTINEL)
         {
             codes.set(aIndex, NumericMissingCodes.PRESENT_MIN, values.length);
-        }
-        else
-        {
-            codes.clear(aIndex);
         }
         size = Math.max(size, newSize);
     }
