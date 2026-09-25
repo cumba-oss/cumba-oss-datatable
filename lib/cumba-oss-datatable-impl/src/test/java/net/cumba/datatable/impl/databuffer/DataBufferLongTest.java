@@ -18,6 +18,16 @@ import org.junit.jupiter.api.Test;
 class DataBufferLongTest
 {
 
+    private static final long MIN = Long.MIN_VALUE;
+
+    private static final Object BOXED_MIN = Long.MIN_VALUE;
+
+    private static final long MIN_AS_LONG = MIN;
+
+    private static final double MIN_AS_DOUBLE = MIN;
+
+    private static final long BYTES = Long.BYTES;
+
     private DataBufferLong buffer;
 
     @BeforeEach
@@ -53,11 +63,11 @@ class DataBufferLongTest
 
 
     @Test
-    void testSetValueMissingWritesMissing()
+    void testSetValueMissingKeepsItsIdentity()
     {
         buffer.setValue(0, MissingValue.MIS_UNKNOWN);
         assertTrue(buffer.isMissing(0));
-        assertEquals(MissingValue.MIS, buffer.getValue(0));
+        assertEquals(MissingValue.MIS_UNKNOWN, buffer.getValue(0));
     }
 
 
@@ -301,5 +311,154 @@ class DataBufferLongTest
         {
                 5.0, 6.0
         }, buffer.getValuesAsDouble(0, 2));
+    }
+
+    // --- Missing identity and a real MIN_VALUE (PLAN-oss-numeric-buffer-missing-identity) ---
+
+
+    @Test
+    void testEveryMissingValueKeepsItsIdentity()
+    {
+        MissingValue[] all = MissingValue.values();
+        for (int i = 0; i < all.length; i++)
+        {
+            buffer.setValue(i, all[i]);
+        }
+        assertEquals(all.length, buffer.size());
+        for (int i = 0; i < all.length; i++)
+        {
+            MissingValue mv = all[i];
+            assertTrue(buffer.isMissing(i), mv.name());
+            assertEquals(mv, buffer.getValue(i), mv.name());
+            assertEquals(mv.hashCodeStable(), buffer.hashCodeAt(i), mv.name());
+            assertEquals(mv, buffer.getDataValue(i, DataValueType.LONG).getValue(), mv.name());
+            assertEquals(mv, buffer.getDataValue(i, DataValueType.DOUBLE).getValue(), mv.name());
+        }
+    }
+
+
+    @Test
+    void testRealMinValueIsPresent()
+    {
+        buffer.setLongValue(0, MIN);
+        buffer.setValue(1, BOXED_MIN);
+        buffer.setDoubleValue(2, MIN);
+        buffer.setValue(3, null);
+        for (int i = 0; i < 3; i++)
+        {
+            assertFalse(buffer.isMissing(i));
+            assertEquals(MIN_AS_LONG, buffer.getValue(i));
+            assertEquals(MIN, buffer.getValueAsLong(i));
+            assertEquals(Long.hashCode(MIN), buffer.hashCodeAt(i));
+            IDataValue dv = buffer.getDataValue(i, DataValueType.LONG);
+            assertTrue(dv instanceof DataValueLong);
+            assertEquals(MIN, ((DataValueLong) dv).getLong());
+            assertEquals(MIN_AS_DOUBLE,
+                    buffer.getDataValue(i, DataValueType.DOUBLE).getValueAsDouble());
+        }
+        assertTrue(buffer.isMissing(3));
+        assertEquals(MissingValue.MIS, buffer.getValue(3));
+    }
+
+
+    @Test
+    void testOverwriteReplacesTheCode()
+    {
+        buffer.setValue(0, MissingValue.MIS_A);
+        buffer.setLongValue(0, 5L);
+        assertFalse(buffer.isMissing(0));
+        assertEquals(5L, buffer.getValue(0));
+
+        buffer.setValue(0, MissingValue.MIS_B);
+        buffer.setLongValue(0, MIN);
+        assertFalse(buffer.isMissing(0));
+        assertEquals(MIN_AS_LONG, buffer.getValue(0));
+
+        buffer.setValue(0, null);
+        assertTrue(buffer.isMissing(0));
+        assertEquals(MissingValue.MIS, buffer.getValue(0));
+
+        buffer.setValue(0, MissingValue.MIS_Z);
+        buffer.setValue(0, MissingValue.MIS);
+        assertEquals(MissingValue.MIS, buffer.getValue(0));
+        assertEquals(MissingValue.MIS.hashCodeStable(), buffer.hashCodeAt(0));
+    }
+
+
+    @Test
+    void testPlainMissingsNeverAllocateTheCodeTable()
+    {
+        buffer.setLongValue(0, 1L);
+        buffer.setValue(1, null);
+        buffer.setValue(2, MissingValue.MIS);
+        buffer.setLongValue(3, MIN + 1L);
+        assertEquals(4L * BYTES, buffer.getEstimatedMemoryBytes());
+        assertEquals(MissingValue.MIS, buffer.getValue(1));
+        assertEquals(MissingValue.MIS, buffer.getValue(2));
+    }
+
+
+    @Test
+    void testSpecialMissingAllocatesOneBytePerRow()
+    {
+        buffer.setLongValue(0, 1L);
+        buffer.setValue(1, MissingValue.MIS_Q);
+        buffer.setLongValue(2, 2L);
+        assertEquals(3L * BYTES + 3L, buffer.getEstimatedMemoryBytes());
+    }
+
+
+    @Test
+    void testRealMinValueAllocatesTheCodeTable()
+    {
+        buffer.setLongValue(0, MIN);
+        assertEquals(BYTES + 1L, buffer.getEstimatedMemoryBytes());
+    }
+
+
+    @Test
+    void testCodesSurviveGrowthAndTrim()
+    {
+        buffer.setValue(0, MissingValue.MIS_C);
+        for (int i = 1; i < 2000; i++)
+        {
+            buffer.setLongValue(i, i);
+        }
+        buffer.setValue(1500, MissingValue.MIS_D);
+        buffer.setLongValue(1999, MIN);
+        buffer.trimToSize();
+        assertEquals(2000, buffer.size());
+        assertEquals(MissingValue.MIS_C, buffer.getValue(0));
+        assertEquals(MissingValue.MIS_D, buffer.getValue(1500));
+        assertEquals(MIN_AS_LONG, buffer.getValue(1999));
+        assertEquals(1499L, buffer.getValue(1499));
+
+        buffer.setValue(2000, MissingValue.MIS_E);
+        assertEquals(MissingValue.MIS_E, buffer.getValue(2000));
+        assertEquals(MissingValue.MIS_C, buffer.getValue(0));
+    }
+
+
+    @Test
+    void testCodesSurviveSetExpectedSize()
+    {
+        buffer.setValue(0, MissingValue.MIS_F);
+        buffer.setExpectedSize(4096);
+        buffer.setValue(4000, MissingValue.MIS_G);
+        assertEquals(MissingValue.MIS_F, buffer.getValue(0));
+        assertEquals(MissingValue.MIS_G, buffer.getValue(4000));
+    }
+
+
+    @Test
+    void testCodeTableGrowsWhenFirstAllocatedBeforeGrowth()
+    {
+        buffer.setValue(0, MissingValue.MIS_H);
+        buffer.setValue(600, MissingValue.MIS_I);
+        assertEquals(MissingValue.MIS_H, buffer.getValue(0));
+        assertEquals(MissingValue.MIS_I, buffer.getValue(600));
+        // A slot below size that was never written holds the array default 0, a present value.
+        assertFalse(buffer.isMissing(599));
+        assertEquals(0L, buffer.getValue(599));
     }
 }

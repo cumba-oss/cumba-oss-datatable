@@ -7,8 +7,10 @@ import net.cumba.datatable.values.DataValueType;
  * coding. Mapping (v1):
  * <ul>
  * <li>{@link DataValueType#DOUBLE} → {@link DataBufferDouble} (double[], NaN missing)</li>
- * <li>{@link DataValueType#LONG} → {@link DataBufferLong} (long[], MIN_VALUE missing)</li>
- * <li>{@link DataValueType#BOOLEAN} → {@link DataBufferInt} (int[], MIN_VALUE missing)</li>
+ * <li>{@link DataValueType#LONG} → {@link DataBufferLong} (long[], MIN_VALUE sentinel plus a lazy
+ * per-row code table)</li>
+ * <li>{@link DataValueType#BOOLEAN} → {@link DataBufferInt} (int[], MIN_VALUE sentinel plus a lazy
+ * per-row code table)</li>
  * <li>everything else → {@link DataBufferObject} (Object[], null missing)</li>
  * </ul>
  * Range-backed buffers ({@link #createForRange(long, long)}) pick int- vs long-backed storage from
@@ -49,8 +51,8 @@ public final class DefaultDataBufferFactory implements DataBufferFactory
             throw new IllegalArgumentException(
                     "aMax (" + aMax + ") must be >= aMin (" + aMin + ")");
         }
-        // int[] suffices when both endpoints fit in int (above MIN_VALUE, which is the
-        // missing sentinel, and at or below MAX_VALUE).
+        // int[] suffices when both endpoints fit in int (above MIN_VALUE, which is the raw
+        // missing sentinel and would cost the code table, and at or below MAX_VALUE).
         if (aMin > Integer.MIN_VALUE && aMax <= Integer.MAX_VALUE)
         {
             return new DataBufferInt();

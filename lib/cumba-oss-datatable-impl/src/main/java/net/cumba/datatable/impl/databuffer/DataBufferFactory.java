@@ -54,7 +54,7 @@ public interface DataBufferFactory
      * Build a numeric buffer sized to store integer values in the inclusive range
      * {@code [aMin, aMax]}. The factory picks {@code int[]}-backed storage when the range fits in
      * {@code int} (above {@link Integer#MIN_VALUE}, below {@link Integer#MAX_VALUE}), else
-     * {@code long[]}-backed. Both buffers reserve their {@code MIN_VALUE} sentinel for missing.
+     * {@code long[]}-backed. Both buffers use their {@code MIN_VALUE} as the raw missing sentinel.
      */
     IDataBufferNumeric createForRange(long aMin, long aMax);
 

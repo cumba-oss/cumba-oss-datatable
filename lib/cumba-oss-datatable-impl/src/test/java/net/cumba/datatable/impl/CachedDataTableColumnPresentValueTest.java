@@ -205,8 +205,12 @@ class CachedDataTableColumnPresentValueTest
         g.add(new Case("LONG single", column(DataValueType.LONG, 5L, 5L, 5L)));
         g.add(new Case("LONG single MIS",
                 column(DataValueType.LONG, MissingValue.MIS, MissingValue.MIS)));
-        // Long.MIN_VALUE IS the buffer's missing sentinel: stored as a number, read back missing.
+        // Long.MIN_VALUE is the buffer's raw missing sentinel, but a stored Long.MIN_VALUE reads
+        // back PRESENT (its code table says so), and each special missing keeps its identity.
         g.add(new Case("LONG sentinel", column(DataValueType.LONG, Long.MIN_VALUE, 1L)));
+        g.add(new Case("LONG sentinel and special missings",
+                column(DataValueType.LONG, Long.MIN_VALUE, null, MissingValue.MIS,
+                        MissingValue.MIS_A, MissingValue.MIS_ERROR, Long.MIN_VALUE, 2L)));
         CachedDataTableColumn shortLong = column(DataValueType.LONG, repeat(4, 1L, 2L));
         shortLong.setTableRowCount(shortLong.getDataBuffer().size() + 3L);
         g.add(new Case("LONG short buffer", shortLong));
@@ -221,7 +225,8 @@ class CachedDataTableColumnPresentValueTest
         g.add(new Case("LONG on DataBufferInt",
                 inject(DataValueType.LONG,
                         filled(new DataBufferInt(), 0L, -1L, (long) Integer.MAX_VALUE,
-                                Integer.MIN_VALUE + 1L, null, MissingValue.MIS_H, 4.0))));
+                                Integer.MIN_VALUE + 1L, (long) Integer.MIN_VALUE, null,
+                                MissingValue.MIS_H, 4.0))));
         g.add(new Case("LONG on DataBufferDouble",
                 inject(DataValueType.LONG,
                         filled(new DataBufferDouble(), 3.0, 3.5, -0.0, UNRECOGNISED_NAN,
@@ -252,8 +257,9 @@ class CachedDataTableColumnPresentValueTest
         g.add(new Case("DOUBLE on DataBufferLong",
                 inject(DataValueType.DOUBLE, filled(new DataBufferLong(), 0L, -1L, Long.MAX_VALUE,
                         Long.MIN_VALUE, ABOVE_2_53, null, MissingValue.MIS_T))));
-        g.add(new Case("DOUBLE on DataBufferInt", inject(DataValueType.DOUBLE,
-                filled(new DataBufferInt(), 0L, 17L, -5L, null, MissingValue.MIS_U))));
+        g.add(new Case("DOUBLE on DataBufferInt",
+                inject(DataValueType.DOUBLE, filled(new DataBufferInt(), 0L, 17L, -5L,
+                        (long) Integer.MIN_VALUE, null, MissingValue.MIS_U))));
         g.add(new Case("DOUBLE on DataBufferObject",
                 inject(DataValueType.DOUBLE,
                         filled(new DataBufferObject(), 1.5, 2L, "x", "", null, MissingValue.MIS_Q,

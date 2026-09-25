@@ -6,21 +6,37 @@ import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
 /**
- * A numeric data buffer that stores values in an internal {@code int[]}. Reserves
- * {@link Integer#MIN_VALUE} as the missing-value sentinel — reads of that slot return
- * {@link MissingValue#MIS}, writes of any {@link MissingValue} (or {@code null}) write
- * {@link Integer#MIN_VALUE}. Suitable for boolean value columns and for compact index storage when
- * the maximum stored value fits in {@code int}.
+ * A numeric data buffer that stores values in an internal {@code int[]}, one element per row.
+ * {@link Integer#MIN_VALUE} is the raw missing sentinel: a {@code null} or a {@link MissingValue}
+ * is stored as it, and so is a real {@code Integer.MIN_VALUE}.
+ *
+ * <p>
+ * Every value round-trips exactly. A plain missing ({@code null}, {@link MissingValue#MIS}) is the
+ * sentinel alone. Which missing a sentinel slot holds, or that it holds a present
+ * {@code MIN_VALUE}, is kept in a {@link NumericMissingCodes} table that is allocated only when a
+ * special missing or a real {@code MIN_VALUE} is first stored (owner rulings D34 #2 / #5-2: each
+ * missing is its own value).
+ * </p>
+ *
+ * <p>
+ * The primitive reads ({@link #getValueAsLong(int)}, {@link #getValueAsInt(int)}, ...) return raw
+ * storage, so a missing reads as {@code MIN_VALUE} there: ask {@link #isMissing(int)} first.
+ * Suitable for boolean value columns and for compact index storage when the maximum stored value
+ * fits in {@code int}.
+ * </p>
  */
 public class DataBufferInt extends AbstractNumericDataBuffer
 {
 
     /**
-     * Reserved sentinel — a read of this raw int reports as {@link MissingValue#MIS}.
+     * Raw missing sentinel. A slot holding it is missing unless its code says
+     * {@link NumericMissingCodes#PRESENT_MIN}.
      */
     public static final int MISSING_SENTINEL = Integer.MIN_VALUE;
 
     private int[] values = new int[512];
+
+    private final NumericMissingCodes codes = new NumericMissingCodes();
 
     protected void ensureCapacity(int aValueCount)
     {
@@ -31,6 +47,7 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         }
         int newCapacity = newLength(oldLen, aValueCount - oldLen, oldLen >> 1);
         values = Arrays.copyOf(values, newCapacity);
+        codes.resize(newCapacity);
     }
 
 
@@ -38,6 +55,7 @@ public class DataBufferInt extends AbstractNumericDataBuffer
     public void setExpectedSize(int aLength)
     {
         values = Arrays.copyOf(values, aLength);
+        codes.resize(aLength);
     }
 
 
@@ -93,6 +111,14 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         int newSize = aIndex + 1;
         ensureCapacity(newSize);
         values[aIndex] = (int) aValue;
+        if (aValue == MISSING_SENTINEL)
+        {
+            codes.set(aIndex, NumericMissingCodes.PRESENT_MIN, values.length);
+        }
+        else
+        {
+            codes.clear(aIndex);
+        }
         size = Math.max(size, newSize);
     }
 
@@ -105,6 +131,7 @@ public class DataBufferInt extends AbstractNumericDataBuffer
             int newSize = aIndex + 1;
             ensureCapacity(newSize);
             values[aIndex] = MISSING_SENTINEL;
+            codes.set(aIndex, NumericMissingCodes.codeFor((MissingValue) aValue), values.length);
             size = Math.max(size, newSize);
             return;
         }
@@ -127,7 +154,12 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         int v = values[aIndex];
         if (v == MISSING_SENTINEL)
         {
-            return MissingValue.MIS;
+            byte code = codes.get(aIndex);
+            if (code == NumericMissingCodes.PRESENT_MIN)
+            {
+                return (long) v;
+            }
+            return NumericMissingCodes.missingFor(code);
         }
         return (long) v;
     }
@@ -171,7 +203,8 @@ public class DataBufferInt extends AbstractNumericDataBuffer
     @Override
     public boolean isMissing(int aIndex)
     {
-        return values[aIndex] == MISSING_SENTINEL;
+        return values[aIndex] == MISSING_SENTINEL
+                && codes.get(aIndex) != NumericMissingCodes.PRESENT_MIN;
     }
 
 
@@ -181,7 +214,11 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         int v = values[aIndex];
         if (v == MISSING_SENTINEL)
         {
-            return MissingValue.MIS.hashCodeStable();
+            byte code = codes.get(aIndex);
+            if (code != NumericMissingCodes.PRESENT_MIN)
+            {
+                return NumericMissingCodes.missingFor(code).hashCodeStable();
+            }
         }
         return Long.hashCode(v);
     }
@@ -193,6 +230,7 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         if (values.length != size)
         {
             values = Arrays.copyOf(values, size);
+            codes.resize(size);
         }
     }
 
@@ -200,6 +238,6 @@ public class DataBufferInt extends AbstractNumericDataBuffer
     @Override
     public long getEstimatedMemoryBytes()
     {
-        return (long) size * Integer.BYTES;
+        return (long) size * Integer.BYTES + codes.estimatedBytes(size);
     }
 }

@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.values.MissingValue;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.simple.SimpleGroupFactory;
@@ -310,6 +311,42 @@ class ParquetTableProviderCoverageTest
         assertEquals(2, columnNames.length);
         assertEquals("FOO", columnNames[0]);
         assertEquals("V2", columnNames[1], "null-named field should fall back to V<index+1>");
+    }
+
+    // ---------- INT64 Long.MIN_VALUE (PLAN-oss-numeric-buffer-missing-identity) ----------
+
+
+    /**
+     * A real {@code Long.MIN_VALUE} in an INT64 column is a present value. The LONG column's
+     * {@code DataBufferLong} reserves that value as its missing sentinel, and before the plan it
+     * read back as {@link MissingValue#MIS}: a present clinical value silently became missing.
+     */
+    @Test
+    void testInt64MinValueIsPresentNotMissing() throws Exception
+    {
+        MessageType schema = Types.buildMessage().optional(PrimitiveTypeName.INT64).named("LNG")
+                .named("table");
+        Path file = writeParquetWithSchema(schema, (factory, rowIdx) ->
+        {
+            Group g = factory.newGroup();
+            if (rowIdx == 0)
+            {
+                g.add("LNG", Long.MIN_VALUE);
+            }
+            else if (rowIdx == 1)
+            {
+                g.add("LNG", 5L);
+            }
+            return g;
+        }, "int64_min.parquet", 3);
+
+        IDataTable table = new ParquetTableProvider().provide(file.toUri(),
+                ParquetProviderSupplier.FI_PARQUET);
+
+        assertEquals(3L, table.getRowCount());
+        assertEquals(Long.MIN_VALUE, table.getValue(0, 0));
+        assertEquals(5L, table.getValue(1, 0));
+        assertEquals(MissingValue.MIS, table.getValue(2, 0));
     }
 
     // ---------- helpers ----------
