@@ -40,8 +40,8 @@
         <mockito.agent>-javaagent:${org.mockito:mockito-core:jar}</mockito.agent>
         <!--
             The parent defaults, restated explicitly rather than inherited silently: this module
-            is ~1 200 lines of MAIN code carrying real gates, and the gates it is measured
-            against should be readable in the module that has to clear them.
+            carries real gates on its MAIN code, and the gates it is measured against should be
+            readable in the module that has to clear them.
             Same values as the parent (jacoco 0.80, pitest 80 / 55). Tune only against a real
             measured number, never a guess.
         -->
