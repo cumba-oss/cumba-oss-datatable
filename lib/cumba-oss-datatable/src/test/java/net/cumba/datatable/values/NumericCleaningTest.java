@@ -94,11 +94,16 @@ class NumericCleaningTest
     @Test
     void nonIntegralValuesBeyondTwelveDigitsKeepTheirDigits()
     {
-        // both rendered "1.23456789012E12" under the old rule: one text for two values
-        assertEquals(1234567890123.4, clean(1234567890123.4));
-        assertEquals(1234567890123.3, clean(1234567890123.3));
-        assertEquals("1234567890123.4", text(1234567890123.4));
-        assertEquals("1234567890123.3", text(1234567890123.3));
+        // both rendered "123456789012" under the old rule: one text for two values (e = 11,
+        // 14 digits, tails .34 / .33 against the 0.1 threshold)
+        assertEquals(123456789012.34, clean(123456789012.34));
+        assertEquals(123456789012.33, clean(123456789012.33));
+        assertEquals("123456789012.34", text(123456789012.34));
+        assertEquals("123456789012.33", text(123456789012.33));
+        // from 1e12 the fraction goes by ruling D3 (never coarser than whole units): the same
+        // pair one decade up is ONE text
+        assertEquals("1234567890123", text(1234567890123.4));
+        assertEquals("1234567890123", text(1234567890123.3));
         // 16 digits, tail 3.3e-10 against a threshold of 1e-10: kept
         assertEquals(333.3333333333333, clean(333.3333333333333));
         assertEquals("333.3333333333333", text(333.3333333333333));
@@ -111,14 +116,57 @@ class NumericCleaningTest
 
 
     @Test
-    void theSnapInsideTheIntegralDecadesIsStated()
+    void neverCoarserThanWholeUnits()
     {
-        // [1e11, 2^52): a fraction within 10^(e-12) snaps onto the integer, the ruling applied
-        assertEquals(1e13, clean(10000000000001.4));
-        assertEquals("10000000000000", text(10000000000001.4));
-        assertEquals("10000000000000", text(1e13));
+        // D3 (owner: "agree to b"): from 1e12 a non-integral value snaps to its NEAREST INTEGER,
+        // never to the 12-digit rounding that would carry it across integral neighbours
+        assertEquals(10000000000001.0, clean(10000000000001.4),
+                "was 1e13 under the uncapped 12-digit rounding");
+        assertEquals("10000000000001", text(10000000000001.4));
+        assertEquals(10000000000006.0, clean(10000000000005.5), "half-even at .5: 5.5 -> 6");
+        assertEquals(10000000000004.0, clean(10000000000004.5), "half-even at .5: 4.5 -> 4");
+        assertEquals(1000000000000.0, clean(1000000000000.4), "e = 12: the cap's first decade");
+        assertEquals(1000000000002.0, clean(1000000000001.5));
+        assertEquals(1000000000000999.0, clean(1000000000000999.4), "e = 15");
         assertEquals(10000000000001.0, clean(10000000000001.0), "integral: never rounded");
         assertEquals("10000000000001", text(10000000000001.0));
+        // the edge below the cap: at e = 11 the twelfth digit already IS the unit (k = 0), the
+        // threshold 0.1 decides -- unchanged by D3
+        assertEquals(100000000000.0, clean(100000000000.04), "e = 11, tail 0.04 <= 0.1: snapped");
+        assertEquals(100000000000.4, clean(100000000000.4), "e = 11, tail 0.4 > 0.1: kept");
+        assertEquals(999999999999.5, clean(999999999999.5), "e = 11: a .5 is outside 0.1, kept");
+    }
+
+
+    @Test
+    void cleaningNeverInvertsTheOrder()
+    {
+        // D3's reason: a cleaned value never crosses an integral neighbour, so compare stays
+        // monotone. Both rows were +1 under the uncapped rounding (...005.5 -> ...000).
+        assertTrue(
+                SUPPORT.compare(new DataValueDouble(10000000000005.0),
+                        new DataValueDouble(10000000000005.5)) < 0,
+                "10000000000005.0 < 10000000000005.5");
+        assertTrue(
+                SUPPORT.compare(new DataValueDouble(1000000000000999.0),
+                        new DataValueDouble(1000000000000999.5)) < 0,
+                "1000000000000999.0 < ...999.5");
+        // a sweep over consecutive doubles around every decade from 1e12 to 1e15: non-decreasing
+        for (double start : new double[]
+        {
+                1e12, 5e12, 1e13, 3.3e13, 1e14, 7e14, 1e15, 4e15
+        })
+        {
+            double v = Math.nextDown(start);
+            double previous = clean(v);
+            for (int i = 0; i < 2000; i++)
+            {
+                v = Math.nextUp(v);
+                double c = clean(v);
+                assertTrue(c >= previous, "order inverted at " + v + ": " + previous + " > " + c);
+                previous = c;
+            }
+        }
     }
 
     // ------------------------------------------------------------------------- the floor
@@ -205,7 +253,7 @@ class NumericCleaningTest
         assertEquals("4.9999999999994", DataValueSupport.toPlainNumberText(4.9999999999994),
                 "notation only: the noise is not the renderer's business");
         assertEquals("5", DataValueSupport.toCleanText(4.9999999999994));
-        assertEquals("1234567890123.4", DataValueSupport.toCleanText(1234567890123.4));
+        assertEquals("123456789012.34", DataValueSupport.toCleanText(123456789012.34));
         assertEquals("12345678.9", text(12345678.9), "the cell text is plain too");
         assertEquals("42", text(42.0));
         assertEquals("3.14159", text(3.14159));
@@ -247,8 +295,8 @@ class NumericCleaningTest
     {
         double[] sample =
         {
-                4.9999999999994, 49999.999999994, 123456.1234567, 1234567890123.4, 0.99999999999994,
-                1.000000000000001e-12, 0.08190316160375, 10000000000001.4
+                4.9999999999994, 49999.999999994, 123456.1234567, 123456789012.34, 0.99999999999994,
+                1.000000000000001e-12, 0.08190316160375, 10000000000001.4, 10000000000005.5
         };
         for (double v : sample)
         {

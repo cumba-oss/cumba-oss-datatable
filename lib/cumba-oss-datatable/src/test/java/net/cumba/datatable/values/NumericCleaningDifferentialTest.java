@@ -27,9 +27,11 @@ import org.junit.jupiter.api.Test;
  * power-of-ten table, rounds with {@link Math#rint} and compares doubles; the two agreeing on every
  * class of value — around every decade from {@code 1e-13} to {@code 1e15}, the
  * {@code [1e-13, 1e-11)} band that takes the exact path, negatives, decimal text of 12 to 18
- * digits, calculated values, widened floats, values a hair inside and outside the threshold, and
- * the known thirteenth-digit ties — is what makes the fast path's shortcuts (the integral
- * short-circuit, the tie return, the one-step exponent correction) claims rather than hopes.
+ * digits, calculated values, widened floats, values a hair inside and outside the threshold, the
+ * known thirteenth-digit ties, and the fractions from {@code 1e12} to {@code 2^52} where the units
+ * floor (D3) replaces the 12-digit rounding — is what makes the fast path's shortcuts (the integral
+ * short-circuit, the tie return, the capped exponent, the one-step exponent correction) claims
+ * rather than hopes.
  * </p>
  *
  * <p>
@@ -69,7 +71,10 @@ class NumericCleaningDifferentialTest
             return 0.0d;
         }
         int e = exact.precision() - exact.scale() - 1;
-        double rounded = exact.round(TWELVE).doubleValue();
+        // D3: never coarser than whole units -- from 1e12 the rounding step is the nearest integer
+        // (half-even), not the 12-digit rounding
+        double rounded = e >= 12 ? exact.setScale(0, RoundingMode.HALF_EVEN).doubleValue()
+                : exact.round(TWELVE).doubleValue();
         BigDecimal diff = exact.subtract(new BigDecimal(rounded)).abs();
         return diff.compareTo(REL.scaleByPowerOfTen(e)) <= 0 ? rounded : aValue;
     }
@@ -131,6 +136,24 @@ class NumericCleaningDifferentialTest
             int b = rnd.nextInt(999) + 1;
             out.add(a / b * b); // R-B3: calculated a / b * b
             out.add(rnd.nextInt(100_000) / 10_000.0); // R-B3: 4-decimal text data
+        }
+        // the units floor: half-integers and near-integers from 1e12 to 2^52, both signs
+        for (int e = 12; e <= 15; e++)
+        {
+            double base = decade(e);
+            for (int i = 0; i < 20_000; i++)
+            {
+                double whole = Math.floor(base * (1 + rnd.nextDouble() * 9));
+                double frac = switch (i % 4)
+                {
+                case 0 -> 0.5;
+                case 1 -> rnd.nextDouble();
+                case 2 -> 0.25 * (rnd.nextInt(4) + 1);
+                default -> 1.0 / (rnd.nextInt(64) + 1);
+                };
+                out.add(whole + frac);
+                out.add(-(whole + frac));
+            }
         }
         // the known thirteenth-digit ties and their neighbours (0.08190316160375 and
         // 7366226.276815 from the research; 123456789012.5 an exact one), plus a value whose
@@ -197,8 +220,10 @@ class NumericCleaningDifferentialTest
         assertEquals(5.0, reference(5.0000000000001));
         assertEquals(123456.1234567, reference(123456.1234567));
         assertEquals(1234567890123.0, reference(1234567890123.0));
-        assertEquals(1234567890123.4, reference(1234567890123.4));
-        assertEquals(1e13, reference(10000000000001.4));
+        assertEquals(123456789012.34, reference(123456789012.34), "e = 11: kept");
+        assertEquals(1234567890123.0, reference(1234567890123.4), "e = 12: D3, the fraction goes");
+        assertEquals(10000000000001.0, reference(10000000000001.4), "D3: units, not 1e13");
+        assertEquals(10000000000006.0, reference(10000000000005.5), "D3: half-even at .5");
         assertEquals(0.0, reference(5.551115123125783e-17));
         assertEquals(1.0036416142611415e-13, reference(1.0036416142611415e-13));
         assertEquals(0.08190316160375, reference(0.08190316160375));

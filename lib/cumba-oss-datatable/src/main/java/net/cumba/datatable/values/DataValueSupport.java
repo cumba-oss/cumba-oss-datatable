@@ -13,11 +13,13 @@ import org.jspecify.annotations.Nullable;
 public class DataValueSupport
 {
 
+    // OSS-IDENTITY-REGION datatable-numeric-epsilon BEGIN
     /**
      * The absolute floor of {@link #getAsDoubleCleaned(double)}: every {@code abs(value) < EPSILON}
      * cleans to {@code 0}. Why it exists and what it costs is in that method's javadoc.
      */
     public static final double EPSILON = 1e-13;
+    // OSS-IDENTITY-REGION datatable-numeric-epsilon END
 
     /**
      * Per-type "default missing" value used when initialising new cells (synthetic added rows on
@@ -76,6 +78,7 @@ public class DataValueSupport
         return aValue == null || aValue.isMissingOrInvalid() || aValue.getValueAsString().isEmpty();
     }
 
+    // OSS-IDENTITY-REGION datatable-numeric-mathcontext BEGIN
     /**
      * Array containing pre instantiated {@link MathContext}'s for rounding.
      */
@@ -102,7 +105,12 @@ public class DataValueSupport
      * Math context for rounding to 12 significant digits.
      */
     public static final MathContext MC_RND = MCS[12];
+    // OSS-IDENTITY-REGION datatable-numeric-mathcontext END
 
+    // OSS-IDENTITY-REGION datatable-numeric-cleaning BEGIN: the cleaning rule, the constants it
+    // reads and the two renderings are byte-identical in cumba-datatable and cumba-oss-datatable
+    // between this line and the END marker (check_oss_identity.py compares the region; the file as
+    // a whole differs). EPSILON and MC_RND sit in two further regions of their own.
     /**
      * Powers of ten {@code 10^0 .. 10^22} — every one exactly representable as a double, which is
      * what makes {@link #getAsDoubleCleaned(double)}'s scaling and its {@code m / 10^k} rounding
@@ -144,10 +152,6 @@ public class DataValueSupport
     /** Below this decimal exponent {@code 10^(11-e)} is no longer an exact double. */
     private static final int MIN_FAST_EXPONENT = -11;
 
-    // OSS-IDENTITY-REGION datatable-numeric-cleaning BEGIN: the cleaning rule and the two
-    // renderings are byte-identical in cumba-datatable and cumba-oss-datatable between this line
-    // and the END marker (check_oss_identity.py compares the region; the file as a whole differs).
-
     /**
      * Absorb floating-point noise: answer the value, or the nearest value of at most 12 significant
      * digits when the two differ by no more than a tenth of the unit of the twelfth digit.
@@ -180,11 +184,21 @@ public class DataValueSupport
      * </p>
      *
      * <p>
-     * <b>Stated consequence.</b> A non-integral value in {@code [1e11, 2^52)} snaps onto its
-     * neighbouring integer when the fraction is within {@code 10^(e-12)}: {@code 10000000000001.4}
-     * cleans to {@code 10000000000000} (as {@code 1e13} does), while {@code 10000000000001.0} stays
-     * what it is. That is the ruling applied — noise below a tenth of the twelfth digit — stated
-     * here so nobody rediscovers it.
+     * <b>Never coarser than whole units</b> (owner ruling D3, 2026-09-25: <i>"agree to b"</i> —
+     * option (b), <i>never clean coarser than whole units</i>). From {@code 1e12} upwards the
+     * twelfth significant digit is a ten or more, so the 12-digit rounding would snap a value
+     * across its integral neighbours — which stay exact — and invert the order
+     * ({@code 10000000000005.5} would have cleaned to {@code 10000000000000}, below
+     * {@code 10000000000005.0}). The rounding step is therefore capped at units: for
+     * {@code e >= 12} a non-integral value snaps to its <b>nearest integer</b> ({@link Math#rint},
+     * half-even at {@code .5}: {@code 10000000000005.5} cleans to {@code 10000000000006},
+     * {@code 10000000000001.4} to {@code 10000000000001}), and the D1 threshold,
+     * {@code 10^(e-12) >= 1} there, always accepts it. So a cleaned value never crosses an integer,
+     * and {@link #compare} stays monotone. The edge: at {@code e = 11} the twelfth digit already IS
+     * the unit ({@code k = 0}), so {@code [1e11, 1e12)} was unit rounding all along, with the
+     * threshold {@code 0.1} deciding ({@code 100000000000.04} cleans to {@code 100000000000},
+     * {@code 100000000000.4} is kept); from {@code e = 12} the cap bites and the threshold no
+     * longer rejects anything.
      * </p>
      *
      * <p>
@@ -206,11 +220,13 @@ public class DataValueSupport
      * per comparison — so the common case allocates nothing: an integral check, a table-driven
      * decimal exponent, one multiply, one {@link Math#rint}, one divide. The scaled value
      * {@code v * 10^k} is correctly rounded and {@code m / 10^k} is the double nearest the 12-digit
-     * decimal, both because every power of ten used is exact. A thirteenth-digit tie
-     * ({@code scaled} ending in exactly {@code .5}) lies half a unit of the twelfth digit from
+     * decimal, both because every power of ten used is exact. For {@code k > 0} a thirteenth-digit
+     * tie ({@code scaled} ending in exactly {@code .5}) lies half a unit of the twelfth digit from
      * either neighbour — five times the threshold — so it is kept without deciding which way it
-     * would round. Only {@code |v| < 1e-11} needs {@code 10^23} or more and goes through
-     * {@link BigDecimal}, where the rule is evaluated exactly.
+     * would round; at {@code k = 0} (units) the threshold is at least {@code 0.1} of a unit and a
+     * {@code .5} is decided by {@code rint}'s half-even, as ruling D3 states. Only
+     * {@code |v| < 1e-11} needs {@code 10^23} or more and goes through {@link BigDecimal}, where
+     * the rule is evaluated exactly.
      * </p>
      *
      * @param aValue
@@ -241,15 +257,19 @@ public class DataValueSupport
             // k = 11 - e > 22: 10^k is no longer exact, evaluate the rule exactly instead
             return cleanViaBigDecimal(aValue);
         }
-        int k = 11 - e; // 12 significant digits; k in [-4, 22]
-        double scaled = k >= 0 ? aValue * POW10[k] : aValue / POW10[-k]; // |scaled| < 10^12
-        if (scaled - Math.floor(scaled) == 0.5d)
+        // 12 significant digits, but never coarser than whole units (D3): k = 11 - e would be
+        // negative from e = 12, where the twelfth digit is a ten -- capped at 0, the rounding step
+        // is rint(v) there and the threshold (>= 1) always accepts; k in [0, 22]
+        int k = Math.max(0, 11 - e);
+        double scaled = aValue * POW10[k]; // |scaled| < 10^12 for k > 0, < 2^52 for k == 0
+        if (k > 0 && scaled - Math.floor(scaled) == 0.5d)
         {
             // a thirteenth-digit tie is half a unit of the twelfth digit away from either
-            // rounding, five times the threshold: kept, whichever way it would round
+            // rounding, five times the threshold: kept, whichever way it would round. At k == 0
+            // the threshold is >= 0.1 of a unit and rint's half-even decides (D3).
             return aValue;
         }
-        double rounded = k >= 0 ? Math.rint(scaled) / POW10[k] : Math.rint(scaled) * POW10[-k];
+        double rounded = Math.rint(scaled) / POW10[k];
         return Math.abs(aValue - rounded) <= THRESHOLD[e - MIN_FAST_EXPONENT] ? rounded : aValue;
     }
 
