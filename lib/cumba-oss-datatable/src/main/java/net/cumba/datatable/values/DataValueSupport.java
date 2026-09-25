@@ -154,7 +154,8 @@ public class DataValueSupport
 
     /**
      * Absorb floating-point noise: answer the value, or the nearest value of at most 12 significant
-     * digits when the two differ by no more than a tenth of the unit of the twelfth digit.
+     * digits (from {@code 1e12}: the nearest integer, D3) when the two differ by no more than a
+     * tenth of the unit of the twelfth digit.
      *
      * <p>
      * <b>Purpose</b> (owner ruling E7, 2026-09-25): the data browser works with binary data from
@@ -212,7 +213,10 @@ public class DataValueSupport
      * residue of {@code 1e-13} or more is <b>not</b> removed:
      * {@code 5 - 4.9999999999999 = 1.0036416142611415e-13} survives and renders as
      * {@code "0.00000000000010036416142611415"}, because at that size a residue cannot be told from
-     * a real small value.
+     * a real small value. The floor answers {@code +0.0} whatever the sign, and so does a
+     * {@code -0.0} input: {@link #compare} is {@code Double.compare}, which orders {@code -0.0}
+     * below {@code 0.0}, so an unnormalised {@code -0.0} sorted {@code -1e-14} <em>above</em> zero
+     * and split two cells reading {@code "0"}.
      * </p>
      *
      * <p>
@@ -231,14 +235,23 @@ public class DataValueSupport
      *
      * @param aValue
      *            the value to be cleaned.
-     * @return the cleaned value: {@code aValue} itself, its 12-significant-digit rounding, or
-     *         {@code 0.0} below the floor. NaN and the infinities are answered as they are.
+     * @return the cleaned value: {@code aValue} itself, its 12-significant-digit rounding (from
+     *         {@code 1e12}: its nearest integer, D3), or {@code 0.0} below the floor — and
+     *         {@code 0.0} for {@code -0.0}, so that the two zeros, one value and one text, are one
+     *         value to {@link #compare} as well. NaN and the infinities are answered as they are.
      */
     public static double getAsDoubleCleaned(double aValue)
     {
-        if (!Double.isFinite(aValue) || aValue == 0.0d)
+        if (!Double.isFinite(aValue))
         {
             return aValue;
+        }
+        if (aValue == 0.0d)
+        {
+            // -0.0 too: the floor answers +0.0 for a sub-1e-13 negative, and compare is
+            // Double.compare, which orders -0.0 below 0.0 -- so an unnormalised -0.0 sorted a
+            // negative value ABOVE zero and split "0" from "0". One zero, as one text.
+            return 0.0d;
         }
         if (aValue == Math.rint(aValue))
         {
@@ -349,10 +362,11 @@ public class DataValueSupport
      * compares keys as text: the value cleaned by {@link #getAsDoubleCleaned(double)}, then
      * rendered by {@link #toPlainNumberText(double)}. The cleaning is a projection, stated per
      * value: a value within {@code 10^(e-12)} of its 12-significant-digit rounding renders as that
-     * rounding, any other value renders its own digits. So {@code 4.9999999999991} and
-     * {@code 5.0000000000009} both render {@code "5"}, while {@code 5.0000000000009} and
-     * {@code 5.0000000000011} — closer to each other than either is to {@code 5} — render
-     * differently: sharing a text is not a distance between two values.
+     * rounding (from {@code 1e12}: a non-integral value renders as its nearest integer, D3 —
+     * {@code 10000000000005.5} is {@code "10000000000006"}), any other value renders its own
+     * digits. So {@code 4.9999999999991} and {@code 5.0000000000009} both render {@code "5"}, while
+     * {@code 5.0000000000009} and {@code 5.0000000000011} — closer to each other than either is to
+     * {@code 5} — render differently: sharing a text is not a distance between two values.
      *
      * @param aValue
      *            the value to render.
@@ -690,9 +704,11 @@ public class DataValueSupport
      * <p>
      * <b>DOUBLE values are compared normalised:</b> both sides pass through
      * {@link #getAsDoubleCleaned(double)} first, so sub-{@code 1e-13} magnitudes flatten to 0 and
-     * noise within the ruled threshold folds onto the 12-significant-digit value before comparison
-     * — {@code 4.9999999999994} and {@code 5} compare equal, {@code 1000 / 3} and
-     * {@code 333.333333333} do not.
+     * noise within the ruled threshold folds onto the 12-significant-digit value (from
+     * {@code 1e12}: the nearest integer, D3) before comparison — {@code 4.9999999999994} and
+     * {@code 5} compare equal, {@code 1000 / 3} and {@code 333.333333333} do not, and {@code -0.0},
+     * {@code 0.0} and a sub-floor negative all compare equal (the cleaning answers {@code 0.0} for
+     * each).
      * </p>
      *
      * @param aValue1

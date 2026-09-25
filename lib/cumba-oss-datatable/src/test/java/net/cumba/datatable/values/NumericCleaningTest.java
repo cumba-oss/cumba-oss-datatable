@@ -151,20 +151,36 @@ class NumericCleaningTest
                 SUPPORT.compare(new DataValueDouble(1000000000000999.0),
                         new DataValueDouble(1000000000000999.5)) < 0,
                 "1000000000000999.0 < ...999.5");
-        // a sweep over consecutive doubles around every decade from 1e12 to 1e15: non-decreasing
-        for (double start : new double[]
+        // a sweep over consecutive doubles: 3000 ulps below each start and 3000 above, so a start
+        // at a decade boundary covers both decades (at 1e12 an ulp is 2^-13, so 3000 ulps is ~0.37
+        // of a unit -- across the boundary the k > 0 side and the k == 0 side both run); the
+        // starts cover the units floor (1e12 .. 4e15), the k > 0 decades (1e11, 1e-5) and the
+        // exact path below 1e-11 (1e-11, whose lower neighbours take the BigDecimal branch), in
+        // both signs -- non-decreasing everywhere
+        for (double magnitude : new double[]
         {
-                1e12, 5e12, 1e13, 3.3e13, 1e14, 7e14, 1e15, 4e15
+                1e12, 5e12, 1e13, 3.3e13, 1e14, 7e14, 1e15, 4e15, 1e11, 1e-5, 1e-11
         })
         {
-            double v = Math.nextDown(start);
-            double previous = clean(v);
-            for (int i = 0; i < 2000; i++)
+            for (double start : new double[]
             {
-                v = Math.nextUp(v);
-                double c = clean(v);
-                assertTrue(c >= previous, "order inverted at " + v + ": " + previous + " > " + c);
-                previous = c;
+                    magnitude, -magnitude
+            })
+            {
+                double v = start;
+                for (int i = 0; i < 3000; i++)
+                {
+                    v = Math.nextDown(v);
+                }
+                double previous = clean(v);
+                for (int i = 0; i < 6000; i++)
+                {
+                    v = Math.nextUp(v);
+                    double c = clean(v);
+                    assertTrue(c >= previous,
+                            "order inverted at " + v + ": " + previous + " > " + c);
+                    previous = c;
+                }
             }
         }
     }
@@ -306,5 +322,26 @@ class NumericCleaningTest
         // keeping, and "0" is the text either way)
         assertEquals(0, Double.compare(0.0, clean(5.551115123125783e-17)));
         assertEquals(0, Double.compare(0.0, clean(-5.551115123125783e-17)));
+    }
+
+
+    @Test
+    void theTwoZerosAreOneValue()
+    {
+        // review round 3 LOW-2: -0.0 used to be answered unchanged while the floor answered +0.0,
+        // and compare is Double.compare (which orders -0.0 below 0.0) -- so a sub-floor NEGATIVE
+        // sorted above zero, and -0.0 and 0.0 split although both render "0"
+        assertEquals(0, Double.compare(0.0, clean(-0.0)), "-0.0 cleans to +0.0");
+        assertEquals(0, Double.compare(0.0, clean(-1e-14)), "a sub-floor negative cleans to +0.0");
+        assertEquals("0", text(-0.0));
+        assertEquals("0", text(-1e-14));
+        assertEquals(0, SUPPORT.compare(new DataValueDouble(-0.0), new DataValueDouble(0.0)),
+                "compare(-0.0, 0.0) was -1");
+        assertEquals(0, SUPPORT.compare(new DataValueDouble(-1e-14), new DataValueDouble(-0.0)),
+                "compare(-1e-14, -0.0) was +1: a negative value sorted above zero");
+        assertEquals(0, SUPPORT.compare(new DataValueDouble(-1e-14), new DataValueDouble(0.0)));
+        assertTrue(SUPPORT.compare(new DataValueDouble(-1e-14), new DataValueDouble(1e-13)) < 0);
+        assertTrue(SUPPORT.compare(new DataValueDouble(-1e-13), new DataValueDouble(-0.0)) < 0,
+                "a value AT the floor keeps its sign and sorts below zero");
     }
 }
