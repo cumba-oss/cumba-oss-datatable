@@ -107,6 +107,23 @@ class NumericCleaningDifferentialTest
                 }
             }
         }
+        // at and beside every decade boundary: 10^e itself, its neighbours up to 4 ulps either
+        // way, both signs -- where the exponent estimate and its correction meet, and where the
+        // decade table's nearest-double entries are the only ambiguous inputs
+        for (int e = -13; e <= 15; e++)
+        {
+            double pow = decade(e);
+            for (int ulps = -4; ulps <= 4; ulps++)
+            {
+                double v = pow;
+                for (int k = 0; k < Math.abs(ulps); k++)
+                {
+                    v = ulps < 0 ? Math.nextDown(v) : Math.nextUp(v);
+                }
+                out.add(v);
+                out.add(-v);
+            }
+        }
         for (int i = 0; i < 100_000; i++)
         {
             out.add((double) (rnd.nextFloat() * 2000 - 1000)); // widened floats
@@ -115,10 +132,13 @@ class NumericCleaningDifferentialTest
             out.add(a / b * b); // R-B3: calculated a / b * b
             out.add(rnd.nextInt(100_000) / 10_000.0); // R-B3: 4-decimal text data
         }
-        // the known ties and their neighbours
+        // the known thirteenth-digit ties and their neighbours (0.08190316160375 and
+        // 7366226.276815 from the research; 123456789012.5 an exact one), plus a value whose
+        // tail is exactly half the threshold (1.0000000000005: 13 digits, tail 5e-13 <= 1e-12,
+        // snapped -- NOT a tie, it is inside the threshold)
         for (double tie : new double[]
         {
-                0.08190316160375, 7366226.276815, 1.0000000000005, 123456789012.5
+                0.08190316160375, 7366226.276815, 123456789012.5, 1.0000000000005
         })
         {
             out.add(tie);

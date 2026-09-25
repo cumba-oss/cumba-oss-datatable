@@ -144,6 +144,10 @@ public class DataValueSupport
     /** Below this decimal exponent {@code 10^(11-e)} is no longer an exact double. */
     private static final int MIN_FAST_EXPONENT = -11;
 
+    // OSS-IDENTITY-REGION datatable-numeric-cleaning BEGIN: the cleaning rule and the two
+    // renderings are byte-identical in cumba-datatable and cumba-oss-datatable between this line
+    // and the END marker (check_oss_identity.py compares the region; the file as a whole differs).
+
     /**
      * Absorb floating-point noise: answer the value, or the nearest value of at most 12 significant
      * digits when the two differ by no more than a tenth of the unit of the twelfth digit.
@@ -290,7 +294,8 @@ public class DataValueSupport
      * scientific notation: {@code 12345678.9} is {@code "12345678.9"}, {@code 0.0001} is
      * {@code "0.0001"}, {@code 1e20} is {@code "100000000000000000000"} (no {@code long}
      * saturation). NaN and the infinities render as {@link String#valueOf(double)} does. The text
-     * is lossless: two different finite doubles never render the same.
+     * is lossless: two different finite doubles never render the same — bar {@code 0.0} and
+     * {@code -0.0}, which are one value and both {@code "0"}.
      *
      * @param aValue
      *            the value to render.
@@ -322,8 +327,12 @@ public class DataValueSupport
     /**
      * The text of a DOUBLE cell — for display, for reports and for every join or grouping that
      * compares keys as text: the value cleaned by {@link #getAsDoubleCleaned(double)}, then
-     * rendered by {@link #toPlainNumberText(double)}. Two values that differ by more than the ruled
-     * noise therefore never share a text, and two values within it always do.
+     * rendered by {@link #toPlainNumberText(double)}. The cleaning is a projection, stated per
+     * value: a value within {@code 10^(e-12)} of its 12-significant-digit rounding renders as that
+     * rounding, any other value renders its own digits. So {@code 4.9999999999991} and
+     * {@code 5.0000000000009} both render {@code "5"}, while {@code 5.0000000000009} and
+     * {@code 5.0000000000011} — closer to each other than either is to {@code 5} — render
+     * differently: sharing a text is not a distance between two values.
      *
      * @param aValue
      *            the value to render.
@@ -333,6 +342,8 @@ public class DataValueSupport
     {
         return toPlainNumberText(getAsDoubleCleaned(aValue));
     }
+
+    // OSS-IDENTITY-REGION datatable-numeric-cleaning END
 
 
     /**

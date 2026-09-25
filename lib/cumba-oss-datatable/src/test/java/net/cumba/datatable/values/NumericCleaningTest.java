@@ -25,9 +25,13 @@ import org.junit.jupiter.api.Test;
  * </p>
  *
  * <p>
- * The rows that carry the plan's sensitivity arms: re-inserting the old magnitude scaling reddens
- * the non-integral rows beyond 12 digits and the owner's {@code 4.9999999999994}; removing the
- * integral short-circuit reddens the {@code 1234567890123 != 1234567890124} rows.
+ * The rows that carry the plan's sensitivity arms (both measured 2026-09-25): re-inserting the old
+ * magnitude scaling reddens the non-integral rows beyond 12 digits and the owner's
+ * {@code 4.9999999999994} (5 of 12); removing the integral short-circuit reddens the integral rows
+ * that sit INSIDE the decade threshold — {@code 2^52 + 1} and {@code 10000000000001.0} — (2 of 12).
+ * ⚠ It does not redden {@code 1234567890123 != 1234567890124}: at {@code e = 12} the threshold is
+ * {@code 1} and those two are {@code 3} from any 12-digit rounding, so the threshold alone keeps
+ * them; the short-circuit is what protects an integral value whose fraction-free tail is small.
  * </p>
  */
 class NumericCleaningTest
@@ -153,7 +157,7 @@ class NumericCleaningTest
 
 
     @Test
-    void valuesBelow1e11TakeTheExactPath()
+    void valuesBelow1eMinus11TakeTheExactPath()
     {
         // k = 11 - e > 22: 10^k is inexact, so the rule is evaluated in BigDecimal
         assertEquals(1.23456789012345e-12, clean(1.23456789012345e-12), "15 digits, kept");
