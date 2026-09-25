@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.net.URI;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Path;
@@ -728,14 +730,28 @@ public class DsjTableProvider extends AbstractDataTableProvider
             for (int ridx = 0; ridx < rowCount; ridx++)
             {
                 @Nullable
-                Object val = aRowSlice.get(ridx)[aColumnIndex];
+                Object raw = aRowSlice.get(ridx)[aColumnIndex];
 
-                // Apply data type mapper (e.g., date/time string to SAS epoch)
-                val = mapper.mapValueToTargetType(val);
+                // Apply data type mapper (e.g., date/time string to SAS epoch). ⭐ A JSON null never
+                // goes through it: DecimalMapper answers NaN for null, and the numeric arm below
+                // turned that NaN into MIS_ERROR -- a genuine missing read as an error in every
+                // targetDataType=decimal column (PLAN-oss-dsj-malformed-boolean-cell).
+                @Nullable
+                Object val = raw == null ? null : mapper.mapValueToTargetType(raw);
 
                 try
                 {
-                    if (val == null)
+                    if (raw != null && val == null)
+                    {
+                        // The mapper could not map a present value (DateMapper & co. answer null
+                        // for "2025-13-45" or a number in a date column): a format violation, so
+                        // MIS_ERROR (owner ruling 2026-09-25) -- except a blank string, which is
+                        // the missing it always read as.
+                        aDataColumn.addElement(
+                                raw instanceof String rs && rs.isBlank() ? MissingValue.MIS
+                                        : MissingValue.MIS_ERROR);
+                    }
+                    else if (val == null)
                     {
                         // A JSON `null` is an explicit "no value" that Dataset-JSON can express in
                         // a column of ANY type, character included, so it is loaded as
@@ -751,10 +767,8 @@ public class DsjTableProvider extends AbstractDataTableProvider
                         // keeps them apart, and there deliberately (they are distinct keys with a
                         // shared disposition).
                         //
-                        // NB. for a STRING column the type mapper is the identity NoMapper, so
-                        // `val == null` here means the source cell really was null; a mapper that
-                        // answers null for an unparseable value (DateMapper etc.) only ever serves
-                        // a numeric column, which already stored MIS.
+                        // NB. `val == null` here means the source cell really was null: a mapper
+                        // that answers null for a present value is handled by the arm above.
                         aDataColumn.addElement(MissingValue.MIS);
                     }
                     else if (val instanceof String str)
@@ -762,6 +776,14 @@ public class DsjTableProvider extends AbstractDataTableProvider
                         if (isNumeric)
                         {
                             addParsedDoubleOrError(aDataColumn, str);
+                        }
+                        else if (dvt == DataValueType.BOOLEAN)
+                        {
+                            // "The boolean data type in JSON only supports true and false" -- a
+                            // "Y"/"N" flag belongs in a string column. A type violation in one
+                            // cell is MIS_ERROR in that cell, never a failed load (owner ruling
+                            // 2026-09-25, PLAN-oss-dsj-malformed-boolean-cell). No leniency.
+                            aDataColumn.addElement(MissingValue.MIS_ERROR);
                         }
                         else
                         {
@@ -773,7 +795,12 @@ public class DsjTableProvider extends AbstractDataTableProvider
                     }
                     else if (val instanceof Number num)
                     {
-                        if (dvt == DataValueType.LONG)
+                        if (dvt == DataValueType.BOOLEAN)
+                        {
+                            // A number is not a JSON boolean: same ruling as a string above.
+                            aDataColumn.addElement(MissingValue.MIS_ERROR);
+                        }
+                        else if (dvt == DataValueType.LONG)
                         {
                             aDataColumn.addElement(num.longValue());
                         }
@@ -792,7 +819,13 @@ public class DsjTableProvider extends AbstractDataTableProvider
                         else
                         {
                             double dbl = num.doubleValue();
-                            if (!Double.isFinite(dbl))
+                            // Exactness is judged against the PARSED number when there is one:
+                            // DecimalMapper hands back num.doubleValue(), already rounded. ⚠ Sound
+                            // only because no read-side mapper rescales a number (the date/time
+                            // mappers parse text; DecimalMapper keeps the value) -- a mapper that
+                            // did would be judged against the unscaled raw value.
+                            Number parsed = raw instanceof Number rn ? rn : num;
+                            if (!Double.isFinite(dbl) || !isExactAsDouble(parsed, dbl))
                             {
                                 // NaN and +-Infinity can both reach here: NaN is the sentinel
                                 // several IDataTypeMapper implementations return for "could not
@@ -814,7 +847,16 @@ public class DsjTableProvider extends AbstractDataTableProvider
                     }
                     else if (val instanceof Boolean boolVal)
                     {
-                        aDataColumn.addElement(boolVal);
+                        if (isNumeric)
+                        {
+                            // A JSON boolean is not a number: a type violation, MIS_ERROR in this
+                            // cell (the column buffer would refuse it and fail the whole load).
+                            aDataColumn.addElement(MissingValue.MIS_ERROR);
+                        }
+                        else
+                        {
+                            aDataColumn.addElement(boolVal);
+                        }
                     }
                     else
                     {
@@ -825,15 +867,59 @@ public class DsjTableProvider extends AbstractDataTableProvider
                                 ridx, aColumnIndex, val.getClass(), val);
                     }
                 }
-                catch (Exception ex)
+                catch (RuntimeException ex)
                 {
+                    // Only a column buffer breaking its contract gets here: every value a document
+                    // can carry is handled above. The cell is passed as text so the log does not
+                    // depend on the host locale (MessageFormat renders a Double 1.5 as "1,5" on a
+                    // German JVM).
                     String msg = MessageFormat.format(
-                            "Error while handling value {0} [row={1}, column={2}]: {3}", val, ridx,
-                            aColumnIndex, ex.getMessage());
+                            "Error while handling value {0} [row={1}, column={2}]: {3}",
+                            String.valueOf(val), ridx, aColumnIndex, ex.getMessage());
                     LOGGER.log(Level.WARNING, msg, ex);
                     throw new IllegalStateException(msg, ex);
                 }
             }
+        }
+
+
+        /**
+         * Whether a parsed number survives the conversion to {@code double} exactly. A JSON integer
+         * arrives as a {@link Long}, or a {@link BigInteger} beyond long range; beyond 2^53 a
+         * double cannot hold every one, and the rounded value would be a present number that is not
+         * the file's -- a value that cannot be represented, the same outcome as an overflowing
+         * {@code 1e400}. A {@code Double}/{@code Float} is the file's own floating-point value, and
+         * {@code Integer}/{@code Short}/{@code Byte} always convert exactly.
+         *
+         * <p>
+         * ⚠ Only an INTEGER token is held to exactness. A decimal -- a float token, or a decimal
+         * string such as {@code "9007199254740993"} in a {@code targetDataType=decimal} column --
+         * is a decimal representation and is stored as the nearest double, exactly as {@code "0.1"}
+         * is.
+         * </p>
+         *
+         * @param aNum
+         *            the parsed number.
+         * @param aDbl
+         *            the value that would be stored; finite.
+         * @return false only for an integral number the double does not hold exactly.
+         */
+        // new BigDecimal(double) is the EXACT binary value, which is the point here: valueOf goes
+        // through Double.toString's shortest representation and would call 2^70 inexact.
+        @SuppressWarnings("PMD.AvoidDecimalLiteralsInBigDecimalConstructor")
+        private static boolean isExactAsDouble(Number aNum, double aDbl)
+        {
+            if (aNum instanceof Long)
+            {
+                // (long) saturates at 2^63, which is exactly (double) Long.MAX_VALUE: exclude it,
+                // or MAX_VALUE would read back as its own rounded neighbour.
+                return aDbl != 0x1p63 && (long) aDbl == aNum.longValue();
+            }
+            if (aNum instanceof BigInteger || aNum instanceof BigDecimal)
+            {
+                return new BigDecimal(aNum.toString()).compareTo(new BigDecimal(aDbl)) == 0;
+            }
+            return true;
         }
 
 

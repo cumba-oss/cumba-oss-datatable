@@ -136,9 +136,10 @@ class DsjTableProviderNumericAndMalformedValueTest
     /**
      * A boolean column is backed by a {@code DataBufferInt}. Before
      * PLAN-oss-numeric-buffer-missing-identity every missing it held read back as
-     * {@link MissingValue#MIS}; each now keeps its identity, and an integer cell equal to the
-     * buffer's raw sentinel ({@code Integer.MIN_VALUE}) is a present value like any other integer
-     * in this non-conformant column, not a missing.
+     * {@link MissingValue#MIS}; each now keeps its identity. An integer cell is a type violation in
+     * a boolean column and reads {@link MissingValue#MIS_ERROR}
+     * (PLAN-oss-dsj-malformed-boolean-cell; it read as a present {@code Integer.MIN_VALUE} before
+     * that plan).
      */
     @Test
     void booleanColumnKeepsEachMissingsIdentity(@TempDir Path tmp) throws IOException
@@ -174,8 +175,221 @@ class DsjTableProviderNumericAndMalformedValueTest
         assertEquals(MissingValue.MIS_ERROR, table.getValue(1, 0));
         // A nested array is outside the spec's row types: the defensive fallback.
         assertEquals(MissingValue.MIS_UNKNOWN, table.getValue(2, 0));
-        assertEquals((long) Integer.MIN_VALUE, table.getValue(3, 0));
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(3, 0));
         assertEquals(MissingValue.MIS, table.getValue(4, 0));
+    }
+
+
+    /**
+     * A cell whose JSON type violates its column type is {@link MissingValue#MIS_ERROR} in that
+     * cell, and the rest of the dataset loads (owner ruling 2026-09-25,
+     * PLAN-oss-dsj-malformed-boolean-cell). The spec: "The boolean data type in JSON only supports
+     * true and false" -- a "Y"/"N" flag belongs in a string column, so no leniency. Before the fix
+     * the first bad cell made the whole load fail with an IllegalStateException.
+     */
+    @Test
+    void booleanColumnViolationsAreMisErrorNotALoadFailure(@TempDir Path tmp) throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-25T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.BOOV",
+                  "name": "BOOV",
+                  "label": "Boolean column with type violations",
+                  "records": 7,
+                  "columns": [
+                    {"itemOID": "IT.BOOV.FLAG", "name": "FLAG", "label": "Flag",
+                     "dataType": "boolean"}
+                  ],
+                  "rows": [
+                    ["Y"],
+                    ["true"],
+                    [0.5],
+                    [3000000000],
+                    [1],
+                    [true],
+                    [null]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "booleanviolations.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals(7, table.getRowCount());
+        for (int row = 0; row < 5; row++)
+        {
+            assertEquals(MissingValue.MIS_ERROR, table.getValue(row, 0), "row " + row);
+        }
+        assertEquals(true, table.getDataValue(5, 0).getValue());
+        assertEquals(MissingValue.MIS, table.getValue(6, 0));
+    }
+
+
+    /**
+     * A decimal (DOUBLE) column: a JSON boolean is a type violation, and a JSON integer a double
+     * cannot hold exactly is a present value that cannot be represented -- both MIS_ERROR, the same
+     * outcome as an overflowing number. Before the fix the boolean failed the load in both twins,
+     * and 2^53 + 1 failed the OSS load and was silently rounded internally.
+     */
+    @Test
+    void doubleColumnViolationsAreMisErrorNotALoadFailure(@TempDir Path tmp) throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-25T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.DBLV",
+                  "name": "DBLV",
+                  "label": "Double column with type violations",
+                  "records": 9,
+                  "columns": [
+                    {"itemOID": "IT.DBLV.VAL", "name": "VAL", "label": "Value",
+                     "dataType": "double"}
+                  ],
+                  "rows": [
+                    [true],
+                    [9007199254740993],
+                    [9007199254740992],
+                    [1.5],
+                    [9223372036854775807],
+                    [-9007199254740993],
+                    [99999999999999999999],
+                    [100000000000000000000],
+                    [1180591620717411303424]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "doubleviolations.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals(9, table.getRowCount());
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(0, 0));
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(1, 0));
+        assertEquals(9007199254740992.0, table.getDataValue(2, 0).getValueAsDouble());
+        assertEquals(1.5, table.getDataValue(3, 0).getValueAsDouble());
+        // Long.MAX_VALUE converts to 2^63 -- the (long) saturation would call it exact.
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(4, 0));
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(5, 0));
+        // Beyond long range the parser hands over a BigInteger: inexact is MIS_ERROR, exact is
+        // kept.
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(6, 0));
+        assertEquals(1e20, table.getDataValue(7, 0).getValueAsDouble());
+        // 2^70 is exact in a double, but its shortest decimal form is not: the comparison must use
+        // the double's exact binary value.
+        assertEquals(0x1p70, table.getDataValue(8, 0).getValueAsDouble());
+    }
+
+
+    /**
+     * A JSON null in a targetDataType=decimal column is MIS, not MIS_ERROR: DecimalMapper answers
+     * NaN for null, and the numeric arm read that NaN as an unrepresentable value -- a genuine
+     * missing reported as an error. And a JSON integer the double cannot hold is MIS_ERROR here
+     * too, although DecimalMapper hands back an already-rounded Double.
+     */
+    @Test
+    void decimalTargetColumnNullIsMisAndInexactIntegerIsMisError(@TempDir Path tmp)
+        throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-25T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.DECN",
+                  "name": "DECN",
+                  "label": "Decimal target with null",
+                  "records": 4,
+                  "columns": [
+                    {"itemOID": "IT.DECN.V", "name": "V", "label": "V",
+                     "dataType": "decimal", "targetDataType": "decimal"}
+                  ],
+                  "rows": [
+                    [null],
+                    ["1.5"],
+                    ["not-a-number"],
+                    [9007199254740993]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "decimalnull.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals(MissingValue.MIS, table.getValue(0, 0));
+        assertEquals(1.5, table.getDataValue(1, 0).getValueAsDouble());
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(2, 0));
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(3, 0));
+    }
+
+
+    /**
+     * A date column mapped to a SAS date: a present value the mapper cannot read is a format
+     * violation (MIS_ERROR); a blank string and a null stay missing (MIS).
+     */
+    @Test
+    void unmappableDateIsMisErrorAndBlankStaysMissing(@TempDir Path tmp) throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-25T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.DTV",
+                  "name": "DTV",
+                  "label": "Date column with violations",
+                  "records": 5,
+                  "columns": [
+                    {"itemOID": "IT.DTV.DT", "name": "DT", "label": "Date",
+                     "dataType": "date", "targetDataType": "integer"}
+                  ],
+                  "rows": [
+                    ["1960-01-02"],
+                    ["2025-13-45"],
+                    [""],
+                    [null],
+                    [123]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "dateviolations.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals(5, table.getRowCount());
+        assertEquals(1.0, table.getDataValue(0, 0).getValueAsDouble());
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(1, 0));
+        assertEquals(MissingValue.MIS, table.getValue(2, 0));
+        assertEquals(MissingValue.MIS, table.getValue(3, 0));
+        assertEquals(MissingValue.MIS_ERROR, table.getValue(4, 0));
+    }
+
+
+    /** An integer beyond long range in a string column is its text, not a failed load. */
+    @Test
+    void integerBeyondLongInAStringColumnIsItsText(@TempDir Path tmp) throws IOException
+    {
+        String json = """
+                {
+                  "datasetJSONCreationDateTime": "2026-09-25T10:00:00",
+                  "datasetJSONVersion": "1.1.0",
+                  "itemGroupOID": "IG.BIGS",
+                  "name": "BIGS",
+                  "label": "Big integer in a string column",
+                  "records": 1,
+                  "columns": [
+                    {"itemOID": "IT.BIGS.ID", "name": "ID", "label": "Id", "dataType": "string"}
+                  ],
+                  "rows": [
+                    [99999999999999999999]
+                  ]
+                }
+                """;
+        java.net.URI uri = writeJson(tmp, "bigstring.json", json);
+
+        IDataTable table = new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON);
+
+        assertEquals("99999999999999999999", table.getValue(0, 0));
     }
 
 
