@@ -69,4 +69,22 @@
         <Bug pattern="IAOM_DO_NOT_INCREASE_METHOD_ACCESSIBILITY" />
     </Match>
 
+    <Match>
+        <!-- FE_FLOATING_POINT_EQUALITY on `v == Math.rint(v)`: the exact-integrality test of the
+             numeric cleaning rule and of the plain rendering (PLAN-numeric-cleaning-and-key-text,
+             owner ruling E7: "for numbers that do not have any floating point digits, the rounding
+             does not make sense"). It is not a tolerance comparison: rint(v) is v itself exactly
+             when v is integral, and the answer is the same for -0.0, NaN and the infinities. The
+             method is the hot path (once per rendered DOUBLE cell, per text key, per comparison),
+             so the comparison is kept as the one-instruction form rather than reshaped through
+             Double.compare. Scoped to the two methods; any new float equality in the class is
+             still reported. -->
+        <Class name="net.cumba.datatable.values.DataValueSupport" />
+        <Or>
+            <Method name="getAsDoubleCleaned" />
+            <Method name="toPlainNumberText" />
+        </Or>
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY" />
+    </Match>
+
 </FindBugsFilter>

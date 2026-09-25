@@ -1,5 +1,8 @@
 package net.cumba.datatable.values;
 
+// OSS-IDENTITY datatable-numeric-text: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import lombok.AllArgsConstructor;
@@ -112,20 +115,19 @@ public class DataValueDouble implements IDataValueNumber
     }
 
 
+    /**
+     * The cell's text: the value cleaned of floating-point noise
+     * ({@link DataValueSupport#getAsDoubleCleaned(double)}) and rendered in plain notation
+     * ({@link DataValueSupport#toPlainNumberText(double)}) — an integral value without {@code .0},
+     * never scientific notation, never saturated. This is the text of every display, report and
+     * text-keyed join or grouping of a DOUBLE cell, so it is lossless outside the ruled noise:
+     * {@code 1234567890123} and {@code 1234567890124} are two texts.
+     */
     @Override
     @JsonIgnore
     public String getValueAsString()
     {
-        double cleaned = DataValueSupport.getAsDoubleCleaned(value);
-
-        // for double values that are integer / long numbers, we use the String.valueOf((long)...)
-        // to avoid the .0
-        if (cleaned == Math.floor(cleaned) && !Double.isInfinite(cleaned))
-        {
-            return String.valueOf((long) cleaned);
-        }
-
-        return String.valueOf(cleaned);
+        return DataValueSupport.toCleanText(value);
     }
 
 

@@ -14,8 +14,8 @@ public class DataValueSupport
 {
 
     /**
-     * A magic number that defines the border where we allow rounding if
-     * {@code abs(value) < EPSILON}.
+     * The absolute floor of {@link #getAsDoubleCleaned(double)}: every {@code abs(value) < EPSILON}
+     * cleans to {@code 0}. Why it exists and what it costs is in that method's javadoc.
      */
     public static final double EPSILON = 1e-13;
 
@@ -104,88 +104,234 @@ public class DataValueSupport
     public static final MathContext MC_RND = MCS[12];
 
     /**
-     * Round the given value to 12 significant digits and return the rounded version when it differs
-     * from the original by less than a magnitude-scaled epsilon; otherwise return the value
-     * untouched.
+     * Powers of ten {@code 10^0 .. 10^22} — every one exactly representable as a double, which is
+     * what makes {@link #getAsDoubleCleaned(double)}'s scaling and its {@code m / 10^k} rounding
+     * correctly rounded rather than merely close. {@code 10^23} is the first inexact one; the
+     * cleaner falls back to {@link BigDecimal} before it would need it.
+     */
+    private static final double[] POW10 =
+    {
+            1e0, 1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15,
+            1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22
+    };
+
+    /**
+     * The decade anchors {@code 10^-13 .. 10^15} used to correct the decimal exponent (index
+     * {@code e + 13}); the negative entries are the nearest doubles, which classifies a value that
+     * is exactly such a double as its own decade — the only ambiguous inputs, and for those the
+     * cleaner answers the value itself whichever decade it is put in.
+     */
+    private static final double[] DECADE =
+    {
+            1e-13, 1e-12, 1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1e0,
+            1e1, 1e2, 1e3, 1e4, 1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11, 1e12, 1e13, 1e14, 1e15
+    };
+
+    /**
+     * The noise threshold of each decade, {@code 1e-12 * 10^e = 10^(e-12)} for {@code e} in
+     * {@code [-11, 15]} (index {@code e + 11}): a tenth of the unit of the twelfth significant
+     * digit.
+     */
+    private static final double[] THRESHOLD =
+    {
+            1e-23, 1e-22, 1e-21, 1e-20, 1e-19, 1e-18, 1e-17, 1e-16, 1e-15, 1e-14, 1e-13, 1e-12,
+            1e-11, 1e-10, 1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1, 1e2, 1e3
+    };
+
+    /** {@code log10(2)}, for the first estimate of a value's decimal exponent. */
+    private static final double LOG10_2 = 0.30102999566398120d;
+
+    /** Below this decimal exponent {@code 10^(11-e)} is no longer an exact double. */
+    private static final int MIN_FAST_EXPONENT = -11;
+
+    /**
+     * Absorb floating-point noise: answer the value, or the nearest value of at most 12 significant
+     * digits when the two differ by no more than a tenth of the unit of the twelfth digit.
      *
      * <p>
-     * ⚠ That single pass is now the WHOLE contract. A second pass used to sit behind it, detecting
-     * trailing 9- or 0-runs in values of &le; 12 significant digits; it was removed 2026-09-14 as
-     * dead code (owner ruling Q23 raised its digit floor to 13, which its own entry condition made
-     * unreachable). See the note at the removal site.
+     * <b>Purpose</b> (owner ruling E7, 2026-09-25): the data browser works with binary data from
+     * different operating systems and CPU architectures, and with calculated values, and both
+     * produce floating-point noise — {@code 5.0000000000001}, {@code 5} and {@code 4.9999999999994}
+     * all mean the same value, and so do {@code 49999.999999994} and {@code 50000}. Whether a value
+     * is slightly off by such noise or is a very precise measurement cannot be known, so the rule
+     * accepts that a genuinely precise value whose thirteenth digit onward lies within the
+     * threshold is snapped as well.
      * </p>
+     *
      * <p>
-     * ⭐ Why one pass suffices for the stated purpose, measured 2026-09-14: genuine
-     * float&rarr;double widening noise — what this method exists to hide — lands at <b>14-15</b>
-     * significant digits ({@code 0.1f}&rarr;15, {@code 1.234f}&rarr;15, {@code 3.14159f}&rarr;14,
-     * {@code 123.456f}&rarr;15), which the 12-digit rounding covers. The removed pass addressed a
-     * 10-12 digit band that the same ruling established holds real data rather than noise, and
-     * rewriting real data is how {@code 19999.0} once became {@code 20000.0}.
+     * <b>The rule.</b> 12 significant digits (owner: <i>"keep it at 12"</i>). Let
+     * {@code e = floor(log10 |v|)} be the value's decimal exponent and {@code r} its rounding to 12
+     * significant digits. The answer is {@code r} when {@code |v - r| <= 1e-12 * 10^e}, i.e. when
+     * the discarded tail is below a tenth of the twelfth digit's unit, else {@code v}. The
+     * threshold is anchored on the value's <b>decade</b> (owner ruling D1), not on the value
+     * itself, so that it means the same thing for every leading digit: relative to the value, a
+     * value starting with 9 would have been allowed nine times the tail a value starting with 1 is.
+     * </p>
+     *
+     * <p>
+     * <b>Integral values are never rounded</b> (owner: <i>"for numbers that do not have any
+     * floating point digits, the rounding does not make sense"</i>): a whole number carries no
+     * noise to remove, and {@code 1234567890123} and {@code 1234567890124} are two values. That
+     * also covers every double of magnitude {@code 2^52} or more, all of which are integral.
+     * </p>
+     *
+     * <p>
+     * <b>Stated consequence.</b> A non-integral value in {@code [1e11, 2^52)} snaps onto its
+     * neighbouring integer when the fraction is within {@code 10^(e-12)}: {@code 10000000000001.4}
+     * cleans to {@code 10000000000000} (as {@code 1e13} does), while {@code 10000000000001.0} stays
+     * what it is. That is the ruling applied — noise below a tenth of the twelfth digit — stated
+     * here so nobody rediscovers it.
+     * </p>
+     *
+     * <p>
+     * <b>The absolute floor: {@code |v| < 1e-13} becomes {@code 0}.</b> A relative rule measures a
+     * value against itself, so the leftover of a cancellation looks perfectly precise:
+     * {@code 0.1 + 0.2 - 0.3 = 5.551115123125783e-17} carries no information, but relative to
+     * itself it is exact. Its noise is relative to the <em>operands</em>, and only an absolute
+     * floor can remove it (kept by owner ruling, 2026-09-25). Its limits, both real: (1) a genuine
+     * value below {@code 1e-13} — a base-SI femto-scale quantity, say — is lost; clinical data
+     * reports such quantities in scaled units, which is why the floor was kept. (2) A cancellation
+     * residue of {@code 1e-13} or more is <b>not</b> removed:
+     * {@code 5 - 4.9999999999999 = 1.0036416142611415e-13} survives and renders as
+     * {@code "0.00000000000010036416142611415"}, because at that size a residue cannot be told from
+     * a real small value.
+     * </p>
+     *
+     * <p>
+     * <b>Implementation.</b> Called on the hot path — once per rendered DOUBLE cell, per text key,
+     * per comparison — so the common case allocates nothing: an integral check, a table-driven
+     * decimal exponent, one multiply, one {@link Math#rint}, one divide. The scaled value
+     * {@code v * 10^k} is correctly rounded and {@code m / 10^k} is the double nearest the 12-digit
+     * decimal, both because every power of ten used is exact. A thirteenth-digit tie
+     * ({@code scaled} ending in exactly {@code .5}) lies half a unit of the twelfth digit from
+     * either neighbour — five times the threshold — so it is kept without deciding which way it
+     * would round. Only {@code |v| < 1e-11} needs {@code 10^23} or more and goes through
+     * {@link BigDecimal}, where the rule is evaluated exactly.
      * </p>
      *
      * @param aValue
      *            the value to be cleaned.
-     * @return the cleaned value. This can be the original value or a rounded version.
+     * @return the cleaned value: {@code aValue} itself, its 12-significant-digit rounding, or
+     *         {@code 0.0} below the floor. NaN and the infinities are answered as they are.
      */
-    @SuppressWarnings("PMD.AvoidDecimalLiteralsInBigDecimalConstructor")
     public static double getAsDoubleCleaned(double aValue)
     {
         if (!Double.isFinite(aValue) || aValue == 0.0d)
         {
             return aValue;
         }
-
-        // calculate difference between value and rounded version
-        double absValue = Math.abs(aValue);
-
-        if (absValue > 0 && absValue < EPSILON)
+        if (aValue == Math.rint(aValue))
         {
-            // for now we define all numbers where abs(value) < EPSILON to be displayed as 0
+            // integral: never rounded (E7); every |v| >= 2^52 ends here
+            return aValue;
+        }
+        double abs = Math.abs(aValue);
+        if (abs < EPSILON)
+        {
+            // the absolute floor, see the javadoc
             return 0.0d;
         }
-
-        @SuppressWarnings("java:S2111")
-        BigDecimal bd = new BigDecimal(aValue);
-
-        // round to 12 significant digits
-        double rounded = bd.round(MC_RND).doubleValue();
-
-        double diff = Math.abs(aValue - rounded);
-
-        // calculate an epsilon based on value size
-        double maxAbs = Math.max(Math.abs(aValue), Math.abs(rounded));
-
-        double epsilon;
-        if (maxAbs < 1)
+        int e = decimalExponent(abs);
+        if (e < MIN_FAST_EXPONENT)
         {
-            epsilon = EPSILON;
+            // k = 11 - e > 22: 10^k is no longer exact, evaluate the rule exactly instead
+            return cleanViaBigDecimal(aValue);
         }
-        else
+        int k = 11 - e; // 12 significant digits; k in [-4, 22]
+        double scaled = k >= 0 ? aValue * POW10[k] : aValue / POW10[-k]; // |scaled| < 10^12
+        if (scaled - Math.floor(scaled) == 0.5d)
         {
-            epsilon = Math.max(EPSILON, Math.ulp(aValue) * 100) * maxAbs;
+            // a thirteenth-digit tie is half a unit of the twelfth digit away from either
+            // rounding, five times the threshold: kept, whichever way it would round
+            return aValue;
         }
+        double rounded = k >= 0 ? Math.rint(scaled) / POW10[k] : Math.rint(scaled) * POW10[-k];
+        return Math.abs(aValue - rounded) <= THRESHOLD[e - MIN_FAST_EXPONENT] ? rounded : aValue;
+    }
 
-        // if difference is not 0 but lower than epsilon we return the rounded version, otherwise
-        // the original value
-        if (diff > 0 && diff <= epsilon)
+
+    /**
+     * {@code floor(log10 aAbs)} for a finite {@code aAbs} in {@code [1e-13, 2^52)}: a first
+     * estimate from the binary exponent, then at most one upward correction against the decade
+     * table (the estimate is never too high, and never more than one too low).
+     */
+    private static int decimalExponent(double aAbs)
+    {
+        int e = (int) Math.floor(Math.getExponent(aAbs) * LOG10_2);
+        if (e < 15 && aAbs >= DECADE[e + 14])
         {
-            return rounded;
+            e++;
         }
+        return e;
+    }
 
-        // ⛔ The trailing-run fallback that used to sit here was REMOVED 2026-09-14 (owner ruling,
-        // Q23) as dead code. It ran only when rounding to 12 significant digits left the value
-        // unchanged — i.e. for values with <= 12 significant digits — while its own digit floor had
-        // just been raised to 13. The two conditions were mutually exclusive, so the branch could
-        // no longer be entered by any input. findCleanPrecision, MIN_CLEAN_DIGITS, MIN_RUN_LENGTH,
-        // SIG_DIGITS and POW10 existed only to serve it and went with it.
-        //
-        // ⚠ What remains is the whole of the cleaning contract: round to 12 significant digits and
-        // accept that rounding only when it moves the value by less than a magnitude-scaled
-        // epsilon. Float noise — the thing this method exists for — lands at 14-15 significant
-        // digits, which that pass handles; the removed fallback addressed a 10-12 digit band that
-        // the same ruling established contains real data, not noise.
 
-        return aValue;
+    /**
+     * The cleaning rule evaluated exactly, for the values the table-driven path cannot scale
+     * ({@code |v| < 1e-11}): the decimal exponent, the 12-digit rounding and the threshold
+     * comparison all in {@link BigDecimal} on the value's exact binary expansion.
+     */
+    @SuppressWarnings("PMD.AvoidDecimalLiteralsInBigDecimalConstructor")
+    private static double cleanViaBigDecimal(double aValue)
+    {
+        BigDecimal exact = new BigDecimal(aValue);
+        double rounded = exact.round(MC_RND).doubleValue();
+        int e = exact.precision() - exact.scale() - 1;
+        BigDecimal diff = exact.subtract(new BigDecimal(rounded)).abs();
+        return diff.compareTo(BigDecimal.ONE.scaleByPowerOfTen(e - 12)) <= 0 ? rounded : aValue;
+    }
+
+
+    /**
+     * A number as plain decimal text — <b>notation only, no cleaning</b> (owner ruling D2,
+     * 2026-09-25). An integral value renders without a fractional part ({@code 12.0} is
+     * {@code "12"}, as SDTM writes it, and {@code -0.0} is {@code "0"}); any other value renders
+     * its shortest round-trip digits ({@link Double#toString(double)}) in plain notation, never in
+     * scientific notation: {@code 12345678.9} is {@code "12345678.9"}, {@code 0.0001} is
+     * {@code "0.0001"}, {@code 1e20} is {@code "100000000000000000000"} (no {@code long}
+     * saturation). NaN and the infinities render as {@link String#valueOf(double)} does. The text
+     * is lossless: two different finite doubles never render the same.
+     *
+     * @param aValue
+     *            the value to render.
+     * @return the plain decimal text.
+     */
+    public static String toPlainNumberText(double aValue)
+    {
+        if (Double.isNaN(aValue) || Double.isInfinite(aValue))
+        {
+            return String.valueOf(aValue);
+        }
+        if (aValue == 0.0d)
+        {
+            return "0"; // -0.0 too
+        }
+        if (aValue == Math.rint(aValue) && Math.abs(aValue) < 0x1p63)
+        {
+            return Long.toString((long) aValue); // no ".0"
+        }
+        String text = Double.toString(aValue); // shortest round-trip digits
+        if (text.indexOf('E') < 0)
+        {
+            return text; // already plain
+        }
+        return new BigDecimal(text).stripTrailingZeros().toPlainString();
+    }
+
+
+    /**
+     * The text of a DOUBLE cell — for display, for reports and for every join or grouping that
+     * compares keys as text: the value cleaned by {@link #getAsDoubleCleaned(double)}, then
+     * rendered by {@link #toPlainNumberText(double)}. Two values that differ by more than the ruled
+     * noise therefore never share a text, and two values within it always do.
+     *
+     * @param aValue
+     *            the value to render.
+     * @return the cleaned value's plain decimal text.
+     */
+    public static String toCleanText(double aValue)
+    {
+        return toPlainNumberText(getAsDoubleCleaned(aValue));
     }
 
 
@@ -513,7 +659,9 @@ public class DataValueSupport
      * <p>
      * <b>DOUBLE values are compared normalised:</b> both sides pass through
      * {@link #getAsDoubleCleaned(double)} first, so sub-{@code 1e-13} magnitudes flatten to 0 and
-     * values are rounded to 12 significant digits before comparison.
+     * noise within the ruled threshold folds onto the 12-significant-digit value before comparison
+     * — {@code 4.9999999999994} and {@code 5} compare equal, {@code 1000 / 3} and
+     * {@code 333.333333333} do not.
      * </p>
      *
      * @param aValue1
