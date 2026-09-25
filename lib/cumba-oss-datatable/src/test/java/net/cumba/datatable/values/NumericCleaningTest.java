@@ -153,10 +153,10 @@ class NumericCleaningTest
                 "1000000000000999.0 < ...999.5");
         // a sweep over consecutive doubles: 3000 ulps below each start and 3000 above, so a start
         // at a decade boundary covers both decades (at 1e12 an ulp is 2^-13, so 3000 ulps is ~0.37
-        // of a unit -- across the boundary the k > 0 side and the k == 0 side both run); the
-        // starts cover the units floor (1e12 .. 4e15), the k > 0 decades (1e11, 1e-5) and the
-        // exact path below 1e-11 (1e-11, whose lower neighbours take the BigDecimal branch), in
-        // both signs -- non-decreasing everywhere
+        // of a unit). At 1e12 both sides are k == 0 and the threshold steps from 0.1 to the D3
+        // cap; at 1e11 k steps from 1 to 0; 1e-5 is a k > 0 decade; at 1e-11 the fast path meets
+        // the BigDecimal branch (its lower neighbours take it). The starts cover the units floor
+        // (1e12 .. 4e15) and those seams, in both signs -- non-decreasing everywhere
         for (double magnitude : new double[]
         {
                 1e12, 5e12, 1e13, 3.3e13, 1e14, 7e14, 1e15, 4e15, 1e11, 1e-5, 1e-11
