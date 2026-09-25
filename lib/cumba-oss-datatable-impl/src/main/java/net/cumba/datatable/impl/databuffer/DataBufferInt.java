@@ -3,6 +3,8 @@ package net.cumba.datatable.impl.databuffer;
 // OSS-IDENTITY datatable-buffers: byte-identical in cumba-datatable and cumba-oss-datatable.
 // Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.Arrays;
 
 import net.cumba.datatable.values.MissingValue;
@@ -73,6 +75,10 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         if (!(aValue instanceof Number num))
         {
             return false;
+        }
+        if (aValue instanceof BigDecimal || aValue instanceof BigInteger)
+        {
+            return isExactIntegral(num);
         }
         long lv = num.longValue();
         return lv >= Integer.MIN_VALUE && lv <= Integer.MAX_VALUE && num.doubleValue() == lv;
@@ -239,5 +245,29 @@ public class DataBufferInt extends AbstractNumericDataBuffer
     public long getEstimatedMemoryBytes()
     {
         return (long) size * Integer.BYTES + codes.estimatedBytes(size);
+    }
+
+
+    /**
+     * Whether an arbitrary-precision number is an integer that fits in 32 bits. Its
+     * {@code doubleValue} rounds, so the double round trip used for the boxed primitives would
+     * accept {@code 1000000000000000000.5} and store it truncated.
+     */
+    private static boolean isExactIntegral(Number aValue)
+    {
+        BigInteger integral;
+        if (aValue instanceof BigDecimal bd)
+        {
+            if (bd.stripTrailingZeros().scale() > 0)
+            {
+                return false;
+            }
+            integral = bd.toBigInteger();
+        }
+        else
+        {
+            integral = (BigInteger) aValue;
+        }
+        return integral.bitLength() < 32;
     }
 }

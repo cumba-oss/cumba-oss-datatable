@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import net.cumba.datatable.values.DataValueDouble;
 import net.cumba.datatable.values.DataValueLong;
 import net.cumba.datatable.values.DataValueMissing;
@@ -485,7 +487,7 @@ class DataBufferIntTest
 
 
     @Test
-    void testTruncatingSetExpectedSizeTruncatesTheCodeTableToo()
+    void testIdentitiesSurviveTruncateAndRegrow()
     {
         buffer.setValue(0, MissingValue.MIS_V);
         buffer.setValue(3, MissingValue.MIS_A);
@@ -494,6 +496,23 @@ class DataBufferIntTest
         assertEquals(MissingValue.MIS_V, buffer.getValue(0));
         assertEquals(MissingValue.MIS_B, buffer.getValue(3));
         assertEquals(4L * BYTES + 4L, buffer.getEstimatedMemoryBytes());
+    }
+
+
+    @Test
+    void testArbitraryPrecisionNumbersMustBeExactIntegers()
+    {
+        assertFalse(buffer.canStore(new BigDecimal("1000.5")));
+        assertFalse(buffer.canStore(new BigDecimal("1000000000000000000.5")));
+        assertTrue(buffer.canStore(new BigDecimal("1000.000")));
+        assertTrue(buffer.canStore(new BigDecimal("2147483647")));
+        assertFalse(buffer.canStore(new BigDecimal("2147483648")));
+        assertTrue(buffer.canStore(new BigInteger("2147483647")));
+        assertFalse(buffer.canStore(new BigInteger("2147483648")));
+        assertThrows(IllegalArgumentException.class,
+                () -> buffer.setValue(0, new BigDecimal("1000000000000000000.5")));
+        buffer.setValue(0, new BigDecimal("2147483647"));
+        assertEquals(Long.valueOf("2147483647"), buffer.getValue(0));
     }
 
 
