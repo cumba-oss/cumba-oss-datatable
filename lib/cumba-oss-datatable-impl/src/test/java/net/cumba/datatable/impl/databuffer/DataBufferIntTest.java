@@ -7,10 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Duration;
 import net.cumba.datatable.values.DataValueDouble;
 import net.cumba.datatable.values.DataValueLong;
 import net.cumba.datatable.values.DataValueMissing;
@@ -507,6 +509,12 @@ class DataBufferIntTest
         assertTrue(buffer.canStore(new BigDecimal("1000.000")));
         assertTrue(buffer.canStore(new BigDecimal("2147483647")));
         assertFalse(buffer.canStore(new BigDecimal("2147483648")));
+        assertTrue(buffer.canStore(new BigDecimal("1E+3")));
+        assertTrue(buffer.canStore(new BigDecimal("-1000.000")));
+        // A huge exponent is rejected by its digit count, without expanding it.
+        assertTimeoutPreemptively(Duration.ofSeconds(2),
+                () -> assertFalse(buffer.canStore(new BigDecimal("1E+50000000"))));
+        assertFalse(buffer.canStore(new BigDecimal("1E+2147483647")));
         assertTrue(buffer.canStore(new BigInteger("2147483647")));
         assertFalse(buffer.canStore(new BigInteger("2147483648")));
         assertThrows(IllegalArgumentException.class,

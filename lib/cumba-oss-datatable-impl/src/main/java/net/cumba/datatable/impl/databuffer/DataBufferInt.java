@@ -258,11 +258,15 @@ public class DataBufferInt extends AbstractNumericDataBuffer
         BigInteger integral;
         if (aValue instanceof BigDecimal bd)
         {
-            if (bd.stripTrailingZeros().scale() > 0)
+            BigDecimal stripped = bd.stripTrailingZeros();
+            // precision - scale is the number of integer digits; checking it first keeps
+            // toBigInteger() from expanding a huge exponent (1E+50000000 took seconds). In long,
+            // because a scale near Integer.MIN_VALUE overflows the int difference.
+            if (stripped.scale() > 0 || (long) stripped.precision() - stripped.scale() > 10)
             {
                 return false;
             }
-            integral = bd.toBigInteger();
+            integral = stripped.toBigInteger();
         }
         else
         {
