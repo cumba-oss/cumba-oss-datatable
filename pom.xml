@@ -747,8 +747,8 @@
                                     mutationCoverage entirely and turn the gate into a
                                     silent no-op: the goal runs on every module and
                                     reports ZERO mutations, with BUILD SUCCESS.
-                                    Measured on cumba-oss-formats: 0 mutations with
-                                    -DskipTests, 1014 and 429 without it.
+                                    Measured on cumba-oss-formats: ZERO mutations with
+                                    -DskipTests, hundreds without it.
                                 -->
                                 <excludedTestClasses>${pitest.excludedTestClasses}</excludedTestClasses>
                                 <excludedClasses>${pitest.excludedClasses}</excludedClasses>
