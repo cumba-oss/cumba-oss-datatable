@@ -173,6 +173,17 @@ class GroupKeyTest
         assertThrows(IllegalArgumentException.class,
                 () -> GroupKey.of("S1", GroupKeyPolicy.KeyPart.EMPTY));
         assertThrows(IllegalArgumentException.class, () -> GroupKey.of(GroupKey.of("A", "B")));
+        // non-canonical numbers are refused: each would silently never equal the key the same cell
+        // builds through keyIdentity (review round 1, L1)
+        assertThrows(IllegalArgumentException.class, () -> GroupKey.of("S1", -0.0));
+        assertThrows(IllegalArgumentException.class, () -> GroupKey.of(Double.NaN));
+        assertThrows(IllegalArgumentException.class,
+                () -> GroupKey.of("S1", MissingValue.MIS_A.asDouble()));
+        assertThrows(IllegalArgumentException.class, () -> GroupKey.of(5L));
+        assertThrows(IllegalArgumentException.class, () -> GroupKey.of("S1", TWO_53));
+        assertThrows(IllegalArgumentException.class, () -> GroupKey.of(Long.MIN_VALUE));
+        assertEquals(TWO_53 + 1, GroupKey.of(TWO_53 + 1));
+        assertEquals(0.0, GroupKey.of(0.0));
         Object[] withNull =
         {
                 "S1", null

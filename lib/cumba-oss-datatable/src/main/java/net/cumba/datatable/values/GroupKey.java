@@ -53,6 +53,8 @@ import org.jspecify.annotations.Nullable;
 public final class GroupKey
 {
 
+    private static final long NEGATIVE_ZERO_BITS = Double.doubleToRawLongBits(-0.0);
+
     /** The key of a grouping over no columns at all — one group over the whole table. */
     private static final GroupKey NONE = new GroupKey(new Object[0]);
 
@@ -83,8 +85,9 @@ public final class GroupKey
      *            absent column is {@code ""}
      * @return the bare identity for one component, else a {@code GroupKey}
      * @throws IllegalArgumentException
-     *             for a component that is not an identity object — loud beats a key that silently
-     *             never meets its counterpart
+     *             for a component that is not a canonical identity object (another class, a
+     *             {@code NaN}, {@code -0.0}, a {@code Long} a {@code double} holds exactly) — loud
+     *             beats a key that silently never meets its counterpart
      */
     public static Object of(Object... identities)
     {
@@ -100,15 +103,39 @@ public final class GroupKey
     }
 
 
+    /**
+     * Refuses anything {@link GroupKeyPolicy.KeyPart#identity()} can never answer — a component of
+     * another class, and a <b>non-canonical</b> number: a {@code NaN} (a missing encoding),
+     * {@code -0.0} (its identity is {@code 0.0}) and a {@code Long} a {@code double} holds exactly
+     * (its identity is the {@code Double}). Each would build a key that silently never equals the
+     * key of the same cell built through {@link GroupKeyPolicy#keyIdentity}
+     * ({@code PLAN-grouping-key-identity} review round 1, L1).
+     */
     private static void requireIdentity(Object aIdentity)
     {
-        if (!(aIdentity instanceof String || aIdentity instanceof Double
-                || aIdentity instanceof Long || aIdentity instanceof MissingValue))
+        if (aIdentity instanceof String || aIdentity instanceof MissingValue)
         {
-            throw new IllegalArgumentException("not a key identity: "
-                    + Objects.requireNonNull(aIdentity, "a key identity is never null").getClass()
-                            .getName());
+            return;
         }
+        if (aIdentity instanceof Double d)
+        {
+            if (Double.isNaN(d) || Double.doubleToRawLongBits(d) == NEGATIVE_ZERO_BITS)
+            {
+                throw new IllegalArgumentException("not a canonical key identity: " + d);
+            }
+            return;
+        }
+        if (aIdentity instanceof Long l)
+        {
+            if (GroupKeyPolicy.heldExactlyByDouble(l))
+            {
+                throw new IllegalArgumentException(
+                        "not a canonical key identity: the long " + l + " keys as its Double");
+            }
+            return;
+        }
+        throw new IllegalArgumentException("not a key identity: " + Objects
+                .requireNonNull(aIdentity, "a key identity is never null").getClass().getName());
     }
 
 
