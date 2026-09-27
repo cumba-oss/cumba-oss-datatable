@@ -251,6 +251,11 @@ class NumericCleaningTest
         assertEquals("3.5", DataValueSupport.toPlainNumberText(3.5));
         assertEquals("0.001", DataValueSupport.toPlainNumberText(0.001));
         assertEquals("9007199254740992", DataValueSupport.toPlainNumberText(9007199254740992.0));
+        // -2^63 is integral and a long holds it: its exact digits (PLAN-grouping-key-identity L2);
+        // +2^63 is beyond every long and keeps the shortest round-trip form
+        assertEquals("-9223372036854775808", DataValueSupport.toPlainNumberText(-0x1p63));
+        assertEquals("-9223372036854775808", DataValueSupport.toCleanText(-0x1p63));
+        assertEquals("9223372036854776000", DataValueSupport.toPlainNumberText(0x1p63));
         assertEquals("NaN", DataValueSupport.toPlainNumberText(Double.NaN));
         assertEquals("Infinity", DataValueSupport.toPlainNumberText(Double.POSITIVE_INFINITY));
         assertEquals("-Infinity", DataValueSupport.toPlainNumberText(Double.NEGATIVE_INFINITY));

@@ -348,7 +348,9 @@ public class DataValueSupport
         {
             return "0"; // -0.0 too
         }
-        if (aValue == Math.rint(aValue) && Math.abs(aValue) < 0x1p63)
+        // [-2^63, 2^63): every integral double a long holds, -2^63 included -- its exact digits,
+        // not the shortest round-trip form (PLAN-grouping-key-identity review round 1, L2)
+        if (aValue == Math.rint(aValue) && aValue >= -0x1p63 && aValue < 0x1p63)
         {
             return Long.toString((long) aValue); // no ".0"
         }

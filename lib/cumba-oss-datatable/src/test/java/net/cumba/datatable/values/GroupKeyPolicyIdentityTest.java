@@ -413,6 +413,11 @@ class GroupKeyPolicyIdentityTest
         assertEquals("9007199254740993", KEEP.textKeyIdentity(lng(TWO_53 + 1)));
         assertEquals("9007199254740992", KEEP.textKeyIdentity(lng(TWO_53)));
         assertEquals("9223372036854775807", KEEP.textKeyIdentity(lng(Long.MAX_VALUE)));
+        // Long.MIN_VALUE (-2^63) IS held by a double, so it is a PresentNumber -- and its text is
+        // still its exact digits, the same as the DOUBLE -2^63's (review round 1, L2)
+        assertInstanceOf(KeyPart.PresentNumber.class, KEEP.keyPart(lng(Long.MIN_VALUE)));
+        assertEquals("-9223372036854775808", KEEP.textKeyIdentity(lng(Long.MIN_VALUE)));
+        assertEquals(KEEP.textKeyIdentity(lng(Long.MIN_VALUE)), KEEP.textKeyIdentity(dbl(-0x1p63)));
         KeyPart exact = new KeyPart.PresentExactLong(TWO_53 + 1);
         assertEquals("9007199254740993", exact.reportingForm());
         assertTrue(exact.present());
