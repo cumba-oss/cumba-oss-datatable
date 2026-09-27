@@ -67,10 +67,12 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>
  * ⚠⚠ The engine's {@code IndexHelper.buildGroupKey} and {@code IndexHelper.isBlockKeyMissing} both
- * consult this policy but remain <b>two functions</b>, and must stay that way.
- * {@code buildGroupKey} builds the <em>reporting key</em> of a group that has already been formed;
- * {@code isBlockKeyMissing} decides whether the group is formed at all. They answer different
- * questions and merely happen to read the same cells. Unifying them would be a bug, not a tidy-up.
+ * read the block's cells through this type but remain <b>two functions</b>, and must stay that way.
+ * {@code buildGroupKey} builds the <em>key</em> of a group that has already been formed (since
+ * {@code PLAN-grouping-key-identity} the {@link GroupKey} of the cells' {@link #keyIdentity}
+ * identities, the very key the per-row lookup probes with); {@code isBlockKeyMissing} decides
+ * whether the group is formed at all. They answer different questions and merely happen to read the
+ * same cells. Unifying them would be a bug, not a tidy-up.
  * </p>
  *
  * @param keepMissings
@@ -243,9 +245,10 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
          *
          * <p>
          * {@link #reportingForm()} renders {@link DataValueSupport#toCleanText}, the very text of
-         * {@code DataValueDouble.getValueAsString()}: presentation (and the lockstep rendered-key
-         * encoding of the engine's {@code GroupedResult.buildKey} /
-         * {@code IndexHelper.buildGroupKey}), never re-parsed for identity. Since E7 that text is
+         * {@code DataValueDouble.getValueAsString()}: presentation (and the text-join key of the
+         * text-carried sites), never re-parsed for identity. The engine's grouped results key on
+         * {@link #identity()} since {@code PLAN-grouping-key-identity} — two groups that render
+         * alike ({@code 4.9999999999994}, {@code 5.0}) are two keys there. Since E7 that text is
          * lossless outside the ruled noise (integral values exact, noise within {@code 1e-12} of
          * the value's decade folded, plain notation), so the text-keyed sites distinguish what this
          * identity distinguishes, up to that noise.
@@ -539,10 +542,11 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
 
 
         /**
-         * The <b>reporting-key</b> rendering of this component — what the engine's
-         * {@code IndexHelper.buildGroupKey} and {@code GroupedResult.buildKey} join into the
-         * per-group lookup/report key, so the reporting key distinguishes exactly what the grouping
-         * distinguishes: {@link Present} renders its value, {@link Empty} renders {@code ""}, and
+         * The <b>reporting-key</b> rendering of this component — what a text key joins with
+         * {@code NUL} (the engine's {@code GroupedResult.textKey}, kept for the text-carried
+         * results only; every other grouped result keys on {@link #identity()} through
+         * {@link GroupKey} since {@code PLAN-grouping-key-identity}): {@link Present} renders its
+         * value, {@link PresentExactLong} its exact digits, {@link Empty} renders {@code ""}, and
          * {@link Missing} renders {@code "\\u0001" + marker.name()} — an SOH-prefixed token that no
          * clinical string value can equal (control characters cannot occur in cell text, the same
          * argument the {@code NUL} key separator already rests on).
@@ -611,13 +615,14 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
     }
 
     /**
-     * Keep a blank key component as a real key. The index-block reporting key (the engine's
+     * Keep a blank key component as a real key. The index-block key (the engine's
      * {@code IndexHelper.buildGroupKey}) — the group is still formed, and since {@code W38-A1} (Fix
-     * #249) the key renders the component's {@link KeyPart} identity: {@code ""} for
-     * {@link KeyPart.Empty}, the marker token for {@link KeyPart.Missing}
-     * ({@link KeyPart#reportingForm()}), so two groups the grouping distinguishes are never
-     * reported under one key. It is also the identity every join-key site classifies through
-     * ({@code JKM R4}: KEEP is the default), the RELREC link identity included.
+     * #249) the key carries the component's {@link KeyPart} identity: {@code ""} for
+     * {@link KeyPart.Empty}, the {@link MissingValue} constant for {@link KeyPart.Missing} (since
+     * {@code PLAN-grouping-key-identity} the {@link #keyIdentity} object inside a {@link GroupKey};
+     * the marker token of {@link KeyPart#reportingForm()} before), so two groups the grouping
+     * distinguishes never share a key. It is also the identity every join-key site classifies
+     * through ({@code JKM R4}: KEEP is the default), the RELREC link identity included.
      *
      * <p>
      * ⭐ {@code W32-E3}: the blankness notion moved {@code MISSING_ONLY → MISSING_OR_EMPTY} — a
