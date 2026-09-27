@@ -162,13 +162,15 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
      * ⭐ <b>The identity object</b> ({@code PLAN-shared-key-identity}, owner ruling D2 (c),
      * 2026-09-27). {@code KeyPart} is the type every consumer classifies through; an index that
      * holds one key per row keys on {@link #identity()} instead — the part's text for
-     * {@link Present}, its canonical {@link Double} for {@link PresentNumber}, {@code ""} for
-     * {@link Empty}, the {@link MissingValue} constant for {@link Missing}. That object is a
-     * <b>bijection</b> with {@code KeyPart} ({@link #ofIdentity(Object)} is its inverse): a
-     * {@code String}, a {@code Double} and an enum constant never compare equal, so it keeps the
-     * "cannot collide" of part 4 and the char {@code ≠} num of {@code D4-R1}, while a text or blank
-     * cell needs no wrapper at all. {@link GroupKeyPolicy#textKeyIdentity(IDataValue)} reads the
-     * text-join identity straight from a cell without building a part.
+     * {@link Present}, its canonical {@link Double} for {@link PresentNumber}, its {@link Long} for
+     * {@link PresentExactLong}, {@code ""} for {@link Empty}, the {@link MissingValue} constant for
+     * {@link Missing}. That object is a <b>bijection</b> with {@code KeyPart}
+     * ({@link #ofIdentity(Object)} is its inverse): a {@code String}, a {@code Double}, a
+     * {@code Long} and an enum constant never compare equal, so it keeps the "cannot collide" of
+     * part 4 and the char {@code ≠} num of {@code D4-R1}, while a text or blank cell needs no
+     * wrapper at all. {@link GroupKeyPolicy#textKeyIdentity(IDataValue)} and
+     * {@link GroupKeyPolicy#keyIdentity(IDataValue)} read the text-join and the typed identity
+     * straight from a cell without building a part.
      * </p>
      *
      * <p>
@@ -252,8 +254,11 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
          * <p>
          * ⚠ One record for {@code LONG} and {@code DOUBLE} cells alike: a {@code LONG} {@code 2}
          * and a {@code DOUBLE} {@code 2.0} keyed identically before (both rendered {@code "2"}) and
-         * must keep doing so. A {@code long} beyond 2^53 loses exactness in the double — far beyond
-         * any clinical value, and the cleaned text was coarser still.
+         * must keep doing so (plan decision {@code D99b}). A {@code long} that no {@code double}
+         * holds exactly is <b>not</b> a {@code PresentNumber}: it is a {@link PresentExactLong}
+         * ({@code PLAN-grouping-key-identity}), so {@code 9007199254740992} and
+         * {@code 9007199254740993} stay two keys (register {@code D64h}: <i>"key identity always
+         * exact"</i>).
          * </p>
          */
         record PresentNumber(double value) implements KeyPart
@@ -271,6 +276,69 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
                 // The cell's own text (DataValueDouble.getValueAsString): cleaned of noise, plain
                 // notation, integral values without the ".0" — one rendering, shared.
                 return DataValueSupport.toCleanText(value);
+            }
+
+
+            @Override
+            public boolean present()
+            {
+                return true;
+            }
+
+
+            @Override
+            public Object identity()
+            {
+                return value;
+            }
+
+
+            @Override
+            public KeyPart asText()
+            {
+                return new Present(reportingForm());
+            }
+        }
+
+
+        /**
+         * A real {@code LONG} value that <b>no {@code double} holds exactly</b> — beyond 2^53 in
+         * magnitude, where {@link PresentNumber}'s double would merge neighbours
+         * ({@code 9007199254740992} and {@code 9007199254740993} are one {@code double}). Keyed by
+         * the exact {@code long} ({@code PLAN-grouping-key-identity}; register {@code D64h}:
+         * <i>"key identity always exact"</i>; {@code RIK T1-1} fixed the same pair for the text
+         * channel).
+         *
+         * <p>
+         * Every {@code long} a {@code double} <em>does</em> hold exactly stays a
+         * {@link PresentNumber}, so a {@code LONG} {@code 2} still meets a {@code DOUBLE}
+         * {@code 2.0} ({@code D99b}) and a {@code LONG} {@code 2^53} meets a {@code DOUBLE}
+         * {@code 9007199254740992.0}. The constructor refuses such a value, which is what keeps
+         * {@link KeyPart#identity()} a bijection: one number, one part.
+         * </p>
+         *
+         * @param value
+         *            the exact value; never one {@code GroupKeyPolicy.heldExactlyByDouble} accepts
+         */
+        record PresentExactLong(long value) implements KeyPart
+        {
+
+            public PresentExactLong
+            {
+                if (heldExactlyByDouble(value))
+                {
+                    // Two parts for one number would re-open the collision class. Loud beats
+                    // silent.
+                    throw new IllegalArgumentException("the long " + value
+                            + " is held exactly by a double: it is a PresentNumber");
+                }
+            }
+
+
+            @Override
+            public String reportingForm()
+            {
+                return Long.toString(value);
             }
 
 
@@ -428,16 +496,18 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
          * The part whose {@link #identity()} is {@code aIdentity} — the inverse of the bijection
          * (ruling D2 (c)): a non-empty {@code String} is {@link Present}, {@code ""} is
          * {@link #EMPTY}, a {@link MissingValue} is its {@link Missing}, a {@link Double} is its
-         * {@link PresentNumber}.
+         * {@link PresentNumber}, a {@link Long} that no {@code double} holds exactly is its
+         * {@link PresentExactLong}.
          *
          * @param aIdentity
          *            an identity object as {@link #identity()} returns one
          * @return the part it identifies
          * @throws IllegalArgumentException
-         *             for any other object, and for a {@code Double} no part can have as its
-         *             identity — a {@code NaN} (a missing encoding) or {@code -0.0} (canonicalised
-         *             to {@code 0.0}); a {@code Long}, an {@code Integer} or a {@code Boolean} is
-         *             never an identity, a present {@code LONG} cell's identity is its double
+         *             for any other object, for a {@code Double} no part can have as its identity —
+         *             a {@code NaN} (a missing encoding) or {@code -0.0} (canonicalised to
+         *             {@code 0.0}) — and for a {@code Long} a {@code double} holds exactly (that
+         *             number's identity is its {@code Double}); an {@code Integer} or a
+         *             {@code Boolean} is never an identity
          */
         static KeyPart ofIdentity(Object aIdentity)
         {
@@ -458,6 +528,10 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
                             "-0.0 is not a key identity: the identity of a zero is 0.0");
                 }
                 return part;
+            }
+            if (aIdentity instanceof Long l)
+            {
+                return new PresentExactLong(l);
             }
             throw new IllegalArgumentException(
                     "not a key identity: " + aIdentity.getClass().getName());
@@ -500,15 +574,15 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
         /**
          * This part's canonical <b>identity object</b> (ruling D2 (c)): {@link Present}'s text,
          * {@link PresentNumber}'s value as a {@link Double} (never {@code NaN}, never
-         * {@code -0.0}), {@code ""} for {@link Empty}, the {@link MissingValue} constant for
-         * {@link Missing}. Two parts are equal <b>iff</b> their identities are equal, and
-         * {@link #ofIdentity(Object)} is the inverse — pinned by the datatable's
-         * {@code GroupKeyPolicyIdentityTest}.
+         * {@code -0.0}), {@link PresentExactLong}'s value as a {@link Long}, {@code ""} for
+         * {@link Empty}, the {@link MissingValue} constant for {@link Missing}. Two parts are equal
+         * <b>iff</b> their identities are equal, and {@link #ofIdentity(Object)} is the inverse —
+         * pinned by the datatable's {@code GroupKeyPolicyIdentityTest}.
          *
          * <p>
-         * ⚠ Only {@link PresentNumber} allocates here (the boxed {@code Double}); the text-join
-         * identity of a cell is read without any part by
-         * {@link GroupKeyPolicy#textKeyIdentity(IDataValue)}.
+         * ⚠ Only the numeric parts allocate here (the boxed number); the identity of a cell is read
+         * without any part by {@link GroupKeyPolicy#keyIdentity(IDataValue)}, and its text-join
+         * identity by {@link GroupKeyPolicy#textKeyIdentity(IDataValue)}.
          * </p>
          *
          * @return the identity object
@@ -520,7 +594,8 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
          * This part as it takes part in a <b>text join</b> — {@code Join_As_String} ({@code D4-R3})
          * and the RELREC link identity, which is a text join by design ({@code D4-R5},
          * {@code RRK E2}): a {@link PresentNumber} becomes the {@link Present} of its
-         * {@link #reportingForm()}, every other part is itself.
+         * {@link #reportingForm()} (and so does a {@link PresentExactLong}: its exact digits),
+         * every other part is itself.
          *
          * <p>
          * ⛔⛔ <b>Only a PRESENT number is projected.</b> {@link Missing} and {@link #EMPTY} keep
@@ -666,7 +741,8 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
      * <b>The single key-component classification</b> ({@code W38-A1} / Fix #249): the cell's
      * grouping identity as a {@link KeyPart}. A cell this policy's
      * {@link #isBlankKeyComponent(IDataValue)} calls non-blank is {@link KeyPart.PresentNumber
-     * PresentNumber(value)} when its value is a {@link Number}, else {@link KeyPart.Present
+     * PresentNumber(value)} when its value is a {@link Number} (a {@link KeyPart.PresentExactLong}
+     * for a {@code long} no {@code double} holds exactly), else {@link KeyPart.Present
      * Present(getValueAsString())}; a blank cell keeps its own identity instead of folding to
      * {@code ""} — a genuine missing marker maps to its {@link KeyPart.Missing} (decoded once, by
      * {@link #missingMarker(IDataValue)}), everything else blank (a literal {@code ""}, or a
@@ -699,7 +775,9 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
             // identity always exact. Text cells keep keying by their text, which is never cleaned.
             if (dv.getValue() instanceof Number n)
             {
-                return new KeyPart.PresentNumber(n.doubleValue());
+                return n instanceof Long l && !heldExactlyByDouble(l)
+                        ? new KeyPart.PresentExactLong(l)
+                        : new KeyPart.PresentNumber(n.doubleValue());
             }
             return new KeyPart.Present(dv.getValueAsString());
         }
@@ -709,11 +787,56 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
 
 
     /**
+     * The cell's <b>typed key identity</b>, read without building a {@link KeyPart}: exactly
+     * {@code keyPart(dv).identity()} for every cell (pinned by {@code GroupKeyPolicyIdentityTest})
+     * — the cell's own {@code String} for present text, the canonical {@code Double} of a present
+     * number ({@code -0.0} is {@code 0.0}), the {@code Long} of a present {@code long} no
+     * {@code double} holds exactly, {@code ""} for an empty cell, the {@link MissingValue} constant
+     * for a missing one.
+     *
+     * <p>
+     * ⭐ This is what a grouped result is keyed on and probed with ({@code GroupKey},
+     * {@code PLAN-grouping-key-identity}): once per group and once per probed row, so it must not
+     * allocate a part per cell. Allocation: none for a text, empty or missing cell; the boxed
+     * number for a numeric one.
+     * </p>
+     *
+     * @param dv
+     *            the key column's cell; {@code null} is {@link MissingValue#MIS_UNKNOWN}, as in
+     *            {@link #keyPart(IDataValue)}
+     * @return the identity object — a {@code String}, a {@code Double}, a {@code Long} or a
+     *         {@link MissingValue}
+     */
+    public Object keyIdentity(@Nullable IDataValue dv)
+    {
+        if (dv == null)
+        {
+            return MissingValue.MIS_UNKNOWN;
+        }
+        if (!isBlankKeyComponent(dv))
+        {
+            if (dv.getValue() instanceof Number n)
+            {
+                if (n instanceof Long l && !heldExactlyByDouble(l))
+                {
+                    return l;
+                }
+                return presentKeyNumber(n.doubleValue());
+            }
+            return dv.getValueAsString();
+        }
+        MissingValue marker = missingMarker(dv);
+        return marker == null ? "" : marker;
+    }
+
+
+    /**
      * The cell's <b>text-join key identity</b>, read without building a {@link KeyPart}: exactly
      * {@code keyPart(dv).asText().identity()} for every cell (pinned by
      * {@code GroupKeyPolicyIdentityTest}) — the cell's own {@code String} for present text, the
-     * {@link DataValueSupport#toCleanText cleaned text} of a present number, {@code ""} for an
-     * empty cell, the {@link MissingValue} constant for a missing one.
+     * {@link DataValueSupport#toCleanText cleaned text} of a present number (the exact digits of a
+     * {@code long} no {@code double} holds exactly), {@code ""} for an empty cell, the
+     * {@link MissingValue} constant for a missing one.
      *
      * <p>
      * ⭐ This is what the RELREC link indexes key on — the engine's {@code RelrecRowExpander}, the
@@ -748,6 +871,10 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
         {
             if (dv.getValue() instanceof Number n)
             {
+                if (n instanceof Long l && !heldExactlyByDouble(l))
+                {
+                    return Long.toString(l);
+                }
                 return DataValueSupport.toCleanText(presentKeyNumber(n.doubleValue()));
             }
             return dv.getValueAsString();
@@ -799,6 +926,29 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
                     "a NaN is a missing encoding, never a present numeric key");
         }
         return aValue == 0.0 ? 0.0 : aValue;
+    }
+
+
+    /**
+     * Whether a {@code double} holds {@code aValue} exactly — every {@code long} up to 2^53 in
+     * magnitude, and beyond it those that are multiples of a large enough power of two. Such a
+     * value keys as a {@link KeyPart.PresentNumber}, so it still meets the {@code DOUBLE} of the
+     * same number; any other is a {@link KeyPart.PresentExactLong}.
+     *
+     * <p>
+     * ⚠ {@code Long.MAX_VALUE} is excluded explicitly: {@code (double) Long.MAX_VALUE} is 2^63, and
+     * the cast back <b>saturates</b> to {@code Long.MAX_VALUE}, so the round trip alone would call
+     * it exact. ({@code Long.MIN_VALUE}, -2^63, is held exactly and needs no exception.)
+     * </p>
+     *
+     * @param aValue
+     *            the value
+     * @return whether {@code (double) aValue} is exactly {@code aValue}
+     */
+    static boolean heldExactlyByDouble(long aValue)
+    {
+        double widened = aValue;
+        return aValue != Long.MAX_VALUE && (long) widened == aValue;
     }
 
 

@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.view;
 
+// OSS-IDENTITY datatable-index-identity: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 /**
  * Memory-efficient hash lookup for merging two large tables. Uses open addressing (linear probing)
  * with only a single int[] array storing row indices. The hash determines the slot position

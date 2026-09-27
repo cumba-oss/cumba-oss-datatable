@@ -158,6 +158,23 @@
     </Match>
 
     <Match>
+        <!-- KeyHashSupport stores caller-owned column-id arrays by reference; treated as immutable. -->
+        <Class name="net.cumba.datatable.impl.KeyHashSupport$RepRowMatcher" />
+        <Field name="colIds" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
+        <!-- RepRowMatcher reads the index factory's group-id -> representative-row array by
+             reference ON PURPOSE: the factory grows it and hands the new array over through
+             setGroupRepRow, and the matcher must see every representative the factory records
+             (PLAN-grouping-key-identity moved the matcher here from both factories). -->
+        <Class name="net.cumba.datatable.impl.KeyHashSupport$RepRowMatcher" />
+        <Field name="groupRepRow" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
+    <Match>
         <!-- AbstractLibrarySupplier stores caller-owned supportedFiles list by reference; treated read-only. -->
         <Class name="net.cumba.datatable.impl.library.AbstractLibrarySupplier" />
         <Field name="supportedFiles" />

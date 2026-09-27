@@ -81,6 +81,9 @@ class GroupKeyPolicyIdentityTest
         return new DataValueLong(aValue);
     }
 
+    /** 2^53: the largest magnitude below which every {@code long} is held exactly by a double. */
+    private static final long TWO_53 = 9_007_199_254_740_992L;
+
     /**
      * One row of the case table.
      *
@@ -157,7 +160,21 @@ class GroupKeyPolicyIdentityTest
                     false, true),
             new KeyCase("STRING vs DOUBLE", str("5"), dbl(5.0), false, true),
             new KeyCase("STRING vs LONG +1", str("1234567890123"), lng(1_234_567_890_124L), false,
-                    false));
+                    false),
+            // ⭐ PLAN-grouping-key-identity (L1): a LONG no double holds exactly keeps its exact
+            // value on BOTH channels (D64h typed; RIK T1-1 the text channel) ...
+            new KeyCase("LONG 2^53 vs 2^53+1", lng(TWO_53), lng(TWO_53 + 1), false, false),
+            new KeyCase("LONG -(2^53+1) vs -2^53", lng(-TWO_53 - 1), lng(-TWO_53), false, false),
+            new KeyCase("LONG MAX vs MAX-1", lng(Long.MAX_VALUE), lng(Long.MAX_VALUE - 1), false,
+                    false),
+            // ... while every long a double DOES hold stays one key with that double (D99b)
+            new KeyCase("LONG 2^53 vs DOUBLE 2^53", lng(TWO_53), dbl(9_007_199_254_740_992.0), true,
+                    true),
+            new KeyCase("LONG 2^54 vs DOUBLE 2^54", lng(2 * TWO_53), dbl(18_014_398_509_481_984.0),
+                    true, true),
+            // and an exact long is never a string that spells it on the typed channel (D4-R1)
+            new KeyCase("STRING vs LONG 2^53+1", str("9007199254740993"), lng(TWO_53 + 1), false,
+                    true));
 
     static Stream<KeyCase> cases()
     {
@@ -233,7 +250,11 @@ class GroupKeyPolicyIdentityTest
                 new KeyPart.PresentNumber(5.0), new KeyPart.PresentNumber(4.9999999999994),
                 new KeyPart.PresentNumber(-2.5), new KeyPart.PresentNumber(Double.MAX_VALUE),
                 new KeyPart.PresentNumber(Double.MIN_VALUE),
-                new KeyPart.PresentNumber(Double.NEGATIVE_INFINITY), KeyPart.EMPTY));
+                new KeyPart.PresentNumber(Double.NEGATIVE_INFINITY), KeyPart.EMPTY,
+                new KeyPart.PresentNumber(TWO_53), new KeyPart.PresentExactLong(TWO_53 + 1),
+                new KeyPart.PresentExactLong(-TWO_53 - 1),
+                new KeyPart.PresentExactLong(Long.MAX_VALUE),
+                new KeyPart.PresentExactLong(Long.MIN_VALUE + 1)));
         for (MissingValue m : MissingValue.values())
         {
             out.add(KeyPart.missing(m));
@@ -249,7 +270,9 @@ class GroupKeyPolicyIdentityTest
         for (KeyPart p : parts)
         {
             Object id = p.identity();
-            assertTrue(id instanceof String || id instanceof Double || id instanceof MissingValue,
+            assertTrue(
+                    id instanceof String || id instanceof Double || id instanceof Long
+                            || id instanceof MissingValue,
                     () -> "identity of " + p + " is a " + id.getClass());
             assertEquals(p, KeyPart.ofIdentity(id), () -> "round trip of " + p);
             assertEquals(id, KeyPart.ofIdentity(id).identity(), () -> "inverse of " + id);
@@ -285,7 +308,12 @@ class GroupKeyPolicyIdentityTest
     {
         assertThrows(IllegalArgumentException.class, () -> KeyPart.ofIdentity(Double.NaN));
         assertThrows(IllegalArgumentException.class, () -> KeyPart.ofIdentity(-0.0));
+        // a long a double holds exactly is keyed by its Double -- two identities for one number
+        // would break the bijection
         assertThrows(IllegalArgumentException.class, () -> KeyPart.ofIdentity(5L));
+        assertThrows(IllegalArgumentException.class, () -> KeyPart.ofIdentity(TWO_53));
+        assertThrows(IllegalArgumentException.class, () -> KeyPart.ofIdentity(Long.MIN_VALUE));
+        assertThrows(IllegalArgumentException.class, () -> new KeyPart.PresentExactLong(TWO_53));
         assertThrows(IllegalArgumentException.class, () -> KeyPart.ofIdentity(5));
         assertThrows(IllegalArgumentException.class, () -> KeyPart.ofIdentity(true));
     }
@@ -306,7 +334,8 @@ class GroupKeyPolicyIdentityTest
             out.add(dbl(m.asDouble()));
         }
         out.addAll(Arrays.asList(str(" "), str(" x "), new DataValueBoolean(true), lng(0),
-                lng(Long.MIN_VALUE + 1)));
+                lng(Long.MIN_VALUE + 1), lng(Long.MIN_VALUE), lng(Long.MAX_VALUE), lng(TWO_53),
+                lng(TWO_53 + 1), dbl(-0.0), dbl(4.9999999999994)));
         return out;
     }
 
@@ -327,6 +356,68 @@ class GroupKeyPolicyIdentityTest
                         () -> String.valueOf(dv));
             }
         }
+    }
+
+
+    /**
+     * {@code keyIdentity} is {@code keyPart(dv).identity()} for every cell under every policy — the
+     * allocation-free read the grouped lookup keys on ({@code PLAN-grouping-key-identity}).
+     */
+    @Test
+    void keyIdentityIsTheIdentityOfKeyPart()
+    {
+        for (GroupKeyPolicy policy : POLICIES)
+        {
+            for (IDataValue dv : cells())
+            {
+                assertEquals(policy.keyPart(dv).identity(), policy.keyIdentity(dv),
+                        () -> policy + " / " + dv);
+            }
+        }
+        String value = String.valueOf("P1".toCharArray());
+        assertSame(value, KEEP.keyIdentity(str(value)));
+        assertSame(MissingValue.MIS_B, KEEP.keyIdentity(mis(MissingValue.MIS_B)));
+        assertSame(MissingValue.MIS_UNKNOWN, KEEP.keyIdentity(null));
+        assertEquals("", KEEP.keyIdentity(str("")));
+        assertEquals(Double.doubleToRawLongBits(0.0),
+                Double.doubleToRawLongBits((Double) KEEP.keyIdentity(dbl(-0.0))));
+        assertEquals(5.0, KEEP.keyIdentity(lng(5)));
+        assertEquals(TWO_53 + 1, KEEP.keyIdentity(lng(TWO_53 + 1)));
+    }
+
+
+    /**
+     * The exact-LONG arm (L1): which longs a double holds, the saturation trap at
+     * {@code Long.MAX_VALUE}, and the digits the text channel renders.
+     */
+    @Test
+    void aLongNoDoubleHoldsIsItsOwnExactKey()
+    {
+        assertTrue(GroupKeyPolicy.heldExactlyByDouble(0));
+        assertTrue(GroupKeyPolicy.heldExactlyByDouble(TWO_53));
+        assertTrue(GroupKeyPolicy.heldExactlyByDouble(-TWO_53));
+        assertTrue(GroupKeyPolicy.heldExactlyByDouble(2 * TWO_53));
+        assertTrue(GroupKeyPolicy.heldExactlyByDouble(Long.MIN_VALUE));
+        assertFalse(GroupKeyPolicy.heldExactlyByDouble(TWO_53 + 1));
+        assertFalse(GroupKeyPolicy.heldExactlyByDouble(-TWO_53 - 1));
+        // (double) Long.MAX_VALUE is 2^63 and the cast back saturates to MAX_VALUE: the round
+        // trip alone would call it exact
+        double max = Long.MAX_VALUE;
+        assertEquals(Long.MAX_VALUE, (long) max);
+        assertFalse(GroupKeyPolicy.heldExactlyByDouble(Long.MAX_VALUE));
+        assertInstanceOf(KeyPart.PresentExactLong.class, KEEP.keyPart(lng(Long.MAX_VALUE)));
+        assertNotEquals(KEEP.keyPart(lng(Long.MAX_VALUE)), KEEP.keyPart(dbl(0x1p63)));
+
+        assertInstanceOf(KeyPart.PresentNumber.class, KEEP.keyPart(lng(TWO_53)));
+        assertEquals(new KeyPart.PresentExactLong(TWO_53 + 1), KEEP.keyPart(lng(TWO_53 + 1)));
+        assertEquals("9007199254740993", KEEP.textKeyIdentity(lng(TWO_53 + 1)));
+        assertEquals("9007199254740992", KEEP.textKeyIdentity(lng(TWO_53)));
+        assertEquals("9223372036854775807", KEEP.textKeyIdentity(lng(Long.MAX_VALUE)));
+        KeyPart exact = new KeyPart.PresentExactLong(TWO_53 + 1);
+        assertEquals("9007199254740993", exact.reportingForm());
+        assertTrue(exact.present());
+        assertEquals(TWO_53 + 1, exact.identity());
+        assertEquals(new KeyPart.Present("9007199254740993"), exact.asText());
     }
 
 
@@ -394,6 +485,8 @@ class GroupKeyPolicyIdentityTest
         assertSame(KeyPart.MISSING_MIS, KeyPart.MISSING_MIS.asText());
         assertEquals(new KeyPart.Present("5"), new KeyPart.PresentNumber(5.0).asText());
         assertEquals(new KeyPart.Present("5"), new KeyPart.PresentNumber(4.9999999999994).asText());
+        assertEquals(new KeyPart.Present("-9007199254740993"),
+                new KeyPart.PresentExactLong(-TWO_53 - 1).asText());
     }
 
 

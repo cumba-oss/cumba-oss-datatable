@@ -69,6 +69,12 @@ public class DataTableIndexFactoryImpl extends DataTableIndexFactory
      * <p>
      * The HashLookup stores group IDs (not row indices) in its slots. When probing, the matcher
      * resolves the representative row of each candidate group via a separate array.
+     * <p>
+     * The key identity — which rows are one group — is {@link KeyHashSupport}'s, shared
+     * byte-identically with the internal datatable ({@link KeyHashSupport#computeKeyHash} and
+     * {@link KeyHashSupport.RepRowMatcher}): exact, and {@code -0.0}-aware. Only the block assembly
+     * below is this twin's own, because it packs group ids and row views through this datatable's
+     * buffer API ({@code PLAN-grouping-key-identity}, owner Q5 (a)).
      */
     IDataTableIndex createHashIndex(IDataTable aTable, String[] aColumns)
     {
@@ -98,7 +104,8 @@ public class DataTableIndexFactoryImpl extends DataTableIndexFactory
 
         // The matcher compares the representative row of a candidate group (looked up via
         // groupRepRow[candidateGroupId]) against the current row being assigned.
-        GroupRepMatcher matcher = new GroupRepMatcher(aTable, colIds, groupRepRow);
+        KeyHashSupport.RepRowMatcher matcher = new KeyHashSupport.RepRowMatcher(aTable, colIds,
+                groupRepRow);
 
         for (int row = 0; row < rowCount; row++)
         {
@@ -186,56 +193,5 @@ public class DataTableIndexFactoryImpl extends DataTableIndexFactory
         }
         buf.trimToSize();
         return DataTableViewBuffer.builder().buffer(buf).build();
-    }
-
-    /**
-     * A {@link HashLookup.RowMatcher} that interprets stored values as group IDs and compares the
-     * representative row of the candidate group against the current row being assigned.
-     */
-    private static class GroupRepMatcher implements HashLookup.RowMatcher
-    {
-
-        private final IDataTable table;
-
-        private final int[] colIds;
-
-        private int[] groupRepRow;
-
-        private int currentRow;
-
-        GroupRepMatcher(IDataTable aTable, int[] aColIds, int[] aGroupRepRow)
-        {
-            table = aTable;
-            colIds = aColIds;
-            groupRepRow = aGroupRepRow;
-        }
-
-
-        void setCurrentRow(int aRow)
-        {
-            currentRow = aRow;
-        }
-
-
-        void setGroupRepRow(int[] aGroupRepRow)
-        {
-            groupRepRow = aGroupRepRow;
-        }
-
-
-        @Override
-        public boolean matches(int aCandidateGroupId)
-        {
-            int repRow = groupRepRow[aCandidateGroupId];
-            for (int colId : colIds)
-            {
-                if (!java.util.Objects.equals(table.getValue(repRow, colId),
-                        table.getValue(currentRow, colId)))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
     }
 }
