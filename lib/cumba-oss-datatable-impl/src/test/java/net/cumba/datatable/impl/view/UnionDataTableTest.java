@@ -12,6 +12,7 @@ import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
+import net.cumba.datatable.values.MissingValue;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -229,10 +230,11 @@ class UnionDataTableTest
         int lbspec = union.getMetaData().getColumnIndex("LBSPEC");
         // lbch rows carry the value.
         assertEquals("SERUM", union.getDataValue(0, lbspec).getValueAsString());
-        // lbhe lacks LBSPEC: getDataValue is a MISSING IDataValue (never null), getValue is null.
+        // lbhe lacks LBSPEC: getDataValue is a MISSING IDataValue (never null), and getValue its
+        // raw MIS -- never null (D46; PLAN-grouping-key-identity review round 1, M1).
         IDataValue dv = union.getDataValue(2, lbspec);
         assertTrue(dv.isMissingOrInvalid());
-        assertNull(union.getValue(2, lbspec));
+        assertEquals(MissingValue.MIS, union.getValue(2, lbspec));
     }
 
 

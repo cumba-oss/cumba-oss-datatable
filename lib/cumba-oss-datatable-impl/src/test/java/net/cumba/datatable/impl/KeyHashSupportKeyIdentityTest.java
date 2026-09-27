@@ -13,6 +13,7 @@ import java.util.List;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.impl.view.UnionDataTable;
 import net.cumba.datatable.index.DataTableIndexFactory;
 import net.cumba.datatable.index.IDataTableIndex;
 import net.cumba.datatable.values.DataValueType;
@@ -42,11 +43,24 @@ class KeyHashSupportKeyIdentityTest
 
     private static IDataTable table(DataValueType[] aTypes, Object[]... aRows)
     {
+        String[] names = new String[aTypes.length];
+        for (int c = 0; c < names.length; c++)
+        {
+            names[c] = "K" + c;
+        }
+        return named("T", names, aTypes, aRows);
+    }
+
+
+    private static IDataTable named(String aName, String[] aNames, DataValueType[] aTypes,
+            Object[]... aRows)
+    {
         DataTableColumnMeta[] metas = new DataTableColumnMeta[aTypes.length];
         CachedDataTableColumn[] columns = new CachedDataTableColumn[aTypes.length];
         for (int c = 0; c < aTypes.length; c++)
         {
-            metas[c] = DataTableColumnMeta.builder().index(c).name("K" + c).type(aTypes[c]).build();
+            metas[c] = DataTableColumnMeta.builder().index(c).name(aNames[c]).type(aTypes[c])
+                    .build();
             columns[c] = new CachedDataTableColumn(c, aTypes[c]);
         }
         for (Object[] row : aRows)
@@ -60,8 +74,8 @@ class KeyHashSupportKeyIdentityTest
         {
             column.complete();
         }
-        DataTableMeta meta = DataTableMeta.builder().name("T").columns(metas).rowCount(aRows.length)
-                .totalRowCount(aRows.length).build();
+        DataTableMeta meta = DataTableMeta.builder().name(aName).columns(metas)
+                .rowCount(aRows.length).totalRowCount(aRows.length).build();
         return new ColumnCachedDataTable(meta, columns);
     }
 
@@ -220,6 +234,48 @@ class KeyHashSupportKeyIdentityTest
     {
         assertEquals(List.of(List.of(0L, 2L), List.of(1L, 3L), List.of(4L)),
                 blocks(column(DataValueType.DOUBLE, 5.0, -0.0, 5.0, 0.0, 1.5), "K0"));
+    }
+
+
+    /**
+     * A split-domain union: a member that lacks the column reads as {@code MIS} on BOTH channels
+     * (register {@code D46}), so its rows group with a member's stored {@code MIS} — exactly as the
+     * key identity, built from {@code getDataValue}, groups them. Review round 1 of
+     * {@code PLAN-grouping-key-identity} (M1) measured three blocks here: the raw read answered
+     * {@code null}.
+     */
+    @Test
+    void aUnionMemberLackingTheColumnGroupsWithAStoredMissing()
+    {
+        IDataTable lbc1 = named("lbc1", new String[]
+        {
+                "USUBJID", "VISITNUM"
+        }, new DataValueType[]
+        {
+                DataValueType.STRING, DataValueType.DOUBLE
+        }, new Object[]
+        {
+                "S1", MissingValue.MIS
+        }, new Object[]
+        {
+                "S1", 1.0
+        });
+        IDataTable lbc2 = named("lbc2", new String[]
+        {
+                "USUBJID"
+        }, new DataValueType[]
+        {
+                DataValueType.STRING
+        }, new Object[]
+        {
+                "S1"
+        });
+        UnionDataTable union = new UnionDataTable("LB", lbc1, lbc2);
+        int visitnum = union.getMetaData().getColumnIndex("VISITNUM");
+        assertEquals(MissingValue.MIS, union.getValue(2, visitnum));
+        assertEquals(union.getDataValue(2, visitnum).getValue(), union.getValue(2, visitnum));
+        assertEquals(List.of(List.of(0L, 2L), List.of(1L)), blocks(union, "VISITNUM"));
+        assertEquals(List.of(List.of(0L, 2L), List.of(1L)), blocks(union, "USUBJID", "VISITNUM"));
     }
 
 

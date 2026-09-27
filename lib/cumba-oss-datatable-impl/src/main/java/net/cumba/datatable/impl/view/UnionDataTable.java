@@ -17,6 +17,7 @@ import net.cumba.datatable.impl.AbstractDataTable;
 import net.cumba.datatable.values.DataValueSupport;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
+import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -39,10 +40,10 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>
  * Note on {@link IDataTable#hashCodeAt(long, int)}: it is deliberately not overridden. A
- * member-absent cell returns {@code null} from {@code getValue} and therefore hashes to {@code 0},
- * whereas a present-but-missing cell hashes via {@code MissingValue.hashCodeStable()} — the same
- * asymmetry {@code PolymorphicMergedColumn} exhibits, and harmless for joins because key hashing
- * excludes missing-key rows before it ever compares hashes.
+ * member-absent cell answers {@link MissingValue#MIS} from {@code getValue}
+ * ({@code PLAN-grouping-key-identity} review round 1, M1 — it answered {@code null} before) and so
+ * hashes via {@code MissingValue.hashCodeStable()}, exactly as a present-but-{@code MIS} cell does:
+ * the hash index groups the two together, as the key identity does.
  * </p>
  *
  * <p>
@@ -409,13 +410,27 @@ public final class UnionDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * A cell whose owning member lacks the column answers {@link MissingValue#MIS} — the raw value
+     * of the very {@code MISSING_VALUE} {@link #getDataValue(long, int)} answers for it — never
+     * {@code null}: register {@code D46} (<i>"a null will always be converted to a MissingValue.
+     * The null value is not allowed as a data value in the IDataTable."</i>). Until
+     * {@code PLAN-grouping-key-identity} review round 1 (M1) this answered {@code null}, so a union
+     * column holding a member-absent cell and a stored {@code MIS} on another member split into two
+     * groups on the hash index (raw {@code null} ≠ {@code MIS}) while the key identity, built from
+     * {@code getDataValue}, made them one — two blocks under one key.
+     * </p>
+     */
     @Override
     public @Nullable Object getValue(long aRow, int aColumn) throws IndexOutOfBoundsException
     {
         int m = memberOf(aRow); // bounds-checks the row
         checkColumn(aColumn);
         int mc = memberColOfUnionCol[m][aColumn];
-        return mc < 0 ? null : members[m].getValue(aRow - rowOffsets[m], mc);
+        return mc < 0 ? MissingValue.MIS : members[m].getValue(aRow - rowOffsets[m], mc);
     }
 
 

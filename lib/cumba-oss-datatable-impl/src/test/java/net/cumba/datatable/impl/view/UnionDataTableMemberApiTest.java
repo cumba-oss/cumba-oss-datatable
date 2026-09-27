@@ -2,7 +2,6 @@ package net.cumba.datatable.impl.view;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -14,6 +13,7 @@ import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
+import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -371,7 +371,10 @@ class UnionDataTableMemberApiTest
                 {
                     assertTrue(actual.isMissingOrInvalid(), where);
                     assertEquals(DataValueType.MISSING, actual.getType(), where);
-                    assertNull(aUnion.getValue(r, col), where);
+                    // the raw read agrees with the typed one: MIS, never null (D46; review
+                    // round 1 of PLAN-grouping-key-identity, M1)
+                    assertEquals(actual.getValue(), aUnion.getValue(r, col), where);
+                    assertEquals(MissingValue.MIS, aUnion.getValue(r, col), where);
                     if (sharedMissing == null)
                     {
                         sharedMissing = actual;
