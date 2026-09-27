@@ -29,6 +29,18 @@ the two NaN patterns into one entry), no compression, no statistics:
 Rows 0 and 1 are the two canonical quiet NaNs of ruling N1 (the arithmetic NaN of x86 carries the
 sign bit); row 2 is a Parquet null, which the reader stores as MissingValue.MIS (the format has one
 kind of null); row 3 is a present value.
+
+negative_zero.parquet -- PLAN-negative-zero-on-load (NZL O1, owner 2026-09-27: "we drop the sign from
+any 0.0 so a -0.0 gets read as 0.0"). pyarrow writes a signed zero as its raw IEEE bits, so this is
+the real-world source of a -0.0 in a Parquet DOUBLE or FLOAT column. 3 rows, two non-null columns,
+same writer options as above (no dictionary, which would merge the two zeros into one entry):
+
+    row  DBL (DOUBLE)                        FLT (FLOAT)
+    0    -0.0        0x8000000000000000      -0.0f       0x80000000
+    1     0.0        0x0000000000000000       0.0f       0x00000000
+    2    -1.5        0xBFF8000000000000      -1.5f       0xBFC00000
+
+Row 0 is the negative zero, row 1 the positive-zero control, row 2 a non-zero control.
 """
 
 import struct
@@ -77,3 +89,29 @@ assert d_bits[0] == 0x7FF8000000000000 and d_bits[1] == 0xFFF8000000000000, [hex
 assert f_bits[0] == 0x7FC00000 and f_bits[1] == 0xFFC00000, [hex(b) for b in f_bits]
 assert d[3].as_py() == 1.25 and f[3].as_py() == 1.25
 print(OUT, "written and verified:", [hex(b) for b in d_bits], [hex(b) for b in f_bits])
+
+
+# --- negative_zero.parquet (PLAN-negative-zero-on-load) -------------------------------------------
+
+OUT_NZ = "negative_zero.parquet"
+
+nz_dbl = np.array([-0.0, 0.0, -1.5], dtype=np.float64)
+nz_flt = np.array([-0.0, 0.0, -1.5], dtype=np.float32)
+assert nz_dbl.view(np.uint64)[0] == 0x8000000000000000, hex(nz_dbl.view(np.uint64)[0])
+assert nz_flt.view(np.uint32)[0] == 0x80000000, hex(nz_flt.view(np.uint32)[0])
+
+nz_table = pa.table({
+    "DBL": pa.array(nz_dbl, type=pa.float64()),
+    "FLT": pa.array(nz_flt, type=pa.float32()),
+})
+pq.write_table(nz_table, OUT_NZ, use_dictionary=False, compression="NONE", write_statistics=False)
+
+nz_back = pq.read_table(OUT_NZ)
+nd = nz_back.column("DBL").combine_chunks()
+nf = nz_back.column("FLT").combine_chunks()
+assert nd.null_count == 0 and nf.null_count == 0
+nd_bits = np.frombuffer(nd.buffers()[1], dtype=np.uint64, count=len(nd), offset=nd.offset * 8)
+nf_bits = np.frombuffer(nf.buffers()[1], dtype=np.uint32, count=len(nf), offset=nf.offset * 4)
+assert list(nd_bits) == [0x8000000000000000, 0, 0xBFF8000000000000], [hex(b) for b in nd_bits]
+assert list(nf_bits) == [0x80000000, 0, 0xBFC00000], [hex(b) for b in nf_bits]
+print(OUT_NZ, "written and verified:", [hex(b) for b in nd_bits], [hex(b) for b in nf_bits])
