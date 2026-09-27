@@ -148,6 +148,9 @@ public class XptVarParser
             }
             case 0x80 ->
             {
+                // faithful to the format; a loaded table still holds 0.0, because the DOUBLE
+                // buffers drop the zero sign at store time (NZL O1,
+                // DataValueDouble.normalizeForStore)
                 return -0.0d;
             }
             case '.' ->
