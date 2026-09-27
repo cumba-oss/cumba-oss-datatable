@@ -144,7 +144,12 @@ public class BdatVarParser
         catch (Exception ex)
         {
             LOGGER.log(Level.ERROR, ex.getMessage(), ex);
-            return Double.NaN;
+            // A cell that could not be parsed is an ERROR, not a missing the file contained: it
+            // was Double.NaN, which is a BARE NaN since PLAN-bare-nan-is-mis and would read as a
+            // plain SAS '.' (MIS, owner ruling E5). MIS_ERROR, as for a Dataset-JSON cell whose
+            // value cannot be represented (owner ruling 2026-09-25) and as MIS_ERROR's own
+            // contract says ("to signal an error condition").
+            return MissingValue.MIS_ERROR.asDouble();
         }
 
     }

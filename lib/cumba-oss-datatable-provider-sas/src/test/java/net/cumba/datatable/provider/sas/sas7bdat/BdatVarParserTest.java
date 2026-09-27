@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import net.cumba.datatable.provider.sas.testsupport.LoggerCapture;
 import net.cumba.datatable.values.MissingValue;
 import net.cumba.sasutils.Format;
 import net.cumba.sasutils.VariableType;
@@ -117,6 +118,36 @@ class BdatVarParserTest
                 bits(parser.parseDouble(bytes(0xFFFF_8000_0000_0000L))), "and with its 0x80 alias");
         assertEquals(bits(MissingValue.MIS.asDouble()),
                 bits(parser.parseDouble(bytes(0xFFFF_FE00_0000_0000L))), "SAS '.' is MIS as ever");
+    }
+
+
+    /**
+     * A cell that cannot be parsed is {@code MIS_ERROR}'s payload, never a bare NaN (which is
+     * {@code MIS} since PLAN-bare-nan-is-mis, owner ruling E5, and would pass for an ordinary SAS
+     * {@code "."}). ⚑ Unreachable from a real file &mdash; {@code unpackRaw64} over the fresh
+     * 8-byte scratch buffer cannot throw &mdash; so it is driven through the protected
+     * {@code unpackFloat64} seam; the failure is still logged.
+     */
+    @Test
+    void aParseFailureIsMisErrorNotABareNaN()
+    {
+        BdatVarParser failing = new BdatVarParser(testVar(VariableType.NUMERIC, 8, 0L),
+                StandardCharsets.UTF_8, ByteOrder.BIG_ENDIAN)
+        {
+
+            @Override
+            protected double unpackFloat64(byte[] aVal, int aOffset, int aLength)
+            {
+                throw new IllegalStateException("unpack failed on purpose");
+            }
+        };
+        try (LoggerCapture log = LoggerCapture.attach(BdatVarParser.class.getName()))
+        {
+            assertEquals(bits(MissingValue.MIS_ERROR.asDouble()),
+                    bits(failing.parseDouble(new byte[8])));
+            assertTrue(log.containsMessageContaining("unpack failed on purpose"),
+                    "the failure is logged");
+        }
     }
 
 
