@@ -332,8 +332,10 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
 
 
         /**
-         * A genuine missing marker — {@code MIS} / {@code MIS_UNKNOWN} / {@code MIS_ERROR} or one
-         * of the SAS special missings {@code ._} and {@code .A}–{@code .Z}.
+         * A genuine missing marker — any {@link MissingValue}: the generic {@code MIS},
+         * {@code MIS_UNKNOWN} / {@code MIS_ERROR}, the SAS special missings {@code ._} and
+         * {@code .A}–{@code .Z}, and the R / Python markers ({@code NA}, {@code None},
+         * {@code np.nan}, {@code pd.NA}, {@code pd.NaT}).
          */
         record Missing(MissingValue marker) implements KeyPart
         {
@@ -392,9 +394,11 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
          * ⚠ The three interned cases were once the WHOLE enum: the coreJ monorepo's own
          * {@code net.cumba.datatable} carried a reduced {@code MissingValue} with exactly
          * {@code MIS} / {@code MIS_UNKNOWN} / {@code MIS_ERROR}, so this switch was exhaustive and
-         * the method never allocated. The full {@code MissingValue} carries the complete SAS
-         * special-missing set — {@code ._} and {@code .A}–{@code .Z}, 31 constants — so the switch
-         * needs a default arm and the 28 SAS markers allocate.
+         * the method never allocated. The full {@code MissingValue} carries every marker — the SAS
+         * missings ({@code .}, {@code ._}, {@code .A}–{@code .Z}), the R and Python ones
+         * ({@code NA}, {@code None}, {@code np.nan}, {@code pd.NA}, {@code pd.NaT}) and
+         * {@code MIS_UNKNOWN} / {@code MIS_ERROR} — so the switch needs a default arm, and every
+         * marker but the three interned ones allocates.
          * </p>
          *
          * <p>

@@ -42,21 +42,24 @@ public class DataValueSupport
     }
 
 
+    // OSS-IDENTITY-REGION datatable-key-blankness BEGIN: the blankness every join and group key
+    // rests on (GroupKeyPolicy, pinned set datatable-key-identity); byte-identical in both twins.
     /**
      * <b>The single implementation of "this cell carries no usable value"</b>: it is {@code null},
      * missing/invalid, or its string form is empty.
      *
      * <p>
-     * A source {@code null} in a character column (which the Dataset-JSON and Parquet loaders
-     * represent as a {@link MissingValue}) and an empty string the file genuinely contains are
-     * <b>both</b> blank here, so no rule can tell them apart.
+     * ⭐ It is the blankness of every join and group key: {@link GroupKeyPolicy#isBlankKeyComponent}
+     * answers with it, so it is byte-identical in {@code cumba-datatable} and
+     * {@code cumba-oss-datatable} — a pinned region of the meta repo's
+     * {@code check_oss_identity.py datatable-key-identity}, beside {@code GroupKeyPolicy} itself.
      * </p>
      *
      * <p>
      * ⚠⚠ <b>It lives on this class, not only as {@link IDataValue#isEmptyOrMissing()}, on
      * purpose.</b> {@code IDataValue} is an interface the test suite mocks in many places, and a
      * Mockito mock answers {@code false} to an <em>unstubbed default method</em> rather than
-     * running it. Routing {@code ScalarSemantics.isMissing} straight at the default therefore
+     * running it. Routing the engine's grouping predicate straight at the default therefore
      * silently changed the answer for every mocked cell in the suite — measured: it reddened
      * {@code GroupKeyPolicyUnificationTest}, {@code RuleRunnerRecordKeyTest} and others, none of
      * which had anything to do with blank cells. Calling a static on a concrete class cannot be
@@ -77,6 +80,7 @@ public class DataValueSupport
     {
         return aValue == null || aValue.isMissingOrInvalid() || aValue.getValueAsString().isEmpty();
     }
+    // OSS-IDENTITY-REGION datatable-key-blankness END
 
     // OSS-IDENTITY-REGION datatable-numeric-mathcontext BEGIN
     /**

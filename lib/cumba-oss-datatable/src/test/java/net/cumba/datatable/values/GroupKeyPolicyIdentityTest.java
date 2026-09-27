@@ -181,7 +181,10 @@ class GroupKeyPolicyIdentityTest
     }
 
 
-    /** Every pair of the 31 markers, stored and NaN-coded: one identity iff one marker. */
+    /**
+     * Every pair of {@link MissingValue}'s markers — all of them, the SAS, R and Python ones —
+     * stored and NaN-coded: one identity iff one marker.
+     */
     static Stream<Arguments> markerPairs()
     {
         List<Arguments> out = new ArrayList<>();
