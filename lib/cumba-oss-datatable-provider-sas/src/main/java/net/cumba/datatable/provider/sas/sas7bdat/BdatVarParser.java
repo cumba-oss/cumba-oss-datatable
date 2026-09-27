@@ -113,6 +113,14 @@ public class BdatVarParser
             double res = unpackFloat64(full, 0, 8);
             if (Double.isNaN(res))
             {
+                if (MissingValue.isBareNaN(res))
+                {
+                    // ⭐ Owner rulings E5 ("NaN should get mis") and N1 ("SAS: canonical only"): a
+                    // NaN that carries no SAS code at all is MIS. Tested on the FULL bits, before
+                    // the tag mask below, which folds 0x00 and 0x80 together; a bare NaN's tag is
+                    // 0x00 and falls through every code, so it used to read MIS_UNKNOWN.
+                    return MissingValue.MIS.asDouble();
+                }
                 long val = Double.doubleToRawLongBits(res);
                 long val2 = 0xFF - ((val >> 40) & 0x7F) - 0x41;
                 if (val2 == 0x40)

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.values.DataValueSupport;
 import net.cumba.datatable.values.MissingValue;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.example.data.Group;
@@ -180,6 +182,12 @@ class ParquetTableProviderCoverageTest
         IDataTable table = provider.provide(file.toUri(), ParquetProviderSupplier.FI_PARQUET);
 
         assertTrue(table.getRow(0).getDataValue(0).isMissingOrInvalid());
+        // ⭐ The marker, not only missingness: isMissingOrInvalid() could not fail on the defect
+        // PLAN-bare-nan-is-mis fixed (a bare NaN read MIS_UNKNOWN). Owner ruling E5: "NaN should
+        // get mis".
+        assertSame(MissingValue.MIS,
+                DataValueSupport.getMissingValue(table.getRow(0).getDataValue(0)));
+        assertSame(MissingValue.MIS, table.getValue(0, 0));
         assertEquals(1.25, (double) table.getValue(1, 0), 0.001);
     }
 

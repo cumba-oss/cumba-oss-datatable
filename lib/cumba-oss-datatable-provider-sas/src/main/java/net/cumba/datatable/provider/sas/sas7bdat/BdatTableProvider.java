@@ -728,8 +728,10 @@ public class BdatTableProvider extends AbstractDataTableProvider
                     double dbl = num.doubleValue();
                     if (Double.isNaN(dbl))
                     {
-                        aDataColumn
-                                .addElement(MissingValue.forValue(dbl, MissingValue.MIS_UNKNOWN));
+                        // forNaN: the SAS code BdatVarParser encoded, else MIS for a bare NaN
+                        // (owner ruling E5, "NaN should get mis"; BdatVarParser already turns one
+                        // into MIS's payload, ruling N1), else MIS_UNKNOWN.
+                        aDataColumn.addElement(MissingValue.forNaN(dbl));
                     }
                     else
                     {

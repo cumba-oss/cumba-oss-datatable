@@ -620,8 +620,10 @@ public class XptTableProvider extends AbstractDataTableProvider
                     double dbl = num.doubleValue();
                     if (Double.isNaN(dbl))
                     {
-                        aDataColumn
-                                .addElement(MissingValue.forValue(dbl, MissingValue.MIS_UNKNOWN));
+                        // forNaN: the SAS code XptVarParser encoded, else MIS for a bare NaN
+                        // (owner ruling E5, "NaN should get mis"; latent -- an IBM float cannot be
+                        // one), else MIS_UNKNOWN.
+                        aDataColumn.addElement(MissingValue.forNaN(dbl));
                     }
                     else
                     {

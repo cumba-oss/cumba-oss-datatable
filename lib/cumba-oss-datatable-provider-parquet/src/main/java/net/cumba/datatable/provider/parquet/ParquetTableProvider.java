@@ -661,8 +661,11 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                         }
                         if (Double.isNaN(dbl))
                         {
-                            aDataColumn.addElement(
-                                    MissingValue.forValue(dbl, MissingValue.MIS_UNKNOWN));
+                            // ⭐ A pandas / pyarrow NaN is a bare NaN, and a bare NaN is MIS
+                            // (owner ruling E5, "NaN should get mis"; it read MIS_UNKNOWN until
+                            // then). A NaN carrying a marker keeps it, any other payload is
+                            // MIS_UNKNOWN (MissingValue.forNaN).
+                            aDataColumn.addElement(MissingValue.forNaN(dbl));
                         }
                         else
                         {

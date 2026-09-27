@@ -28,6 +28,15 @@ public abstract class AbstractNumericDataBuffer extends AbstractDataBuffer
             {
                 return new DataValueMissing(mv);
             }
+            if (raw instanceof Number num && Double.isNaN(num.doubleValue()))
+            {
+                // A NaN getValue could not decode: MissingValue.forNaN, as in cumba-datatable --
+                // MIS for a bare NaN (owner ruling E5; DataBufferDouble stores one as MIS's
+                // payload already, ruling N2 (b)), MIS_UNKNOWN for an unrecognised payload (ruling
+                // N1). It answered MIS for both until PLAN-bare-nan-is-mis, so the typed read and
+                // DataValueSupport.getMissingValue disagreed on an unrecognised payload.
+                return new DataValueMissing(MissingValue.forNaN(num.doubleValue()));
+            }
             return new DataValueMissing(MissingValue.MIS);
         }
         return switch (aType)

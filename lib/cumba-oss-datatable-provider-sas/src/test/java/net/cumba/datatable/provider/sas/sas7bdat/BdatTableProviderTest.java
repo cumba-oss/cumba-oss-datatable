@@ -200,6 +200,28 @@ class BdatTableProviderTest
     }
 
 
+    /**
+     * ⭐ Owner rulings E5 (<i>"NaN should get mis"</i>) and N1 (<i>"SAS: canonical only"</i>),
+     * PLAN-bare-nan-is-mis: the Number arm decodes a NaN with {@code MissingValue.forNaN} &mdash; a
+     * bare NaN is {@code MIS} (it was {@code MIS_UNKNOWN}), a coded payload keeps its constant, an
+     * unrecognised payload is {@code MIS_UNKNOWN}. Latent for a real file, whose parser encodes a
+     * bare NaN as {@code MIS} already; this pins the arm itself.
+     */
+    @Test
+    void testNumberBranchDecodesANaNWithForNaN() throws Exception
+    {
+        assertEquals(MissingValue.MIS,
+                invokeAddData2Column(DataValueType.DOUBLE, Double.NaN).getValue(0));
+        assertEquals(MissingValue.MIS, invokeAddData2Column(DataValueType.DOUBLE,
+                Double.longBitsToDouble(0xFFF8_0000_0000_0000L)).getValue(0));
+        assertEquals(MissingValue.MIS_A,
+                invokeAddData2Column(DataValueType.DOUBLE, MissingValue.MIS_A.asDouble())
+                        .getValue(0));
+        assertEquals(MissingValue.MIS_UNKNOWN, invokeAddData2Column(DataValueType.DOUBLE,
+                Double.longBitsToDouble(0xFFFF_0000_0000_0000L)).getValue(0));
+    }
+
+
     @Test
     void testNumberBranchUnchanged() throws Exception
     {

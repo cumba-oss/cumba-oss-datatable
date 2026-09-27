@@ -274,8 +274,14 @@ class CdtWriterTest
     }
 
 
+    /**
+     * ⭐ A bare NaN stored into a DOUBLE column IS {@code MIS} (owner ruling E5, <i>"NaN should get
+     * mis"</i>, normalised at store time by ruling N2 (b) of PLAN-bare-nan-is-mis), so the writer
+     * renders {@code MIS}'s {@code "."}. Until that ruling the column held the raw NaN and the
+     * field was written empty; both spellings read back as {@code MIS} in a numeric column.
+     */
     @Test
-    void nanNumberRendersEmpty()
+    void aBareNaNCellRendersAsMis()
     {
         DataTableMeta meta = DataTableMeta.builder().name("N").label("N").rowCount(1)
                 .totalRowCount(1).tableURI(URI.create("test:n")).columns(new DataTableColumnMeta[]
@@ -283,9 +289,54 @@ class CdtWriterTest
                         col(0, "A", DataValueType.DOUBLE, null),
                         col(1, "B", DataValueType.STRING, null)
                 }).build();
-        // NaN in a numeric col → "" ; with a second non-null col the row is not all-null.
         IDataTable t = directTable(meta,
                 List.of(java.util.Arrays.asList((Object) Double.NaN), List.of("ok")));
+        String out = CdtWriter.toString(t);
+        assertTrue(out.contains("\n. | ok\n"), out);
+    }
+
+
+    /**
+     * The writer's own NaN arm, reached only by a table that is not buffer-backed and hands a raw
+     * NaN out of {@code getValue}: the field is written empty, which reads back as {@code MIS} in a
+     * numeric column (the same value as the buffer-backed {@code "."} above).
+     */
+    @Test
+    void aRawNaNFromANonBufferTableRendersEmpty()
+    {
+        DataTableMeta meta = DataTableMeta.builder().name("N").label("N").rowCount(1)
+                .totalRowCount(1).tableURI(URI.create("test:n")).columns(new DataTableColumnMeta[]
+                {
+                        col(0, "A", DataValueType.DOUBLE, null),
+                        col(1, "B", DataValueType.STRING, null)
+                }).build();
+        IDataTable t = new IDataTable()
+        {
+
+            @Override
+            public DataTableMeta getMetaData()
+            {
+                return meta;
+            }
+
+
+            @Override
+            public long getRowCount()
+            {
+                return 1;
+            }
+
+
+            @Override
+            public Object getValue(long aRow, int aColumn)
+            {
+                if (aColumn == 0)
+                {
+                    return Double.NaN;
+                }
+                return "ok";
+            }
+        };
         String out = CdtWriter.toString(t);
         // First field empty, then " | ok".
         assertTrue(out.contains("\n | ok\n"), out);

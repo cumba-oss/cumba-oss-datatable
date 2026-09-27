@@ -214,8 +214,9 @@ class CachedDataTableColumnPresentValueTest
         CachedDataTableColumn shortLong = column(DataValueType.LONG, repeat(4, 1L, 2L));
         shortLong.setTableRowCount(shortLong.getDataBuffer().size() + 3L);
         g.add(new Case("LONG short buffer", shortLong));
-        // ⚠ The twin difference: this repository's LONG arm answers a PRESENT DataValueLong(0)
-        // for a boxed NaN here; the fast read answers it the slow way.
+        // A boxed NaN here reads as its decoded marker (MissingValue.forNaN, ported from the
+        // internal twin by PLAN-bare-nan-is-mis; it was a PRESENT DataValueLong(0) before); the
+        // fast read answers it the slow way.
         g.add(new Case("LONG on DataBufferObject",
                 inject(DataValueType.LONG,
                         filled(new DataBufferObject(), 7L, 2.5, -0.0, Double.POSITIVE_INFINITY,

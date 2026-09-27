@@ -62,3 +62,15 @@
 *.ttf    binary
 *.eot    binary
 *.otf    binary
+
+# Clinical-trial / R binary fixtures, as in cumba-datatable's own block: undeclared, each was
+# eligible for CRLF munging on checkin. Added with the pyarrow fixture of PLAN-bare-nan-is-mis;
+# the four SAS fixtures already tracked were checked to match cumba-datatable's blobs first.
+*.sas7bdat binary
+*.sas7bcat binary
+*.xpt    binary
+*.parquet binary
+*.rds    binary
+*.rdata  binary
+*.RData  binary
+*.rda    binary

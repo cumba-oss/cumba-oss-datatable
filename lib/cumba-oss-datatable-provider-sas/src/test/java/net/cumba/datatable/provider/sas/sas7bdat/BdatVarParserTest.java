@@ -4,8 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
+import net.cumba.datatable.values.MissingValue;
 import net.cumba.sasutils.Format;
 import net.cumba.sasutils.VariableType;
 import net.cumba.sasutils.bdat.VariableBdat;
@@ -87,6 +89,47 @@ class BdatVarParserTest
         };
         double result = parser.parseDouble(buf);
         assertTrue(Double.isNaN(result));
+        // ⭐ Owner rulings E5 ("NaN should get mis") and N1 ("SAS: canonical only"): a NaN with no
+        // SAS code is MIS's payload; it was MIS_UNKNOWN's until PLAN-bare-nan-is-mis.
+        assertEquals(Double.doubleToRawLongBits(MissingValue.MIS.asDouble()),
+                Double.doubleToRawLongBits(result));
+    }
+
+
+    /**
+     * N1's predicate is tested on the FULL bits, before {@code parseDouble}'s tag mask
+     * ({@code & 0x7F}), which folds tag bytes {@code 0x00} and {@code 0x80} together. So the
+     * arithmetic NaN (sign bit set) is bare, while an in-file code ({@code 0xFFFF} prefix) with the
+     * bare NaN's tag byte, or with its {@code 0x80} alias, is an unrecognised code and stays
+     * {@code MIS_UNKNOWN}; SAS {@code .} decodes as ever.
+     */
+    @Test
+    void theBareNaNPredicateReadsTheFullBitsBeforeTheTagMask()
+    {
+        BdatVarParser parser = createNumericParser(0, 8, ByteOrder.BIG_ENDIAN);
+        assertEquals(bits(MissingValue.MIS.asDouble()),
+                bits(parser.parseDouble(bytes(0xFFF8_0000_0000_0000L))),
+                "the arithmetic NaN is bare");
+        assertEquals(bits(MissingValue.MIS_UNKNOWN.asDouble()),
+                bits(parser.parseDouble(bytes(0xFFFF_0000_0000_0000L))),
+                "an unrecognised code with the bare NaN's tag byte");
+        assertEquals(bits(MissingValue.MIS_UNKNOWN.asDouble()),
+                bits(parser.parseDouble(bytes(0xFFFF_8000_0000_0000L))), "and with its 0x80 alias");
+        assertEquals(bits(MissingValue.MIS.asDouble()),
+                bits(parser.parseDouble(bytes(0xFFFF_FE00_0000_0000L))), "SAS '.' is MIS as ever");
+    }
+
+
+    private static long bits(double aValue)
+    {
+        return Double.doubleToRawLongBits(aValue);
+    }
+
+
+    /** The big-endian bytes of a raw 64-bit pattern. */
+    private static byte[] bytes(long aBits)
+    {
+        return ByteBuffer.allocate(8).order(ByteOrder.BIG_ENDIAN).putLong(aBits).array();
     }
 
 

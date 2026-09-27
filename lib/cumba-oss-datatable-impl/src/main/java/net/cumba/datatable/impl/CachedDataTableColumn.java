@@ -36,11 +36,12 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
      * (PLAN-identity-safe-join-caches D6).
      *
      * <p>
-     * ⚠ Derived from THIS repository's value creation, which differs from the internal twin's: here
-     * the LONG arm has no NaN check, so a boxed NaN in a LONG column reads back as a PRESENT
-     * {@code DataValueLong(0)} (the internal twin answers {@code MIS_UNKNOWN}), and the STRING arm
-     * has none either ({@code DataValueString("NaN")}). The fast reads below answer every NaN the
-     * slow way, which is correct under either rule.
+     * ⚠ Derived from THIS repository's value creation. Its LONG, STRING and OTHER arms decode a
+     * boxed NaN with {@code MissingValue.forNaN} since PLAN-bare-nan-is-mis ported the internal
+     * twin's NaN arms (a bare NaN is {@code MIS}, owner ruling E5); before that a boxed NaN in a
+     * LONG column read back as a PRESENT {@code DataValueLong(0)} and in a STRING column as
+     * {@code DataValueString("NaN")}. The fast reads below answer every NaN the slow way, which is
+     * correct under either rule.
      * </p>
      *
      * <p>
@@ -447,10 +448,10 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
         Class<?> bufferClass = buffer.getClass();
         if (FAST_OBJECT_BUFFERS.contains(bufferClass))
         {
-            // AbstractDataBuffer.createDataValue: a Number is DataValueDouble(n.doubleValue()) or
-            // DataValueLong(n.longValue()); a MissingValue is not a Number. ⚠ This repository's
-            // LONG arm turns a NaN into a PRESENT DataValueLong(0); answering it the slow way is
-            // still correct, and keeps a NaN slow on both arms.
+            // AbstractDataBuffer.createDataValue: a Number is DataValueDouble(n.doubleValue()) or,
+            // unless it is a NaN (MissingValue.forNaN there -- MIS for a bare one),
+            // DataValueLong(n.longValue()). A MissingValue is not a Number. A NaN goes the slow
+            // way on both arms.
             if (buffer.getValue(idx) instanceof Number n)
             {
                 double d = n.doubleValue();

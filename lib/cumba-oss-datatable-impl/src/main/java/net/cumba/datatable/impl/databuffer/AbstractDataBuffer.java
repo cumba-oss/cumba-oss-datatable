@@ -118,6 +118,18 @@ public abstract class AbstractDataBuffer implements IDataBuffer
         case LONG:
             if (val instanceof Number num)
             {
+                double nan = num.doubleValue();
+                if (Double.isNaN(nan))
+                {
+                    // ⛔ A boxed NaN used to read back as a PRESENT DataValueLong(0): (long) NaN is
+                    // 0 and DataValueLong has no isMissingOrInvalid override, so a missing cell
+                    // became a plausible clinical number. Latent here -- DataBufferLong refuses a
+                    // NaN, so only a DataBufferObject behind a custom factory or a direct typed
+                    // call can hold one -- and ported from cumba-datatable. Decoded with forNaN:
+                    // the payload's constant, MIS for a BARE NaN (owner ruling E5, "NaN should get
+                    // mis"), MIS_UNKNOWN for an unrecognised payload (ruling N1).
+                    return new DataValueMissing(MissingValue.forNaN(nan));
+                }
                 return new DataValueLong(num.longValue());
             }
             return new DataValueMissing(MissingValue.MIS_ERROR);
@@ -143,11 +155,28 @@ public abstract class AbstractDataBuffer implements IDataBuffer
                 // MissingValue.MIS themselves.
                 return new DataValueMissing(MissingValue.MIS);
             }
+            if (val instanceof Number num && Double.isNaN(num.doubleValue()))
+            {
+                // ⛔ A boxed NaN used to read back as a PRESENT DataValueString("NaN"). Decoded as
+                // the LONG arm decodes it (MissingValue.forNaN; a BARE NaN is MIS by ruling E5).
+                // Ported from cumba-datatable.
+                return new DataValueMissing(MissingValue.forNaN(num.doubleValue()));
+            }
             return new DataValueString(val.toString());
         case OTHER:
         default:
-            return val != null ? new DataValueOther(val)
-                    : new DataValueMissing(MissingValue.MIS_ERROR);
+            if (val == null)
+            {
+                return new DataValueMissing(MissingValue.MIS_ERROR);
+            }
+            if (val instanceof Number num && Double.isNaN(num.doubleValue()))
+            {
+                // ⛔ DataValueOther(boxedNaN) answers isMissingOrInvalid() == false. Decoded as the
+                // LONG arm decodes it (MissingValue.forNaN; a BARE NaN is MIS by ruling E5).
+                // Ported from cumba-datatable.
+                return new DataValueMissing(MissingValue.forNaN(num.doubleValue()));
+            }
+            return new DataValueOther(val);
         }
     }
 

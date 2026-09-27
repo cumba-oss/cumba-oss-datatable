@@ -663,8 +663,10 @@ public class DataValueSupport
      * form — a value whose {@code getValue()} is a {@link MissingValue}, i.e. a
      * {@link DataValueMissing} — and the encoded form: a DOUBLE-typed value whose double is a NaN
      * carrying the missing-value byte in its mantissa payload. A DOUBLE NaN without a known payload
-     * maps to {@link MissingValue#MIS_UNKNOWN}, mirroring the numeric buffers' decoding. A STRING
-     * (or any other non-DOUBLE) value never counts as missing here, no matter what its numeric
+     * maps through {@link MissingValue#forNaN(double)}, mirroring the numeric buffers' decoding: a
+     * bare NaN is {@link MissingValue#MIS} (owner ruling E5, <i>"NaN should get mis"</i>), any
+     * other unrecognised payload {@link MissingValue#MIS_UNKNOWN} (ruling N1). A STRING (or any
+     * other non-DOUBLE) value never counts as missing here, no matter what its numeric
      * interpretation would be.
      *
      * @param aValue
@@ -682,7 +684,7 @@ public class DataValueSupport
             double val = aValue.getValueAsDouble();
             if (Double.isNaN(val))
             {
-                return MissingValue.forValue(val, MissingValue.MIS_UNKNOWN);
+                return MissingValue.forNaN(val);
             }
         }
         return null;

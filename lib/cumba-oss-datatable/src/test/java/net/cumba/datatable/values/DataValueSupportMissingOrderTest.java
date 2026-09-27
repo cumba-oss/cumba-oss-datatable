@@ -85,9 +85,19 @@ class DataValueSupportMissingOrderTest
                 DataValueSupport.getMissingValue(new DataValueMissing(MissingValue.MIS_A)));
         assertSame(MissingValue.MIS_A, DataValueSupport
                 .getMissingValue(new DataValueDouble(MissingValue.MIS_A.asDouble())));
-        assertSame(MissingValue.MIS_UNKNOWN,
+        // ⭐ Owner ruling E5, 2026-09-25 (PLAN-bare-nan-is-mis): "NaN should get mis". A bare NaN
+        // read MIS_UNKNOWN here until that ruling; an unrecognised payload still does (N1).
+        assertSame(MissingValue.MIS,
                 DataValueSupport.getMissingValue(new DataValueDouble(Double.NaN)),
-                "a plain NaN has no known payload");
+                "a bare NaN is the default missing");
+        assertSame(MissingValue.MIS,
+                DataValueSupport.getMissingValue(
+                        new DataValueDouble(Double.longBitsToDouble(0xFFF8_0000_0000_0000L))),
+                "so is the arithmetic NaN, which carries the sign bit");
+        assertSame(MissingValue.MIS_UNKNOWN,
+                DataValueSupport.getMissingValue(
+                        new DataValueDouble(Double.longBitsToDouble(0xFFFF_0000_0000_0000L))),
+                "an unrecognised payload has no known marker");
         assertNull(DataValueSupport.getMissingValue(new DataValueDouble(1.5)));
         assertNull(DataValueSupport.getMissingValue(new DataValueString("abc")),
                 "a STRING never counts as missing, whatever its numeric interpretation");

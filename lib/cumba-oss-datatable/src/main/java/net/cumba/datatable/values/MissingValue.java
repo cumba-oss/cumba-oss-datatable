@@ -1,5 +1,8 @@
 package net.cumba.datatable.values;
 
+// OSS-IDENTITY datatable-missing-value: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.util.Objects;
 
 import lombok.Getter;
@@ -234,6 +237,12 @@ public enum MissingValue
     private static final int NAN_PAYLOAD_SHIFT = 43;
 
     /**
+     * The bits of the canonical quiet NaN with the sign bit cleared &mdash; {@link Double#NaN}'s
+     * own pattern. See {@link #isBareNaN(double)}.
+     */
+    private static final long CANONICAL_NAN_BITS = 0x7FF8_0000_0000_0000L;
+
+    /**
      * Fast decode-free lookup for the NaN-payload hash path in numeric buffers. Indexed by the
      * unsigned byte value (0..255). Slot contains the pre-computed {@link #hashCodeStable()} for
      * known missing constants; 0 means "not a recognized missing payload" (safe sentinel because no
@@ -366,6 +375,87 @@ public enum MissingValue
         long bits = Double.doubleToRawLongBits(aDouble);
         int value = (int) ((bits >>> NAN_PAYLOAD_SHIFT) & 0xFF);
         return forValue(value, aDefault);
+    }
+
+
+    /**
+     * Whether the given double is a <b>bare</b> NaN: the canonical quiet NaN of either sign, a NaN
+     * that carries nothing at all. Two bit patterns, and only these two:
+     * <ul>
+     * <li>{@code 0x7FF8000000000000} &mdash; {@link Double#NaN} itself, and numpy's / pandas'
+     * {@code nan};</li>
+     * <li>{@code 0xFFF8000000000000} &mdash; the NaN x86 arithmetic produces ({@code 0.0 / 0.0},
+     * {@code sqrt(-1)}), which carries the sign bit.</li>
+     * </ul>
+     * Every other NaN is <b>not</b> bare: a payload this enum encodes ({@link #asDouble()}), an
+     * in-file SAS missing code (those all start {@code 0xFFFF}), or any other payload.
+     *
+     * <p>
+     * ⭐ Owner rulings 2026-09-25 (PLAN-bare-nan-is-mis): <b>E5</b> <i>"NaN should get mis"</i> and
+     * <b>N1</b> <i>"SAS: canonical only"</i> &mdash; this predicate is N1, stated as bits, and it
+     * is the one test every reader and buffer applies. An unrecognised code keeps
+     * {@link #MIS_UNKNOWN}.
+     * </p>
+     *
+     * @param aDouble
+     *            the double to test.
+     * @return true for the canonical quiet NaN of either sign, false for everything else.
+     */
+    public static boolean isBareNaN(double aDouble)
+    {
+        return (Double.doubleToRawLongBits(aDouble) & Long.MAX_VALUE) == CANONICAL_NAN_BITS;
+    }
+
+
+    /**
+     * The {@link MissingValue} a NaN stands for: the constant its payload encodes; {@link #MIS} for
+     * a bare NaN ({@link #isBareNaN(double)}, ruling E5); {@link #MIS_UNKNOWN} for any other
+     * payload &mdash; an unrecognised code is an unexpected state, not an ordinary missing (ruling
+     * N1). A NaN is only the physical carrier of a missing value, never a value (D85a / D99c), so
+     * there is no fourth answer.
+     *
+     * @param aNaN
+     *            a NaN double.
+     * @return the missing value the NaN carries, never null.
+     * @throws IllegalArgumentException
+     *             if the argument is not a NaN &mdash; a number carries no missing value.
+     */
+    public static MissingValue forNaN(double aNaN)
+    {
+        if (!Double.isNaN(aNaN))
+        {
+            throw new IllegalArgumentException("Not a NaN: " + aNaN);
+        }
+        MissingValue mv = forValue(aNaN, null);
+        if (mv != null)
+        {
+            return mv;
+        }
+        return isBareNaN(aNaN) ? MIS : MIS_UNKNOWN;
+    }
+
+
+    /**
+     * The form in which a numeric store keeps the given double: a bare NaN
+     * ({@link #isBareNaN(double)}) becomes {@link #MIS}'s payload; every other value &mdash; every
+     * other NaN included &mdash; is returned unchanged.
+     *
+     * <p>
+     * ⭐ Owner ruling N2 (b), 2026-09-25: the normalisation happens <b>at store time</b>, in the
+     * double-backed buffers, so a bare NaN's raw value, its hash and its typed reading are one
+     * identity by construction, whichever shape the column's buffer takes. ⚠ The NaN a {@code null}
+     * is stored as is {@link #MIS_UNKNOWN}'s payload, never the canonical NaN, which is what keeps
+     * a null from reading as {@code MIS} here (ruling F-RS9: a null numeric cell is an unexpected
+     * state).
+     * </p>
+     *
+     * @param aValue
+     *            the value about to be stored.
+     * @return {@code MIS.asDouble()} for a bare NaN, else {@code aValue} itself.
+     */
+    public static double normalizeBareNaN(double aValue)
+    {
+        return isBareNaN(aValue) ? MIS.asDouble() : aValue;
     }
 
 
