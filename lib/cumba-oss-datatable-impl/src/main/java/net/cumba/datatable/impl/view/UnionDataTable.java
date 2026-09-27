@@ -24,8 +24,9 @@ import org.jspecify.annotations.Nullable;
  * A read-only {@link IDataTable} that presents several member tables as one, rows stacked in member
  * order. Columns are the ordered, first-seen union of the members' columns; a cell whose member
  * lacks the column reads as missing ({@link #getDataValue(long, int)} returns a shared MISSING
- * {@link IDataValue}, {@link #getValue(long, int)} returns {@code null}). Built for split CDISC
- * domains ({@code lbch}/{@code lbhe}/{@code lbur} → {@code LB}); copies nothing.
+ * {@link IDataValue}, {@link #getValue(long, int)} its raw {@link MissingValue#MIS} — never
+ * {@code null}, register {@code D46}). Built for split CDISC domains
+ * ({@code lbch}/{@code lbhe}/{@code lbur} → {@code LB}); copies nothing.
  *
  * <p>
  * {@code getRealRowIndex} is <em>member-local</em> (it forwards to the owning member), so
@@ -364,7 +365,9 @@ public final class UnionDataTable extends AbstractDataTable
      * {@code member(m).getDataValue(rr, mc)} — the union adds no conversion;</li>
      * <li>if {@code mc < 0}, {@code getDataValue(r, c)} is the union's shared missing-column value
      * (never {@code null}, {@code isMissingOrInvalid()} is {@code true}), and
-     * {@link #getValue(long, int)} is {@code null}.</li>
+     * {@link #getValue(long, int)} is {@link MissingValue#MIS}, that value's raw form — never
+     * {@code null} (register {@code D46}; {@code PLAN-grouping-key-identity} review round 1,
+     * M1).</li>
      * </ul>
      *
      * @param aMember
