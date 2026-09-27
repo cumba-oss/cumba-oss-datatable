@@ -13,6 +13,7 @@ import java.util.List;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.impl.support.OverlayDataTable;
 import net.cumba.datatable.impl.view.UnionDataTable;
 import net.cumba.datatable.index.DataTableIndexFactory;
 import net.cumba.datatable.index.IDataTableIndex;
@@ -31,6 +32,15 @@ import org.junit.jupiter.api.Test;
  * <p>
  * Byte-identical in both datatable twins and run against each twin's own
  * {@code DataTableIndexFactoryImpl}: the block assembly differs by twin, the identity must not.
+ * </p>
+ *
+ * <p>
+ * ⚠ Every table that holds a {@code -0.0} is an {@link OverlayDataTable} ({@link #raw}), never a
+ * buffer-backed column: since {@code NZL O1} (PLAN-negative-zero-on-load) a DOUBLE buffer stores a
+ * {@code -0.0} as {@code 0.0}, so a buffer-built zero row would stay green with the fold never
+ * entered. The fold stays for values that never touch a buffer — computed keys, overlays, edits
+ * ({@code NZL Q2}) — and the overlay is that shape. Sensitivity (plan §8.2 S3): reverting the fold
+ * in {@link KeyHashSupport} reds every zero row here.
  * </p>
  */
 class KeyHashSupportKeyIdentityTest
@@ -77,6 +87,45 @@ class KeyHashSupportKeyIdentityTest
         DataTableMeta meta = DataTableMeta.builder().name(aName).columns(metas)
                 .rowCount(aRows.length).totalRowCount(aRows.length).build();
         return new ColumnCachedDataTable(meta, columns);
+    }
+
+
+    /**
+     * The same table held RAW in an {@link OverlayDataTable}: no buffer sees the cells, so a
+     * {@code -0.0} stays a {@code -0.0} (NZL O1 applies to buffers only).
+     */
+    private static IDataTable raw(DataValueType[] aTypes, Object[]... aRows)
+    {
+        OverlayDataTable t = OverlayDataTable.empty("T", "T", aRows.length);
+        for (int c = 0; c < aTypes.length; c++)
+        {
+            t.addColumn("K" + c, aTypes[c], "K" + c);
+        }
+        for (int r = 0; r < aRows.length; r++)
+        {
+            for (int c = 0; c < aTypes.length; c++)
+            {
+                t.setValue(r, c, aRows[r][c]);
+            }
+        }
+        return t;
+    }
+
+
+    private static IDataTable rawColumn(DataValueType aType, Object... aValues)
+    {
+        Object[][] rows = new Object[aValues.length][];
+        for (int i = 0; i < aValues.length; i++)
+        {
+            rows[i] = new Object[]
+            {
+                    aValues[i]
+            };
+        }
+        return raw(new DataValueType[]
+        {
+                aType
+        }, rows);
     }
 
 
@@ -131,7 +180,7 @@ class KeyHashSupportKeyIdentityTest
     @Test
     void theKeyHashFoldsANegativeZeroOntoZero()
     {
-        IDataTable t = column(DataValueType.DOUBLE, -0.0, 0.0, 1.5);
+        IDataTable t = rawColumn(DataValueType.DOUBLE, -0.0, 0.0, 1.5);
         // the cell hashes differ -- the sign bit is Integer.MIN_VALUE -- so the fold is what
         // makes the key hashes agree
         assertEquals(Integer.MIN_VALUE, t.hashCodeAt(0, 0));
@@ -139,7 +188,7 @@ class KeyHashSupportKeyIdentityTest
         assertEquals(hash(t, 1), hash(t, 0));
         assertNotEquals(hash(t, 1), hash(t, 2));
 
-        IDataTable two = table(new DataValueType[]
+        IDataTable two = raw(new DataValueType[]
         {
                 DataValueType.STRING, DataValueType.DOUBLE
         }, new Object[]
@@ -202,8 +251,8 @@ class KeyHashSupportKeyIdentityTest
     void theIndexFormsOneBlockForTheTwoZeros()
     {
         assertEquals(List.of(List.of(0L, 1L, 2L)),
-                blocks(column(DataValueType.DOUBLE, -0.0, 0.0, 0.0), "K0"));
-        assertEquals(List.of(List.of(0L, 1L), List.of(2L)), blocks(table(new DataValueType[]
+                blocks(rawColumn(DataValueType.DOUBLE, -0.0, 0.0, 0.0), "K0"));
+        assertEquals(List.of(List.of(0L, 1L), List.of(2L)), blocks(raw(new DataValueType[]
         {
                 DataValueType.STRING, DataValueType.DOUBLE
         }, new Object[]
@@ -233,7 +282,7 @@ class KeyHashSupportKeyIdentityTest
     void blocksAreInFirstOccurrenceOrderAndRowsAscendInsideABlock()
     {
         assertEquals(List.of(List.of(0L, 2L), List.of(1L, 3L), List.of(4L)),
-                blocks(column(DataValueType.DOUBLE, 5.0, -0.0, 5.0, 0.0, 1.5), "K0"));
+                blocks(rawColumn(DataValueType.DOUBLE, 5.0, -0.0, 5.0, 0.0, 1.5), "K0"));
     }
 
 
@@ -282,7 +331,7 @@ class KeyHashSupportKeyIdentityTest
     @Test
     void theMatchersCompareThroughKeyEquals()
     {
-        IDataTable left = table(new DataValueType[]
+        IDataTable left = raw(new DataValueType[]
         {
                 DataValueType.STRING, DataValueType.DOUBLE
         }, new Object[]
@@ -292,7 +341,7 @@ class KeyHashSupportKeyIdentityTest
         {
                 "S1", 5.0
         });
-        IDataTable right = table(new DataValueType[]
+        IDataTable right = raw(new DataValueType[]
         {
                 DataValueType.STRING, DataValueType.DOUBLE
         }, new Object[]

@@ -247,7 +247,10 @@ class CachedDataTableColumnPresentValueTest
         g.add(new Case("DOUBLE all-unique",
                 column(DataValueType.DOUBLE, concat(uniqueDoubles(0.1, 0.1, 6), awkwardDouble))));
         g.add(new Case("DOUBLE single", column(DataValueType.DOUBLE, 3.25, 3.25, 3.25)));
-        g.add(new Case("DOUBLE single negative zero", column(DataValueType.DOUBLE, -0.0, -0.0)));
+        // a stored -0.0 is 0.0 since NZL O1 (PLAN-negative-zero-on-load): this row tests the
+        // store rule, and the fast path and getDataValue agree on 0.0
+        g.add(new Case("DOUBLE single negative zero (stored as 0.0, NZL O1)",
+                column(DataValueType.DOUBLE, -0.0, -0.0)));
         g.add(new Case("DOUBLE single unrecognised NaN",
                 column(DataValueType.DOUBLE, UNRECOGNISED_NAN, UNRECOGNISED_NAN)));
         CachedDataTableColumn shortDouble = column(DataValueType.DOUBLE, repeat(4, 1.5, 2.5));
