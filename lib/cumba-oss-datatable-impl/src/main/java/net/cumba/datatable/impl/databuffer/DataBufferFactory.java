@@ -46,6 +46,16 @@ public interface DataBufferFactory
     /**
      * Build the initial buffer for a column of the given declared type. Callers push values via
      * {@link IDataBuffer#setValue(int, Object)} during loading.
+     *
+     * <p>
+     * ⚠ <b>The store rule of a DOUBLE column lives in the default factory's buffers.</b> Every
+     * DOUBLE buffer {@code DefaultDataBufferFactory} produces stores
+     * {@link net.cumba.datatable.values.DataValueDouble#normalizeForStore(double)} of every value:
+     * no {@code -0.0} (owner direction {@code NZL O1}, PLAN-negative-zero-on-load: <i>"a -0.0 gets
+     * read as 0.0"</i>) and a bare NaN as {@code MIS} (ruling {@code BNM N2} (b)). A replacement
+     * factory named by {@link #FACTORY_CLASS_PROPERTY} or installed by {@link #set} must do the
+     * same, or tables built under it may hold a {@code -0.0} (and a bare NaN).
+     * </p>
      */
     IDataBuffer createColumnBuffer(DataValueType aType);
 

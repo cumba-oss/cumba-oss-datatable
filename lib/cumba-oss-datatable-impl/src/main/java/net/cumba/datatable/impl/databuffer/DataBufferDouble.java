@@ -2,6 +2,7 @@ package net.cumba.datatable.impl.databuffer;
 
 import java.util.Arrays;
 
+import net.cumba.datatable.values.DataValueDouble;
 import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
@@ -83,19 +84,21 @@ public class DataBufferDouble extends AbstractNumericDataBuffer
 
 
     /**
-     * Store a double. ⭐ A bare NaN ({@link MissingValue#isBareNaN(double)}) is stored as
-     * {@link MissingValue#MIS}'s payload &mdash; owner rulings E5 (<i>"NaN should get mis"</i>) and
-     * N2 (b), store time &mdash; so {@link #getValue(int)}, {@link #hashCodeAt(int)} and the typed
-     * read agree on {@code MIS} by construction. Every other value, every other NaN included, is
-     * stored as given. {@link #setValue(int, Object)} and {@link #setLongValue(int, long)} route
-     * here.
+     * Store a double, as {@link DataValueDouble#normalizeForStore(double)} answers it. ⭐ A
+     * {@code -0.0} is stored as {@code 0.0} &mdash; owner direction {@code NZL O1}
+     * (PLAN-negative-zero-on-load, <i>"a -0.0 gets read as 0.0"</i>). ⭐ A bare NaN
+     * ({@link MissingValue#isBareNaN(double)}) is stored as {@link MissingValue#MIS}'s payload
+     * &mdash; owner rulings E5 (<i>"NaN should get mis"</i>) and N2 (b), store time &mdash; so
+     * {@link #getValue(int)}, {@link #hashCodeAt(int)} and the typed read agree on {@code MIS} by
+     * construction. Every other value, every other NaN included, is stored as given.
+     * {@link #setValue(int, Object)} and {@link #setLongValue(int, long)} route here.
      */
     @Override
     public void setDoubleValue(int aIndex, double aValue)
     {
         int newSize = aIndex + 1;
         ensureCapacity(newSize);
-        values[aIndex] = MissingValue.normalizeBareNaN(aValue);
+        values[aIndex] = DataValueDouble.normalizeForStore(aValue);
         size = Math.max(size, newSize);
     }
 

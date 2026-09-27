@@ -25,6 +25,40 @@ public class DataValueDouble implements IDataValueNumber
     public static final double EPSILON = 1E-14;
 
     /**
+     * A double with its zero sign dropped: {@code -0.0} answers {@code 0.0}; every other value
+     * &mdash; every NaN payload included &mdash; is answered as given. ⭐ Owner direction 2026-09-27
+     * (register {@code NZL O1}, PLAN-negative-zero-on-load): <i>"a -0.0 gets read as 0.0"</i>. One
+     * raw-bits compare, true only for {@code -0.0}, so on real data the branch is never taken; a
+     * NaN's exponent bits are all ones, so no NaN payload can match.
+     *
+     * @param aValue
+     *            the value.
+     * @return {@code 0.0} for {@code -0.0}, else {@code aValue} itself.
+     */
+    public static double dropZeroSign(double aValue)
+    {
+        return Double.doubleToRawLongBits(aValue) == Long.MIN_VALUE ? 0.0d : aValue;
+    }
+
+
+    /**
+     * The double a DOUBLE buffer stores for a value it is given: {@link #dropZeroSign(double)}
+     * (register {@code NZL O1}: no loaded table holds a {@code -0.0}), then a bare NaN as
+     * {@link MissingValue#MIS}'s payload ({@link MissingValue#normalizeBareNaN(double)}, owner
+     * ruling {@code BNM N2} (b)); every other value as given. The default
+     * {@code DataBufferFactory}'s DOUBLE buffers call this on every store, in both datatable twins.
+     *
+     * @param aValue
+     *            the value about to be stored.
+     * @return the value the buffer stores.
+     */
+    public static double normalizeForStore(double aValue)
+    {
+        return MissingValue.normalizeBareNaN(dropZeroSign(aValue));
+    }
+
+
+    /**
      * A check if the given double value is an exact float value. The check handles Double.NaN with
      * custom mantissa values (e.g encoded missing values).
      *
