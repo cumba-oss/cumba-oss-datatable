@@ -33,5 +33,10 @@ Read-only CSV provider for the Cumba OSS data-table SPI. Built on
 
 ## Notes
 
+- **Missing values and quoting** (owner rulings K7 / K7b, 2026-09-30): an
+  **unquoted** `.` cell is the SAS missing `MissingValue.MIS`, and an unquoted
+  `._` / `.A`..`.Z` its own special missing (`MIS__`, `MIS_A`..`MIS_Z`), in
+  every column type; such a cell is no type evidence. A **quoted** one is
+  text. Lower-case `.a`, `.AB` or `..` are ordinary text.
 
 See the root [README](../../README.md) for project-wide context.

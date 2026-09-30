@@ -4,22 +4,24 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.univocity.parsers.csv.CsvParserSettings;
 import java.io.StringReader;
 import java.util.Objects;
+import net.cumba.datatable.values.MissingValue;
 import org.junit.jupiter.api.Test;
 
 /**
- * The quote-marking step of {@link CsvRecordReader} on its own: which cells of a record are a
- * quoted {@code "."} (owner ruling K7), given the same record parsed with {@code keepQuotes}.
+ * The quote-marking step of {@link CsvRecordReader} on its own: which cells of a record were quoted
+ * (owner rulings K7 / K7b), given the same record parsed with {@code keepQuotes}.
  */
 class CsvRecordReaderTest
 {
 
     @Test
-    void marksOnlyQuotedDots()
+    void marksQuotedCells()
     {
         String[] row =
         {
@@ -32,12 +34,12 @@ class CsvRecordReaderTest
 
         assertArrayEquals(new boolean[]
         {
-                true, false, false, false, false
-        }, CsvRecordReader.quotedDots(row, kept, '"'));
+                true, false, true, false, false
+        }, CsvRecordReader.quotedCells(row, kept, '"'));
         assertArrayEquals(new boolean[]
         {
                 false, false, false, false, true
-        }, CsvRecordReader.quotedDots(row, kept, '\''));
+        }, CsvRecordReader.quotedCells(row, kept, '\''));
     }
 
 
@@ -55,24 +57,58 @@ class CsvRecordReaderTest
         assertArrayEquals(new boolean[]
         {
                 true, false
-        }, CsvRecordReader.quotedDots(row, new String[]
+        }, CsvRecordReader.quotedCells(row, new String[]
         {
                 "\".\""
         }, '"'));
         assertArrayEquals(new boolean[]
         {
                 false, false
-        }, CsvRecordReader.quotedDots(row, null, '"'));
+        }, CsvRecordReader.quotedCells(row, null, '"'));
         assertArrayEquals(new boolean[]
         {
                 true
-        }, CsvRecordReader.quotedDots(new String[]
+        }, CsvRecordReader.quotedCells(new String[]
         {
                 "."
         }, new String[]
         {
                 "\".\"", "\".\""
         }, '"'));
+    }
+
+
+    /** The cell is an UNQUOTED {@code "."}: the plain SAS missing. */
+    private static boolean isMis(CsvRecord aRecord, int aColumn)
+    {
+        return aRecord.getUnquotedMissing(aColumn) == MissingValue.MIS;
+    }
+
+
+    /**
+     * K7b: the special missings go through the same gate -- a quoted one opens with the quote
+     * touching the dot as well, so it is re-read and stays text; a bare one is its own missing.
+     */
+    @Test
+    void specialsAreFlaggedLikeTheDot()
+    {
+        CsvRecordReader r = reader("\"x\",.B\n\"y\",\".A\"\n");
+        try
+        {
+            CsvRecord bare = Objects.requireNonNull(r.next());
+            assertEquals(0, r.reReadCount());
+            assertSame(MissingValue.MIS_B, bare.getUnquotedMissing(1));
+
+            CsvRecord quoted = Objects.requireNonNull(r.next());
+            assertEquals(1, r.reReadCount());
+            assertNull(quoted.getUnquotedMissing(1));
+            assertEquals(".A", quoted.getValue(1));
+            assertNull(r.next());
+        }
+        finally
+        {
+            r.stopParsing();
+        }
     }
 
 
@@ -110,23 +146,23 @@ class CsvRecordReaderTest
             CsvRecord quotesElsewhere = Objects.requireNonNull(r.next());
             CsvRecord dotBeforeQuote = Objects.requireNonNull(r.next());
             assertEquals(0, r.reReadCount(), "no record so far needed the twin");
-            assertFalse(quotesNoDot.isUnquotedDot(0));
-            assertTrue(dotNoQuote.isUnquotedDot(1));
-            assertTrue(quotesElsewhere.isUnquotedDot(1));
-            assertTrue(dotBeforeQuote.isUnquotedDot(1));
+            assertFalse(isMis(quotesNoDot, 0));
+            assertTrue(isMis(dotNoQuote, 1));
+            assertTrue(isMis(quotesElsewhere, 1));
+            assertTrue(isMis(dotBeforeQuote, 1));
 
             CsvRecord quoted = Objects.requireNonNull(r.next());
             assertEquals(1, r.reReadCount());
-            assertFalse(quoted.isUnquotedDot(1));
+            assertFalse(isMis(quoted, 1));
             assertEquals(".", quoted.getValue(1));
 
             CsvRecord pairNotADot = Objects.requireNonNull(r.next());
             assertEquals(2, r.reReadCount(), "the gate is a pre-check; the twin decides");
-            assertTrue(pairNotADot.isUnquotedDot(1));
+            assertTrue(isMis(pairNotADot, 1));
 
             CsvRecord bothQuotedNoNewline = Objects.requireNonNull(r.next());
-            assertFalse(bothQuotedNoNewline.isUnquotedDot(0));
-            assertFalse(bothQuotedNoNewline.isUnquotedDot(1));
+            assertFalse(isMis(bothQuotedNoNewline, 0));
+            assertFalse(isMis(bothQuotedNoNewline, 1));
             assertNull(r.next());
         }
         finally
@@ -145,7 +181,7 @@ class CsvRecordReaderTest
         {
             CsvRecord rec = Objects.requireNonNull(r.next());
             assertEquals(".", rec.getValue(1));
-            assertFalse(rec.isUnquotedDot(1));
+            assertFalse(isMis(rec, 1));
             assertEquals(1, r.reReadCount());
         }
         finally
@@ -170,7 +206,7 @@ class CsvRecordReaderTest
             CsvRecord rec = Objects.requireNonNull(r.next());
             assertEquals("\".\"", rec.getValue(1), "a double quote is plain text here");
             assertEquals(".", rec.getValue(2));
-            assertFalse(rec.isUnquotedDot(2));
+            assertFalse(isMis(rec, 2));
             assertEquals(1, r.reReadCount());
         }
         finally
@@ -196,7 +232,7 @@ class CsvRecordReaderTest
         {
             CsvRecord rec = Objects.requireNonNull(r.next());
             assertEquals(".", rec.getValue(1));
-            assertFalse(rec.isUnquotedDot(1));
+            assertFalse(isMis(rec, 1));
         }
         finally
         {

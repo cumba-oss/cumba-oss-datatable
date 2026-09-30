@@ -2,6 +2,7 @@ package net.cumba.datatable.provider.csv;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.univocity.parsers.csv.CsvParser;
@@ -11,13 +12,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
+import java.util.regex.Pattern;
+import net.cumba.datatable.values.MissingValue;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /**
  * A seeded fuzz of {@link CsvRecordReader} whose oracle is the GENERATOR: every file is written
- * cell by cell, so the test knows which {@code "."} cells it enclosed in quotes and which it wrote
- * bare, and asserts the reader's quoted/unquoted reading of each (owner ruling K7: <i>"missing only
- * if it is not in quotation marks"</i>).
+ * cell by cell, so the test knows which missing-sentinel cells ({@code .}, {@code ._},
+ * {@code .A}..{@code .Z}) it enclosed in quotes and which it wrote bare, and asserts the reader's
+ * reading of EVERY cell: a bare sentinel is its own SAS missing, anything else none (owner rulings
+ * K7 / K7b: <i>"missing only if it is not in quotation marks"</i>, <i>"Agree to special missings as
+ * long as they are not in quotation marks"</i>).
  * <p>
  * The files vary what the re-read gate and its twin parse could trip over: {@code \n}, {@code \r\n}
  * and {@code \r} separators, blank and comment lines, a BOM, a missing final newline, multi-line
@@ -45,6 +51,15 @@ class CsvRecordReaderFuzzTest
             "\n", "\r\n", "\r"
     };
 
+    /** The sentinels the generator writes, the plain dot most often. */
+    private static final String[] SENTINELS =
+    {
+            ".", ".", ".", "._", ".A", ".Q", ".Z"
+    };
+
+    /** The {@code .cdt} grammar's sentinel -- the oracle's own copy, not the reader's. */
+    private static final Pattern SENTINEL = Pattern.compile("\\.[_A-Z]?");
+
     /** One generated cell: its text in the file, the value univocity must read, and its quoting. */
     private record Cell(String text, String value, boolean quoted)
     {
@@ -62,6 +77,10 @@ class CsvRecordReaderFuzzTest
         int quotedDots;
 
         int unquotedDots;
+
+        int quotedSpecials;
+
+        int unquotedSpecials;
 
         int multiLineQuotedDotRecords;
 
@@ -87,6 +106,9 @@ class CsvRecordReaderFuzzTest
                 + tally.skipped + " of " + FILES + " files -- the oracle covers too little");
         assertTrue(tally.quotedDots > 2000, "quoted dots checked: " + tally.quotedDots);
         assertTrue(tally.unquotedDots > 2000, "unquoted dots checked: " + tally.unquotedDots);
+        assertTrue(tally.quotedSpecials > 1000, "quoted specials checked: " + tally.quotedSpecials);
+        assertTrue(tally.unquotedSpecials > 1000,
+                "unquoted specials checked: " + tally.unquotedSpecials);
         assertTrue(tally.multiLineQuotedDotRecords > 100,
                 "multi-line records with a quoted dot: " + tally.multiLineQuotedDotRecords);
         assertTrue(tally.unterminated > 20, "unterminated \". at EOF: " + tally.unterminated);
@@ -148,7 +170,7 @@ class CsvRecordReaderFuzzTest
             for (int c = 0; c < cols; c++)
             {
                 boolean last = r == rows - 1 && c == cols - 1;
-                row[c] = last && unterminated ? new Cell(quote + ".", ".", true)
+                row[c] = last && unterminated ? unterminated(aRnd, quote)
                         : cell(aRnd, delim, sep, quote, cols == 1);
                 if (c > 0)
                 {
@@ -199,23 +221,39 @@ class CsvRecordReaderFuzzTest
                 for (int c = 0; c < row.length; c++)
                 {
                     multiLine |= row[c].quoted() && row[c].text().contains(aSep);
-                    if (!".".equals(row[c].value()))
+                    int col = c;
+                    boolean wantQuoted = row[c].quoted();
+                    boolean sentinel = SENTINEL.matcher(row[c].value()).matches();
+                    @Nullable
+                    MissingValue want = sentinel && !wantQuoted
+                            ? MissingValue.forValue(row[c].value())
+                            : null;
+                    assertSame(want, rec.getUnquotedMissing(c), () -> "record " + r + " col " + col
+                            + " written " + (wantQuoted ? "quoted" : "bare") + " in " + show(aCsv));
+                    if (!sentinel)
                     {
                         continue;
                     }
-                    int col = c;
-                    boolean wantQuoted = row[c].quoted();
-                    assertEquals(!wantQuoted, rec.isUnquotedDot(c),
-                            () -> "record " + r + " col " + col + " written "
-                                    + (wantQuoted ? "quoted" : "bare") + " in " + show(aCsv));
+                    boolean dot = ".".equals(row[c].value());
                     if (wantQuoted)
                     {
-                        aTally.quotedDots++;
                         quotedDot = true;
+                        if (dot)
+                        {
+                            aTally.quotedDots++;
+                        }
+                        else
+                        {
+                            aTally.quotedSpecials++;
+                        }
+                    }
+                    else if (dot)
+                    {
+                        aTally.unquotedDots++;
                     }
                     else
                     {
-                        aTally.unquotedDots++;
+                        aTally.unquotedSpecials++;
                     }
                 }
                 if (multiLine && quotedDot)
@@ -259,13 +297,14 @@ class CsvRecordReaderFuzzTest
         String pad = aRnd.nextInt(4) == 0 ? " " : "";
         String padR = aRnd.nextInt(4) == 0 ? " " : "";
         int kind = aRnd.nextInt(5);
+        String sentinel = SENTINELS[aRnd.nextInt(SENTINELS.length)];
         if (kind == 0)
         {
-            return new Cell(pad + "." + padR, ".", false);
+            return new Cell(pad + sentinel + padR, sentinel, false);
         }
         if (kind == 1)
         {
-            return new Cell(pad + aQuote + "." + aQuote + padR, ".", true);
+            return new Cell(pad + aQuote + sentinel + aQuote + padR, sentinel, true);
         }
         if (kind == 2)
         {
@@ -276,7 +315,19 @@ class CsvRecordReaderFuzzTest
     }
 
 
-    /** Unquoted text: may hold a dot, never the delimiter, a quote, a line break or a comment. */
+    /** An unterminated quoted sentinel at the end of the input. */
+    private static Cell unterminated(Random aRnd, char aQuote)
+    {
+        String sentinel = SENTINELS[aRnd.nextInt(SENTINELS.length)];
+        return new Cell(aQuote + sentinel, sentinel, true);
+    }
+
+
+    /**
+     * Unquoted text: may hold a dot, never the delimiter, a quote, a line break or a comment. It
+     * may happen to spell a sentinel ({@code .B}) -- the oracle reads every cell, so that is
+     * covered.
+     */
     private static String bareText(Random aRnd, boolean aNonEmpty)
     {
         String[] pieces =
@@ -305,7 +356,7 @@ class CsvRecordReaderFuzzTest
         {
             String piece = switch (aRnd.nextInt(5))
             {
-            case 0 -> ".";
+            case 0 -> aRnd.nextBoolean() ? "." : ".A";
             case 1 -> aDelim;
             case 2 -> String.valueOf(aQuote);
             case 3 -> aSep;

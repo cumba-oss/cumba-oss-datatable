@@ -6,6 +6,7 @@ import java.util.Objects;
 import lombok.Builder;
 import net.cumba.datatable.ExMsgs;
 import net.cumba.datatable.help.CDT;
+import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -20,16 +21,19 @@ public class CsvRecord
     private final String[] values;
 
     /**
-     * Per column: {@code true} where the cell is exactly {@code "."} AND was enclosed in quotation
-     * marks in the file. {@code null} when no cell of the record is a quoted {@code "."} -- the
-     * common case, which costs nothing. Otherwise exactly as long as {@link #values}. Owner ruling
-     * K7 (2026-09-30): <i>"missing only if it is not in quotation marks"</i> -- an unquoted
-     * {@code .} is the SAS missing, a quoted one is text.
+     * Per column: {@code true} where the cell was enclosed in quotation marks in the file;
+     * {@code null} when none was (or none that matters -- see below). Otherwise exactly as long as
+     * {@link #values}. {@link CsvRecordReader} guarantees the flag for every missing-sentinel cell
+     * ({@code .}, {@code ._}, {@code .A}..{@code .Z}); other cells may carry {@code false} although
+     * quoted, which no reading of a non-sentinel value depends on. Owner rulings K7 (2026-09-30):
+     * <i>"missing only if it is not in quotation marks"</i> and <i>"Agree to special missings as
+     * long as they are not in quotation marks"</i> -- an unquoted sentinel is the SAS missing, a
+     * quoted one is text.
      */
-    private final boolean @Nullable [] quotedDots;
+    private final boolean @Nullable [] quoted;
 
     /**
-     * A record none of whose cells is a quoted {@code "."}.
+     * A record none of whose cells is quoted.
      *
      * @param aValues
      *            the column values; must not be {@code null}.
@@ -45,25 +49,24 @@ public class CsvRecord
      *
      * @param values
      *            the column values; must not be {@code null}.
-     * @param quotedDots
-     *            per column, {@code true} where the cell is a quoted {@code "."}; {@code null} when
-     *            none is. When given, it must be exactly as long as {@code values}; it is copied.
+     * @param quoted
+     *            per column, {@code true} where the cell was quoted; {@code null} when none was.
+     *            When given, it must be exactly as long as {@code values}; it is copied.
      * @throws NullPointerException
      *             if {@code values} is {@code null}.
      * @throws IllegalArgumentException
-     *             if {@code quotedDots} is given with a length other than {@code values}'.
+     *             if {@code quoted} is given with a length other than {@code values}'.
      */
     @Builder
-    public CsvRecord(String[] values, boolean @Nullable [] quotedDots)
+    public CsvRecord(String[] values, boolean @Nullable [] quoted)
     {
         this.values = Objects.requireNonNull(values, "values");
-        if (quotedDots != null && quotedDots.length != values.length)
+        if (quoted != null && quoted.length != values.length)
         {
-            throw new IllegalArgumentException(
-                    MessageFormat.format("{0} quote flags for a record of {1} values",
-                            quotedDots.length, values.length));
+            throw new IllegalArgumentException(MessageFormat.format(
+                    "{0} quote flags for a record of {1} values", quoted.length, values.length));
         }
-        this.quotedDots = quotedDots == null ? null : quotedDots.clone();
+        this.quoted = quoted == null ? null : quoted.clone();
     }
 
 
@@ -168,13 +171,13 @@ public class CsvRecord
 
     /**
      * Test if the value at the given column is a double value or a supported missing.<br/>
-     * Supported missings are empty Strings or an unquoted dot (.) symbol; a quoted {@code "."} is
-     * text (owner ruling K7).
+     * Supported missings are empty Strings and an unquoted missing sentinel ({@code .}, {@code ._},
+     * {@code .A}..{@code .Z}); a quoted sentinel is text (owner rulings K7).
      *
      * @param aColumn
      *            the (0-based) index of the column to test.
      * @return true if the value can be parsed as double using {@link Double#parseDouble(String)},
-     *         is an empty String, an unquoted dot symbol or a null value, false otherwise.
+     *         is an empty String, an unquoted missing sentinel or a null value, false otherwise.
      * @throws IndexOutOfBoundsException
      *             in case the given column index is outside of the valid bounds<br/>
      *             ( <code>0 &lt;= aColumn &lt; getColumnCount()</code>)
@@ -187,9 +190,9 @@ public class CsvRecord
         {
             return true;
         }
-        if (valStr.equals("."))
+        if (isMissingSentinel(valStr))
         {
-            // K7: only an UNQUOTED "." is the SAS missing; a quoted "." is text.
+            // K7: only an UNQUOTED sentinel is the SAS missing; a quoted one is text.
             return !isQuoted(aColumn);
         }
 
@@ -206,27 +209,73 @@ public class CsvRecord
 
 
     /**
-     * Test if the cell is the SAS missing: exactly {@code "."} and NOT enclosed in quotation marks
-     * in the file (owner ruling K7, 2026-09-30).
+     * The SAS missing value an unquoted missing sentinel stands for: {@code .} is
+     * {@link MissingValue#MIS}, {@code ._} is {@link MissingValue#MIS__} and {@code .A}..{@code .Z}
+     * are {@link MissingValue#MIS_A}..{@link MissingValue#MIS_Z} -- the {@code .cdt} grammar
+     * ({@code CdtValues}), so a lower-case {@code .a} is ordinary text. Owner rulings K7
+     * (2026-09-30): only when NOT enclosed in quotation marks.
      *
      * @param aColumn
      *            the (0-based) index of the column to test.
-     * @return {@code true} for an unquoted {@code .}, {@code false} for anything else -- including
-     *         a quoted {@code "."}, which is the one-character text.
+     * @return the missing value, or {@code null} when the cell is not an unquoted sentinel.
      * @throws IndexOutOfBoundsException
      *             in case the given column index is outside of the valid bounds<br/>
      *             ( <code>0 &lt;= aColumn &lt; getColumnCount()</code>)
      */
-    public boolean isUnquotedDot(int aColumn) throws IndexOutOfBoundsException
+    public @Nullable MissingValue getUnquotedMissing(int aColumn) throws IndexOutOfBoundsException
     {
-        return ".".equals(getValue(aColumn)) && !isQuoted(aColumn);
+        String valStr = getValue(aColumn);
+        if (!isMissingSentinel(valStr) || isQuoted(aColumn))
+        {
+            return null;
+        }
+        return MissingValue.forValue(valStr, null);
     }
 
 
-    private boolean isQuoted(int aColumn)
+    /**
+     * Test if the cell was enclosed in quotation marks -- exact for every missing-sentinel cell
+     * (see {@link #quoted}).
+     *
+     * @param aColumn
+     *            the (0-based) index of the column to test.
+     * @return {@code true} if the cell is known to have been quoted.
+     * @throws IndexOutOfBoundsException
+     *             in case the given column index is outside of the valid bounds<br/>
+     *             ( <code>0 &lt;= aColumn &lt; getColumnCount()</code>)
+     */
+    public boolean isQuoted(int aColumn) throws IndexOutOfBoundsException
     {
-        boolean[] q = quotedDots;
+        if (aColumn < 0 || aColumn >= values.length)
+        {
+            throw new IndexOutOfBoundsException(
+                    ExMsgs.indexOutOfBounds("column", aColumn, 0, values.length));
+        }
+        boolean[] q = quoted;
         return q != null && q[aColumn];
+    }
+
+
+    /**
+     * Whether the text is exactly one of the 28 SAS missing sentinels: {@code .}, {@code ._} or
+     * {@code .A}..{@code .Z} -- the grammar {@code CdtValues} reads, and nothing else.
+     *
+     * @param aText
+     *            the cell text, may be {@code null}.
+     * @return {@code true} for a sentinel.
+     */
+    static boolean isMissingSentinel(@Nullable String aText)
+    {
+        if (aText == null || aText.isEmpty() || aText.length() > 2 || aText.charAt(0) != '.')
+        {
+            return false;
+        }
+        if (aText.length() == 1)
+        {
+            return true;
+        }
+        char c = aText.charAt(1);
+        return c == '_' || (c >= 'A' && c <= 'Z');
     }
 
 

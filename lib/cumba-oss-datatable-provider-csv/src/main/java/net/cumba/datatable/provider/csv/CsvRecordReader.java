@@ -10,7 +10,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * Reads {@link CsvRecord}s from a univocity {@link CsvParser} and tells a quoted {@code "."} from
  * an unquoted {@code .} -- owner ruling K7 (2026-09-30): <i>"missing only if it is not in quotation
- * marks."</i>
+ * marks."</i> The same holds for the special missings {@code ._} and {@code .A}..{@code .Z} (owner,
+ * 2026-09-30: <i>"Agree to special missings as long as they are not in quotation marks."</i>);
+ * every such sentinel starts with a dot, so what is said of {@code "."} below applies to all 28.
  * <p>
  * univocity reports no per-field "was quoted" flag, and its {@code keepQuotes} mode cannot simply
  * be switched on for the whole file and stripped again: for malformed quoting (an unterminated or
@@ -24,7 +26,7 @@ import org.jspecify.annotations.Nullable;
  * the input included), so a quote anywhere else -- the ordinary quoted string columns of an export
  * -- costs no second parse. The one exception is a parser that ignores leading whitespace inside
  * quotes, where {@code " ."} is a quoted {@code "."} too; there any quote gates the re-read. Every
- * other record costs one scan of its values for a {@code "."}.
+ * other record costs one scan of its values for a sentinel.
  */
 final class CsvRecordReader
 {
@@ -78,7 +80,7 @@ final class CsvRecordReader
         {
             return null;
         }
-        if (!containsDot(row))
+        if (!containsSentinel(row))
         {
             return new CsvRecord(row);
         }
@@ -88,13 +90,13 @@ final class CsvRecordReader
             return new CsvRecord(row);
         }
         reReads++;
-        return new CsvRecord(row, quotedDots(row, quoteKeeper().parseLine(raw), quote));
+        return new CsvRecord(row, quotedCells(row, quoteKeeper().parseLine(raw), quote));
     }
 
 
     /**
      * Returns how many records so far were read a second time through the {@code keepQuotes} twin:
-     * only those holding a {@code "."} cell whose raw text has the quote character immediately
+     * only those holding a missing-sentinel cell whose raw text has the quote character immediately
      * followed by a dot.
      *
      * @return the number of re-read records.
@@ -117,12 +119,12 @@ final class CsvRecordReader
 
 
     /**
-     * Mark the cells of {@code aRow} that are exactly {@code "."} and quoted, reading the quotes
-     * off {@code aKept} -- the same record parsed with {@code keepQuotes}, where a quoted field
-     * starts with the quote character. A cell {@code aKept} does not reach (or a {@code null}
-     * {@code aKept}) is not quoted: an unquoted {@code .} is the ruling's default reading.
+     * Mark the cells of {@code aRow} that were quoted, reading the quotes off {@code aKept} -- the
+     * same record parsed with {@code keepQuotes}, where a quoted field starts with the quote
+     * character. A cell {@code aKept} does not reach (or a {@code null} {@code aKept}) is not
+     * quoted: an unquoted sentinel is the rulings' default reading.
      */
-    static boolean[] quotedDots(String[] aRow, String @Nullable [] aKept, char aQuote)
+    static boolean[] quotedCells(String[] aRow, String @Nullable [] aKept, char aQuote)
     {
         boolean[] res = new boolean[aRow.length];
         if (aKept != null)
@@ -131,18 +133,18 @@ final class CsvRecordReader
             for (int i = 0; i < n; i++)
             {
                 String k = aKept[i];
-                res[i] = DOT.equals(aRow[i]) && k != null && k.indexOf(aQuote) == 0;
+                res[i] = k != null && k.indexOf(aQuote) == 0;
             }
         }
         return res;
     }
 
 
-    private static boolean containsDot(String[] aRow)
+    private static boolean containsSentinel(String[] aRow)
     {
         for (String v : aRow)
         {
-            if (DOT.equals(v))
+            if (CsvRecord.isMissingSentinel(v))
             {
                 return true;
             }

@@ -373,10 +373,12 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     // numeric evidence; such a column stays at the STRING default, exactly like a
                     // column no sampled row reaches at all.
                     //
-                    // ⚠ K7 (owner, 2026-09-30): only an UNQUOTED "." is that missing. A quoted "."
-                    // is the text "." -- evidence of TEXT, which isDoubleOrMissing rejects, so a
-                    // column holding one types STRING and keeps it (the only way to keep its text).
-                    boolean blankOrDot = CDT.isBlankOrNull(cell) || row.isUnquotedDot(i);
+                    // ⚠ K7 / K7b (owner, 2026-09-30): only an UNQUOTED missing sentinel -- ".",
+                    // "._" or ".A".."Z" -- is that missing. A quoted one is TEXT, which
+                    // isDoubleOrMissing rejects, so a column holding one types STRING and keeps it
+                    // (the only way to keep its text).
+                    boolean blankOrDot = CDT.isBlankOrNull(cell)
+                            || row.getUnquotedMissing(i) != null;
                     if (!blankOrDot)
                     {
                         sawNumericEvidence = true;
@@ -486,58 +488,56 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     // "" is not a number.
                     aDataColumn.addElement(
                             aMetaColumn.getType() == DataValueType.STRING ? "" : MissingValue.MIS);
+                    continue;
                 }
-                else
+                MissingValue missing = row.getUnquotedMissing(aColumnIndex);
+                if (missing != null)
                 {
-                    switch (aMetaColumn.getType())
+                    // K7 / K7b (owner, 2026-09-30): an unquoted ".", "._" or ".A".."Z" is that SAS
+                    // missing in EVERY column type -- its own identity, stored as CdtTableBuilder
+                    // stores it, in a DOUBLE or LONG buffer too; a quoted one falls through (text
+                    // in a STRING column, MIS in a numeric one -- no number to parse).
+                    aDataColumn.addElement(missing);
+                    continue;
+                }
+                switch (aMetaColumn.getType())
+                {
+                case DOUBLE:
+                {
+                    double dblVal = row.getDoubleValue(aColumnIndex);
+                    if (Double.isNaN(dblVal))
                     {
-                    case DOUBLE:
+                        aDataColumn.addElement(MissingValue.MIS);
+                    }
+                    else
                     {
-                        double dblVal = row.getDoubleValue(aColumnIndex);
-                        if (Double.isNaN(dblVal))
-                        {
-                            aDataColumn.addElement(MissingValue.MIS);
-                        }
-                        else
-                        {
-                            aDataColumn.addElement(dblVal);
-                        }
-                        break;
+                        aDataColumn.addElement(dblVal);
                     }
-                    case LONG:
+                    break;
+                }
+                case LONG:
+                {
+                    try
                     {
-                        try
-                        {
-                            long lngVal = row.getLongValue(aColumnIndex);
-                            aDataColumn.addElement(lngVal);
-                        }
-                        catch (Exception _)
-                        {
-                            aDataColumn.addElement(MissingValue.MIS);
-                        }
-                        break;
+                        long lngVal = row.getLongValue(aColumnIndex);
+                        aDataColumn.addElement(lngVal);
                     }
-                    case STRING:
-                    default:
-                        // Right-trim + intern like every other provider (XPT, SAS7BDAT, Parquet,
-                        // XLSX, Dataset-JSON): the engine compares and groups string cells
-                        // verbatim, so trailing padding has to be gone before the value reaches a
-                        // column. getValue() never returns null (it folds null to ""), so the
-                        // default is only there to satisfy the poly-null signature.
-                        //
-                        // K7 (owner, 2026-09-30): an unquoted "." is the SAS missing in every
-                        // column type; a quoted "." stays the one-character text.
-                        if (row.isUnquotedDot(aColumnIndex))
-                        {
-                            aDataColumn.addElement(MissingValue.MIS);
-                        }
-                        else
-                        {
-                            String val = tri(row.getValue(aColumnIndex), "");
-                            aDataColumn.addElement(val);
-                        }
-                        break;
+                    catch (Exception _)
+                    {
+                        aDataColumn.addElement(MissingValue.MIS);
                     }
+                    break;
+                }
+                case STRING:
+                default:
+                    // Right-trim + intern like every other provider (XPT, SAS7BDAT, Parquet,
+                    // XLSX, Dataset-JSON): the engine compares and groups string cells
+                    // verbatim, so trailing padding has to be gone before the value reaches a
+                    // column. getValue() never returns null (it folds null to ""), so the
+                    // default is only there to satisfy the poly-null signature.
+                    String val = tri(row.getValue(aColumnIndex), "");
+                    aDataColumn.addElement(val);
+                    break;
                 }
             }
         }

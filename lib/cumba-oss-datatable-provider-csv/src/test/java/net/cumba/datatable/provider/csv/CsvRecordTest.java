@@ -3,10 +3,16 @@ package net.cumba.datatable.provider.csv;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashSet;
+import java.util.Set;
+import net.cumba.datatable.values.MissingValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullSource;
@@ -209,29 +215,112 @@ class CsvRecordTest
     }
 
 
-    /** K7: only an unquoted "." is the SAS missing. */
+    /**
+     * K7 / K7b: only an UNQUOTED sentinel -- {@code .}, {@code ._}, {@code .A}..{@code .Z} -- is a
+     * SAS missing, each with its own identity; a quoted one, or any other text, is no missing.
+     */
     @Test
-    void testIsUnquotedDot()
+    void testGetUnquotedMissing()
     {
-        CsvRecord quoted = new CsvRecord(new String[]
+        CsvRecord rec = new CsvRecord(new String[]
         {
-                ".", ".", "x", " .", ""
+                ".", ".", ".A", "._", ".Z", ".A", "x", " .", "", ".a", ".AB", "..", null
         }, new boolean[]
         {
-                true, false, false, false, false
+                true, false, false, false, false, true, false, false, false, false, false, false,
+                false
         });
-        assertFalse(quoted.isUnquotedDot(0));
-        assertTrue(quoted.isUnquotedDot(1));
-        assertFalse(quoted.isUnquotedDot(2));
-        assertFalse(quoted.isUnquotedDot(3));
-        assertFalse(quoted.isUnquotedDot(4));
+        assertNull(rec.getUnquotedMissing(0), "quoted '.'");
+        assertSame(MissingValue.MIS, rec.getUnquotedMissing(1));
+        assertSame(MissingValue.MIS_A, rec.getUnquotedMissing(2));
+        assertSame(MissingValue.MIS__, rec.getUnquotedMissing(3));
+        assertSame(MissingValue.MIS_Z, rec.getUnquotedMissing(4));
+        assertNull(rec.getUnquotedMissing(5), "quoted '.A'");
+        for (int i = 6; i < rec.getColumnCount(); i++)
+        {
+            assertNull(rec.getUnquotedMissing(i), "not a sentinel: column " + i);
+        }
 
         CsvRecord plain = new CsvRecord(new String[]
         {
-                "."
+                "._"
         });
-        assertTrue(plain.isUnquotedDot(0), "a record with no quote flags has no quoted dot");
-        assertThrows(IndexOutOfBoundsException.class, () -> plain.isUnquotedDot(1));
+        assertSame(MissingValue.MIS__, plain.getUnquotedMissing(0),
+                "a record with no quote flags has no quoted cell");
+        assertThrows(IndexOutOfBoundsException.class, () -> plain.getUnquotedMissing(1));
+    }
+
+
+    /** Every one of the 28 sentinels maps to the MissingValue whose display string it is. */
+    @Test
+    void testEverySentinelMapsToItsOwnMissingValue()
+    {
+        String[] sentinels = new String[28];
+        sentinels[0] = ".";
+        sentinels[1] = "._";
+        for (char c = 'A'; c <= 'Z'; c++)
+        {
+            sentinels[2 + c - 'A'] = "." + c;
+        }
+        CsvRecord rec = new CsvRecord(sentinels);
+        Set<MissingValue> seen = new HashSet<>();
+        for (int i = 0; i < sentinels.length; i++)
+        {
+            assertTrue(CsvRecord.isMissingSentinel(sentinels[i]), sentinels[i]);
+            MissingValue mv = rec.getUnquotedMissing(i);
+            assertNotNull(mv, sentinels[i]);
+            assertEquals(sentinels[i], mv.toString(), "identity of " + sentinels[i]);
+            seen.add(mv);
+        }
+        assertEquals(28, seen.size());
+        for (String s : new String[]
+        {
+                null, "", "a", ".a", ".z", ".AB", "..", ".@", ".[", ".^", ".`", "A.", "_"
+        })
+        {
+            assertFalse(CsvRecord.isMissingSentinel(s), String.valueOf(s));
+        }
+    }
+
+
+    @Test
+    void testIsQuoted()
+    {
+        CsvRecord rec = new CsvRecord(new String[]
+        {
+                "a", "b"
+        }, new boolean[]
+        {
+                false, true
+        });
+        assertFalse(rec.isQuoted(0));
+        assertTrue(rec.isQuoted(1));
+        assertFalse(new CsvRecord(new String[]
+        {
+                "a"
+        }).isQuoted(0));
+        IndexOutOfBoundsException hi = assertThrows(IndexOutOfBoundsException.class,
+                () -> rec.isQuoted(2));
+        assertEquals(IndexOutOfBoundsException.class, hi.getClass());
+        assertThrows(IndexOutOfBoundsException.class, () -> rec.isQuoted(-1));
+    }
+
+
+    /** K7b: a quoted special is text for type inference; an unquoted one is a missing. */
+    @Test
+    void testIsDoubleOrMissingSpecials()
+    {
+        CsvRecord rec = new CsvRecord(new String[]
+        {
+                ".A", ".A", "._", ".a"
+        }, new boolean[]
+        {
+                true, false, false, false
+        });
+        assertFalse(rec.isDoubleOrMissing(0));
+        assertTrue(rec.isDoubleOrMissing(1));
+        assertTrue(rec.isDoubleOrMissing(2));
+        assertFalse(rec.isDoubleOrMissing(3));
     }
 
 
@@ -240,7 +329,7 @@ class CsvRecordTest
      * past its end or silently ignore cells, so every constructor refuses it loudly.
      */
     @Test
-    void testQuotedDotsOfAnotherLengthIsRefused()
+    void testQuotedFlagsOfAnotherLengthIsRefused()
     {
         String[] two =
         {
@@ -257,26 +346,28 @@ class CsvRecordTest
                 shorter.getMessage());
         assertThrows(IllegalArgumentException.class, () -> new CsvRecord(two, new boolean[3]));
         assertThrows(IllegalArgumentException.class,
-                () -> CsvRecord.builder().values(two).quotedDots(new boolean[0]).build());
+                () -> CsvRecord.builder().values(two).quoted(new boolean[0]).build());
     }
 
 
     /** Without quote flags (or with flags of the right length) every constructor accepts. */
     @Test
-    void testQuotedDotsAreOptionalAndLengthMatched()
+    void testQuotedFlagsAreOptionalAndLengthMatched()
     {
         String[] two =
         {
                 ".", "."
         };
-        assertTrue(new CsvRecord(two, null).isUnquotedDot(1));
-        assertTrue(CsvRecord.builder().values(two).build().isUnquotedDot(0));
-        CsvRecord built = CsvRecord.builder().values(two).quotedDots(new boolean[]
+        assertSame(MissingValue.MIS, new CsvRecord(two, null).getUnquotedMissing(1));
+        assertSame(MissingValue.MIS, CsvRecord.builder().values(two).build().getUnquotedMissing(0));
+        boolean[] flags =
         {
                 false, true
-        }).build();
-        assertTrue(built.isUnquotedDot(0));
-        assertFalse(built.isUnquotedDot(1));
+        };
+        CsvRecord built = CsvRecord.builder().values(two).quoted(flags).build();
+        flags[0] = true;
+        assertSame(MissingValue.MIS, built.getUnquotedMissing(0), "the flags are copied");
+        assertNull(built.getUnquotedMissing(1));
         assertThrows(NullPointerException.class, () -> CsvRecord.builder().build());
     }
 
