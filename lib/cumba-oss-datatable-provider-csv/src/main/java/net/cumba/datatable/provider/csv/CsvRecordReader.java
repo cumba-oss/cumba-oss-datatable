@@ -36,6 +36,9 @@ final class CsvRecordReader
     /** The {@code keepQuotes} twin, created on the first record that needs it. */
     private @Nullable CsvParser quoteKeeper;
 
+    /** How many records went through the twin -- the cost this class promises to confine. */
+    private int reReads;
+
     CsvRecordReader(CsvParserSettings aSettings)
     {
         settings = aSettings;
@@ -72,7 +75,20 @@ final class CsvRecordReader
         {
             return new CsvRecord(row);
         }
+        reReads++;
         return new CsvRecord(row, quotedDots(row, quoteKeeper().parseLine(raw), quote));
+    }
+
+
+    /**
+     * Returns how many records so far were read a second time through the {@code keepQuotes} twin:
+     * only those holding a {@code "."} cell whose raw text contains the quote character.
+     *
+     * @return the number of re-read records.
+     */
+    int reReadCount()
+    {
+        return reReads;
     }
 
 

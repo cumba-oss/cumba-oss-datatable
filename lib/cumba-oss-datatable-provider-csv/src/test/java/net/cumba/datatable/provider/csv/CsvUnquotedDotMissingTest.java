@@ -194,6 +194,25 @@ class CsvUnquotedDotMissingTest
     }
 
 
+    /**
+     * Records separated by a lone {@code \r}, with a {@code \n} inside an unquoted value: the
+     * re-read must split the record with the separator the main parse DETECTED, or it ends the
+     * record at the {@code \n} and never reaches the quoted dot.
+     */
+    @Test
+    void detectedCarriageReturnSeparatorWithANewlineInsideAValue() throws Exception
+    {
+        URI uri = write("A,B\rx\ny,\".\"\rz,.\r");
+
+        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
+
+        assertEquals(2, table.getRowCount());
+        assertEquals("x\ny", table.getValue(0, 0));
+        assertEquals(".", table.getValue(0, 1));
+        assertSame(MissingValue.MIS, table.getValue(1, 1));
+    }
+
+
     /** The configured quote character is the one that decides, not a hard-coded {@code "}. */
     @Test
     void configuredQuoteCharacterDecides() throws Exception
