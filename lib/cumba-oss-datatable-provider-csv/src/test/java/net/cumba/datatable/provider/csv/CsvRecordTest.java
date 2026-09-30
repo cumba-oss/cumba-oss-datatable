@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Modifier;
 import java.util.HashSet;
 import java.util.Set;
 import net.cumba.datatable.values.MissingValue;
@@ -303,6 +304,21 @@ class CsvRecordTest
                 () -> rec.isQuoted(2));
         assertEquals(IndexOutOfBoundsException.class, hi.getClass());
         assertThrows(IndexOutOfBoundsException.class, () -> rec.isQuoted(-1));
+    }
+
+
+    /**
+     * {@code isQuoted} is exact only for sentinel cells and inside the typing sample, so it is no
+     * general "was quoted" answer and stays package-private -- read only by this package's typing
+     * code.
+     */
+    @Test
+    void isQuotedIsNotPublicApi() throws NoSuchMethodException
+    {
+        int mods = CsvRecord.class.getDeclaredMethod("isQuoted", int.class).getModifiers();
+        assertFalse(Modifier.isPublic(mods), "isQuoted must not be public");
+        assertFalse(Modifier.isProtected(mods), "isQuoted must not be protected");
+        assertFalse(Modifier.isPrivate(mods), "the typing code reads it");
     }
 
 

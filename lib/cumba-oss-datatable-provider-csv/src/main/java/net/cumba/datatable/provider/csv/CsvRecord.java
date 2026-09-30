@@ -237,7 +237,9 @@ public class CsvRecord
 
     /**
      * Test if the cell was enclosed in quotation marks -- exact for every missing-sentinel cell,
-     * and for every cell of a type-guessing sample record (see {@link #quoted}).
+     * and for every cell of a type-guessing sample record (see {@link #quoted}). Package-private
+     * for that reason: past the sample a quoted non-sentinel cell answers {@code false}, so the
+     * flag is no general "was quoted" answer and is read only by this package's typing code.
      *
      * @param aColumn
      *            the (0-based) index of the column to test.
@@ -246,7 +248,7 @@ public class CsvRecord
      *             in case the given column index is outside of the valid bounds<br/>
      *             ( <code>0 &lt;= aColumn &lt; getColumnCount()</code>)
      */
-    public boolean isQuoted(int aColumn) throws IndexOutOfBoundsException
+    boolean isQuoted(int aColumn) throws IndexOutOfBoundsException
     {
         if (aColumn < 0 || aColumn >= values.length)
         {
