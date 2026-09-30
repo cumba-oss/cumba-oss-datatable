@@ -235,6 +235,52 @@ class CsvRecordTest
     }
 
 
+    /**
+     * The quote flags run parallel to the values: an array of any other length would either be read
+     * past its end or silently ignore cells, so every constructor refuses it loudly.
+     */
+    @Test
+    void testQuotedDotsOfAnotherLengthIsRefused()
+    {
+        String[] two =
+        {
+                ".", "."
+        };
+        IllegalArgumentException shorter = assertThrows(IllegalArgumentException.class,
+                () -> new CsvRecord(two, new boolean[]
+                {
+                        true
+                }));
+        assertTrue(
+                String.valueOf(shorter.getMessage()).contains("1")
+                        && String.valueOf(shorter.getMessage()).contains("2"),
+                shorter.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> new CsvRecord(two, new boolean[3]));
+        assertThrows(IllegalArgumentException.class,
+                () -> CsvRecord.builder().values(two).quotedDots(new boolean[0]).build());
+    }
+
+
+    /** Without quote flags (or with flags of the right length) every constructor accepts. */
+    @Test
+    void testQuotedDotsAreOptionalAndLengthMatched()
+    {
+        String[] two =
+        {
+                ".", "."
+        };
+        assertTrue(new CsvRecord(two, null).isUnquotedDot(1));
+        assertTrue(CsvRecord.builder().values(two).build().isUnquotedDot(0));
+        CsvRecord built = CsvRecord.builder().values(two).quotedDots(new boolean[]
+        {
+                false, true
+        }).build();
+        assertTrue(built.isUnquotedDot(0));
+        assertFalse(built.isUnquotedDot(1));
+        assertThrows(NullPointerException.class, () -> CsvRecord.builder().build());
+    }
+
+
     @Test
     void testIsDoubleOrMissingString()
     {

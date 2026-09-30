@@ -17,9 +17,13 @@ import org.jspecify.annotations.Nullable;
  * unescaped quote) the kept-quote value is not the plain value plus two quotes, so every such cell
  * would silently read differently than it does today. The values therefore still come from the
  * ordinary parse, unchanged. Only a record that holds a {@code "."} cell AND whose raw text
- * contains the quote character at all is read a second time -- its raw text
- * ({@code ParsingContext.currentParsedContent()}) goes through a {@code keepQuotes} twin of the
- * same parser, where a quoted field is exactly one that starts with the quote character. Every
+ * ({@code ParsingContext.currentParsedContent()}) has the quote character IMMEDIATELY followed by a
+ * dot is read a second time -- through a {@code keepQuotes} twin of the same parser, where a quoted
+ * field is exactly one that starts with the quote character. A quoted {@code "."} cannot exist
+ * without that pair: its opening quote touches the dot (an unterminated {@code ".} at the end of
+ * the input included), so a quote anywhere else -- the ordinary quoted string columns of an export
+ * -- costs no second parse. The one exception is a parser that ignores leading whitespace inside
+ * quotes, where {@code " ."} is a quoted {@code "."} too; there any quote gates the re-read. Every
  * other record costs one scan of its values for a {@code "."}.
  */
 final class CsvRecordReader
@@ -33,6 +37,12 @@ final class CsvRecordReader
 
     private final char quote;
 
+    /** The quote character followed by a dot: the opening of every quoted {@code "."}. */
+    private final String quoteDot;
+
+    /** {@code true} when {@code " ."} reads as {@code "."}, so the quote need not touch the dot. */
+    private final boolean anyQuoteGates;
+
     /** The {@code keepQuotes} twin, created on the first record that needs it. */
     private @Nullable CsvParser quoteKeeper;
 
@@ -44,6 +54,8 @@ final class CsvRecordReader
         settings = aSettings;
         parser = new CsvParser(aSettings);
         quote = aSettings.getFormat().getQuote();
+        quoteDot = quote + DOT;
+        anyQuoteGates = aSettings.getIgnoreLeadingWhitespacesInQuotes();
     }
 
 
@@ -71,7 +83,7 @@ final class CsvRecordReader
             return new CsvRecord(row);
         }
         String raw = Objects.requireNonNullElse(parser.getContext().currentParsedContent(), "");
-        if (raw.indexOf(quote) < 0)
+        if (anyQuoteGates ? raw.indexOf(quote) < 0 : !raw.contains(quoteDot))
         {
             return new CsvRecord(row);
         }
@@ -82,7 +94,8 @@ final class CsvRecordReader
 
     /**
      * Returns how many records so far were read a second time through the {@code keepQuotes} twin:
-     * only those holding a {@code "."} cell whose raw text contains the quote character.
+     * only those holding a {@code "."} cell whose raw text has the quote character immediately
+     * followed by a dot.
      *
      * @return the number of re-read records.
      */

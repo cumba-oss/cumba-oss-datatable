@@ -1,10 +1,9 @@
 package net.cumba.datatable.provider.csv;
 
 import java.text.MessageFormat;
+import java.util.Objects;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.NonNull;
 import net.cumba.datatable.ExMsgs;
 import net.cumba.datatable.help.CDT;
 import org.jspecify.annotations.Nullable;
@@ -12,22 +11,20 @@ import org.jspecify.annotations.Nullable;
 /**
  * A simple wrapper structure for a single record of a CSV file.
  */
-@AllArgsConstructor
-@Builder
 public class CsvRecord
 {
 
     /**
      * The column values of this record.
      */
-    @NonNull
     private final String[] values;
 
     /**
      * Per column: {@code true} where the cell is exactly {@code "."} AND was enclosed in quotation
      * marks in the file. {@code null} when no cell of the record is a quoted {@code "."} -- the
-     * common case, which costs nothing. Owner ruling K7 (2026-09-30): <i>"missing only if it is not
-     * in quotation marks"</i> -- an unquoted {@code .} is the SAS missing, a quoted one is text.
+     * common case, which costs nothing. Otherwise exactly as long as {@link #values}. Owner ruling
+     * K7 (2026-09-30): <i>"missing only if it is not in quotation marks"</i> -- an unquoted
+     * {@code .} is the SAS missing, a quoted one is text.
      */
     private final boolean @Nullable [] quotedDots;
 
@@ -40,6 +37,33 @@ public class CsvRecord
     public CsvRecord(String[] aValues)
     {
         this(aValues, null);
+    }
+
+
+    /**
+     * A record with per-column quote flags.
+     *
+     * @param values
+     *            the column values; must not be {@code null}.
+     * @param quotedDots
+     *            per column, {@code true} where the cell is a quoted {@code "."}; {@code null} when
+     *            none is. When given, it must be exactly as long as {@code values}; it is copied.
+     * @throws NullPointerException
+     *             if {@code values} is {@code null}.
+     * @throws IllegalArgumentException
+     *             if {@code quotedDots} is given with a length other than {@code values}'.
+     */
+    @Builder
+    public CsvRecord(String[] values, boolean @Nullable [] quotedDots)
+    {
+        this.values = Objects.requireNonNull(values, "values");
+        if (quotedDots != null && quotedDots.length != values.length)
+        {
+            throw new IllegalArgumentException(
+                    MessageFormat.format("{0} quote flags for a record of {1} values",
+                            quotedDots.length, values.length));
+        }
+        this.quotedDots = quotedDots == null ? null : quotedDots.clone();
     }
 
 
