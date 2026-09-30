@@ -193,6 +193,48 @@ class CsvRecordTest
     }
 
 
+    /** K7: a quoted "." is text -- neither a double nor a missing. */
+    @Test
+    void testIsDoubleOrMissingQuotedDotIsText()
+    {
+        CsvRecord csvRec = new CsvRecord(new String[]
+        {
+                ".", "."
+        }, new boolean[]
+        {
+                true, false
+        });
+        assertFalse(csvRec.isDoubleOrMissing(0));
+        assertTrue(csvRec.isDoubleOrMissing(1));
+    }
+
+
+    /** K7: only an unquoted "." is the SAS missing. */
+    @Test
+    void testIsUnquotedDot()
+    {
+        CsvRecord quoted = new CsvRecord(new String[]
+        {
+                ".", ".", "x", " .", ""
+        }, new boolean[]
+        {
+                true, false, false, false, false
+        });
+        assertFalse(quoted.isUnquotedDot(0));
+        assertTrue(quoted.isUnquotedDot(1));
+        assertFalse(quoted.isUnquotedDot(2));
+        assertFalse(quoted.isUnquotedDot(3));
+        assertFalse(quoted.isUnquotedDot(4));
+
+        CsvRecord plain = new CsvRecord(new String[]
+        {
+                "."
+        });
+        assertTrue(plain.isUnquotedDot(0), "a record with no quote flags has no quoted dot");
+        assertThrows(IndexOutOfBoundsException.class, () -> plain.isUnquotedDot(1));
+    }
+
+
     @Test
     void testIsDoubleOrMissingString()
     {

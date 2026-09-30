@@ -1,6 +1,5 @@
 package net.cumba.datatable.provider.csv;
 
-import com.univocity.parsers.csv.CsvParser;
 import com.univocity.parsers.csv.CsvParserSettings;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
@@ -94,25 +93,24 @@ public class CsvTableProvider extends AbstractDataTableProvider
         {
             CsvParserSettings ps = buildParserSettings(bin);
 
-            CsvParser parser = new CsvParser(ps);
+            CsvRecordReader parser = new CsvRecordReader(ps);
 
             try
             {
                 parser.beginParsing(new InputStreamReader(bin, getCharset()));
 
-                String[] firstRow = parser.parseNext();
-                if (firstRow == null)
+                CsvRecord headRow = parser.next();
+                if (headRow == null)
                 {
                     throw new IOException("CSV file is empty (no header row).");
                 }
-                CsvRecord headRow = new CsvRecord(firstRow);
 
                 List<CsvRecord> headRowBlock = new ArrayList<>(
                         Math.min(guessingRowCount, DEFAULT_GUESS_ROW_COUNT));
-                String[] row;
-                while ((row = parser.parseNext()) != null)
+                CsvRecord row;
+                while ((row = parser.next()) != null)
                 {
-                    headRowBlock.add(new CsvRecord(row));
+                    headRowBlock.add(row);
                     if (headRowBlock.size() >= guessingRowCount)
                     {
                         break;
@@ -153,7 +151,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
         {
             CsvParserSettings ps = buildParserSettings(bin);
 
-            CsvParser parser = new CsvParser(ps);
+            CsvRecordReader parser = new CsvRecordReader(ps);
 
             CsvTableDataParser tblParser;
             try
@@ -161,22 +159,21 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 parser.beginParsing(new InputStreamReader(bin, getCharset()));
 
                 // head row contains column names
-                String[] firstRow = parser.parseNext();
-                if (firstRow == null)
+                CsvRecord headRow = parser.next();
+                if (headRow == null)
                 {
                     throw new IOException("CSV file is empty (no header row).");
                 }
-                CsvRecord headRow = new CsvRecord(firstRow);
 
                 // the first #guessingRowCount# rows are used to determine column types
 
                 List<CsvRecord> headRowBlock = new ArrayList<>(
                         Math.min(guessingRowCount, DEFAULT_GUESS_ROW_COUNT));
 
-                String[] row;
-                while ((row = parser.parseNext()) != null)
+                CsvRecord row;
+                while ((row = parser.next()) != null)
                 {
-                    headRowBlock.add(new CsvRecord(row));
+                    headRowBlock.add(row);
                     if (headRowBlock.size() >= guessingRowCount)
                     {
                         break;
@@ -208,10 +205,9 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     tblParser.addDataRow(csvRow);
                 }
 
-                while ((row = parser.parseNext()) != null)
+                while ((row = parser.next()) != null)
                 {
-                    CsvRecord csvRow = new CsvRecord(row);
-                    tblParser.addDataRow(csvRow);
+                    tblParser.addDataRow(row);
                 }
             }
             finally
@@ -376,7 +372,11 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     // evidence. Only a cell that is neither absent, blank nor "." counts as real
                     // numeric evidence; such a column stays at the STRING default, exactly like a
                     // column no sampled row reaches at all.
-                    boolean blankOrDot = CDT.isBlankOrNull(cell) || ".".equals(cell);
+                    //
+                    // ⚠ K7 (owner, 2026-09-30): only an UNQUOTED "." is that missing. A quoted "."
+                    // is the text "." -- evidence of TEXT, which isDoubleOrMissing rejects, so a
+                    // column holding one types STRING and keeps it (the only way to keep its text).
+                    boolean blankOrDot = CDT.isBlankOrNull(cell) || row.isUnquotedDot(i);
                     if (!blankOrDot)
                     {
                         sawNumericEvidence = true;
@@ -524,8 +524,18 @@ public class CsvTableProvider extends AbstractDataTableProvider
                         // verbatim, so trailing padding has to be gone before the value reaches a
                         // column. getValue() never returns null (it folds null to ""), so the
                         // default is only there to satisfy the poly-null signature.
-                        String val = tri(row.getValue(aColumnIndex), "");
-                        aDataColumn.addElement(val);
+                        //
+                        // K7 (owner, 2026-09-30): an unquoted "." is the SAS missing in every
+                        // column type; a quoted "." stays the one-character text.
+                        if (row.isUnquotedDot(aColumnIndex))
+                        {
+                            aDataColumn.addElement(MissingValue.MIS);
+                        }
+                        else
+                        {
+                            String val = tri(row.getValue(aColumnIndex), "");
+                            aDataColumn.addElement(val);
+                        }
                         break;
                     }
                 }
