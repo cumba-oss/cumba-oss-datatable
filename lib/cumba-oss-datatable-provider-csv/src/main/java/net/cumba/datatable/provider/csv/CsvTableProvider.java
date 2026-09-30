@@ -108,7 +108,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 List<CsvRecord> headRowBlock = new ArrayList<>(
                         Math.min(guessingRowCount, DEFAULT_GUESS_ROW_COUNT));
                 CsvRecord row;
-                while ((row = parser.next()) != null)
+                // K7c: every quoted cell of the sample is flagged -- any quoted value is text.
+                while ((row = parser.nextWithQuoteFlags()) != null)
                 {
                     headRowBlock.add(row);
                     if (headRowBlock.size() >= guessingRowCount)
@@ -171,7 +172,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
                         Math.min(guessingRowCount, DEFAULT_GUESS_ROW_COUNT));
 
                 CsvRecord row;
-                while ((row = parser.next()) != null)
+                // K7c: every quoted cell of the sample is flagged -- any quoted value is text.
+                while ((row = parser.nextWithQuoteFlags()) != null)
                 {
                     headRowBlock.add(row);
                     if (headRowBlock.size() >= guessingRowCount)
@@ -327,7 +329,10 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
     /**
      * Determine the column type.<br/>
-     * For now we only support {@link DataValueType#DOUBLE} and {@link DataValueType#STRING}.
+     * For now we only support {@link DataValueType#DOUBLE} and {@link DataValueType#STRING}. A
+     * column holding a quoted cell anywhere in the block is {@link DataValueType#STRING} (owner
+     * ruling K7c, 2026-09-30: <i>"yes any quoted value is always a string."</i>); the block's
+     * records must therefore come from {@link CsvRecordReader#nextWithQuoteFlags()}.
      *
      * @param aRowBlock
      *            the row block used to determine the column type of the columns.
@@ -364,6 +369,15 @@ public class CsvTableProvider extends AbstractDataTableProvider
                         // thousands of rows were.
                         continue;
                     }
+                    if (row.isQuoted(i))
+                    {
+                        // ⚠ K7c (owner, 2026-09-30): "yes any quoted value is always a string." A
+                        // quoted cell -- a quoted number or a quoted empty value included -- is
+                        // evidence of TEXT, so the column is character and every cell keeps its
+                        // text. Unquoted cells keep the inference below.
+                        possiblyDouble = false;
+                        break;
+                    }
                     String cell = row.getValue(i);
                     // ⚠⚠ A blank cell or a "." is evidence of NOTHING, exactly like an absent
                     // (ragged-row) cell above — isDoubleOrMissing answers true for all three, so
@@ -374,9 +388,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     // column no sampled row reaches at all.
                     //
                     // ⚠ K7 / K7b (owner, 2026-09-30): only an UNQUOTED missing sentinel -- ".",
-                    // "._" or ".A".."Z" -- is that missing. A quoted one is TEXT, which
-                    // isDoubleOrMissing rejects, so a column holding one types STRING and keeps it
-                    // (the only way to keep its text).
+                    // "._" or ".A".."Z" -- is that missing (a quoted one never gets here: K7c
+                    // above).
                     boolean blankOrDot = CDT.isBlankOrNull(cell)
                             || row.getUnquotedMissing(i) != null;
                     if (!blankOrDot)

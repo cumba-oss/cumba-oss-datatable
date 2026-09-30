@@ -82,6 +82,10 @@ class CsvRecordReaderFuzzTest
 
         int unquotedSpecials;
 
+        int sampledQuotedCells;
+
+        int sampledBareCells;
+
         int multiLineQuotedDotRecords;
 
         int unterminated;
@@ -109,6 +113,10 @@ class CsvRecordReaderFuzzTest
         assertTrue(tally.quotedSpecials > 1000, "quoted specials checked: " + tally.quotedSpecials);
         assertTrue(tally.unquotedSpecials > 1000,
                 "unquoted specials checked: " + tally.unquotedSpecials);
+        assertTrue(tally.sampledQuotedCells > 5000,
+                "quoted cells checked in a sample: " + tally.sampledQuotedCells);
+        assertTrue(tally.sampledBareCells > 5000,
+                "bare cells checked in a sample: " + tally.sampledBareCells);
         assertTrue(tally.multiLineQuotedDotRecords > 100,
                 "multi-line records with a quoted dot: " + tally.multiLineQuotedDotRecords);
         assertTrue(tally.unterminated > 20, "unterminated \". at EOF: " + tally.unterminated);
@@ -197,12 +205,16 @@ class CsvRecordReaderFuzzTest
         {
             aTally.unterminated++;
         }
-        check(ps, csv, expected, plain, sep, aTally);
+        check(ps, csv, expected, plain, sep, aRnd.nextInt(rows + 1), aTally);
     }
 
 
+    /**
+     * Reads the first {@code aSample} records as the type-guessing sample (every quoted cell
+     * flagged, K7c) and the rest as the records past it (sentinels only).
+     */
     private static void check(CsvParserSettings aSettings, String aCsv, List<Cell[]> aExpected,
-            List<String[]> aPlain, String aSep, Tally aTally)
+            List<String[]> aPlain, String aSep, int aSample, Tally aTally)
     {
         CsvRecordReader reader = new CsvRecordReader(aSettings);
         reader.beginParsing(new StringReader(aCsv));
@@ -211,7 +223,9 @@ class CsvRecordReaderFuzzTest
             for (int i = 0; i < aExpected.size(); i++)
             {
                 int r = i;
-                CsvRecord rec = Objects.requireNonNull(reader.next(),
+                boolean sampled = r < aSample;
+                CsvRecord rec = Objects.requireNonNull(
+                        sampled ? reader.nextWithQuoteFlags() : reader.next(),
                         () -> "record " + r + " missing in " + show(aCsv));
                 assertArrayEquals(aPlain.get(r), rec.getValues(),
                         () -> "values differ from the plain parse in " + show(aCsv));
@@ -223,6 +237,20 @@ class CsvRecordReaderFuzzTest
                     multiLine |= row[c].quoted() && row[c].text().contains(aSep);
                     int col = c;
                     boolean wantQuoted = row[c].quoted();
+                    if (sampled)
+                    {
+                        assertEquals(wantQuoted, rec.isQuoted(c),
+                                () -> "sample record " + r + " col " + col + " written "
+                                        + (wantQuoted ? "quoted" : "bare") + " in " + show(aCsv));
+                        if (wantQuoted)
+                        {
+                            aTally.sampledQuotedCells++;
+                        }
+                        else
+                        {
+                            aTally.sampledBareCells++;
+                        }
+                    }
                     boolean sentinel = SENTINEL.matcher(row[c].value()).matches();
                     @Nullable
                     MissingValue want = sentinel && !wantQuoted

@@ -20,7 +20,8 @@ import org.junit.jupiter.api.io.TempDir;
  * Owner ruling K7 (2026-09-30): <i>"missing only if it is not in quotation marks."</i> An
  * <b>unquoted</b> {@code .} in a CSV cell is the SAS numeric missing, {@link MissingValue#MIS}, in
  * every column type; a <b>quoted</b> {@code "."} is the one-character text {@code "."} and counts
- * as evidence of text for type inference. Blank cells and the rest of type inference are unchanged.
+ * as evidence of text for type inference. Blank cells are unchanged. (Every other quoted value is
+ * text evidence too since K7c -- {@link CsvQuotedValueIsStringTest}.)
  */
 class CsvUnquotedDotMissingTest
 {

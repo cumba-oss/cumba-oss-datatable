@@ -27,6 +27,12 @@ import org.jspecify.annotations.Nullable;
  * -- costs no second parse. The one exception is a parser that ignores leading whitespace inside
  * quotes, where {@code " ."} is a quoted {@code "."} too; there any quote gates the re-read. Every
  * other record costs one scan of its values for a sentinel.
+ * <p>
+ * The type-guessing sample is read differently ({@link #nextWithQuoteFlags()}): there EVERY quoted
+ * cell must be known, because any quoted value is text evidence (owner ruling K7c, 2026-09-30:
+ * <i>"yes any quoted value is always a string."</i>), so a sample record is re-read whenever its
+ * raw text holds the quote character at all. The sample is bounded (the guess row count), so a
+ * quote-everything export pays the second parse for those rows only.
  */
 final class CsvRecordReader
 {
@@ -68,24 +74,47 @@ final class CsvRecordReader
 
 
     /**
-     * Returns the next record, or {@code null} at the end of the input.
+     * Returns the next record, or {@code null} at the end of the input. Its quote flags are exact
+     * for every missing-sentinel cell -- all a record past the type-guessing sample needs.
      *
      * @return the next record, or {@code null} at the end of the input.
      */
     @Nullable
     CsvRecord next()
     {
+        return read(false);
+    }
+
+
+    /**
+     * Returns the next record with EVERY quoted cell flagged, or {@code null} at the end of the
+     * input -- for the type-guessing sample, where any quoted value is text evidence (owner ruling
+     * K7c, 2026-09-30: <i>"yes any quoted value is always a string."</i>). Such a record is read a
+     * second time whenever its raw text holds the quote character at all.
+     *
+     * @return the next record, or {@code null} at the end of the input.
+     */
+    @Nullable
+    CsvRecord nextWithQuoteFlags()
+    {
+        return read(true);
+    }
+
+
+    private @Nullable CsvRecord read(boolean aEveryQuote)
+    {
         String[] row = parser.parseNext();
         if (row == null)
         {
             return null;
         }
-        if (!containsSentinel(row))
+        if (!aEveryQuote && !containsSentinel(row))
         {
             return new CsvRecord(row);
         }
         String raw = Objects.requireNonNullElse(parser.getContext().currentParsedContent(), "");
-        if (anyQuoteGates ? raw.indexOf(quote) < 0 : !raw.contains(quoteDot))
+        boolean anyQuote = aEveryQuote || anyQuoteGates;
+        if (anyQuote ? raw.indexOf(quote) < 0 : !raw.contains(quoteDot))
         {
             return new CsvRecord(row);
         }
@@ -96,8 +125,9 @@ final class CsvRecordReader
 
     /**
      * Returns how many records so far were read a second time through the {@code keepQuotes} twin:
-     * only those holding a missing-sentinel cell whose raw text has the quote character immediately
-     * followed by a dot.
+     * a sample record ({@link #nextWithQuoteFlags()}) whose raw text holds the quote character, and
+     * a later record holding a missing-sentinel cell whose raw text has the quote character
+     * immediately followed by a dot.
      *
      * @return the number of re-read records.
      */

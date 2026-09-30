@@ -24,11 +24,13 @@ public class CsvRecord
      * Per column: {@code true} where the cell was enclosed in quotation marks in the file;
      * {@code null} when none was (or none that matters -- see below). Otherwise exactly as long as
      * {@link #values}. {@link CsvRecordReader} guarantees the flag for every missing-sentinel cell
-     * ({@code .}, {@code ._}, {@code .A}..{@code .Z}); other cells may carry {@code false} although
-     * quoted, which no reading of a non-sentinel value depends on. Owner rulings K7 (2026-09-30):
-     * <i>"missing only if it is not in quotation marks"</i> and <i>"Agree to special missings as
-     * long as they are not in quotation marks"</i> -- an unquoted sentinel is the SAS missing, a
-     * quoted one is text.
+     * ({@code .}, {@code ._}, {@code .A}..{@code .Z}) of every record, and for EVERY cell of a
+     * type-guessing sample record ({@link CsvRecordReader#nextWithQuoteFlags()}); a non-sentinel
+     * cell of a later record may carry {@code false} although quoted, which no reading past the
+     * sample depends on. Owner rulings 2026-09-30: K7 <i>"missing only if it is not in quotation
+     * marks"</i> and K7b <i>"Agree to special missings as long as they are not in quotation
+     * marks"</i> -- an unquoted sentinel is the SAS missing, a quoted one is text; K7c <i>"yes any
+     * quoted value is always a string"</i> -- a quoted cell in the sample types its column STRING.
      */
     private final boolean @Nullable [] quoted;
 
@@ -234,8 +236,8 @@ public class CsvRecord
 
 
     /**
-     * Test if the cell was enclosed in quotation marks -- exact for every missing-sentinel cell
-     * (see {@link #quoted}).
+     * Test if the cell was enclosed in quotation marks -- exact for every missing-sentinel cell,
+     * and for every cell of a type-guessing sample record (see {@link #quoted}).
      *
      * @param aColumn
      *            the (0-based) index of the column to test.

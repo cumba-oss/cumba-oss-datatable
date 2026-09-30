@@ -112,6 +112,49 @@ class CsvRecordReaderTest
     }
 
 
+    /**
+     * K7c: a record of the type-guessing sample has EVERY quoted cell flagged -- a quoted empty
+     * value included -- and is re-read only when its raw text holds the quote character at all. A
+     * record past the sample keeps the cheaper sentinel-only reading.
+     */
+    @Test
+    void sampleRecordsFlagEveryQuotedCell()
+    {
+        CsvRecordReader r = reader("\"a\",b,\"\"\nc,d,e\n  \"1\"  ,x\"y,.\n\"1\",\"2\",.\n");
+        try
+        {
+            CsvRecord quotes = Objects.requireNonNull(r.nextWithQuoteFlags());
+            assertEquals(1, r.reReadCount());
+            assertTrue(quotes.isQuoted(0));
+            assertFalse(quotes.isQuoted(1));
+            assertTrue(quotes.isQuoted(2), "a quoted empty value is quoted");
+
+            CsvRecord none = Objects.requireNonNull(r.nextWithQuoteFlags());
+            assertEquals(1, r.reReadCount(), "no quote character: nothing to re-read");
+            assertFalse(none.isQuoted(0));
+            assertFalse(none.isQuoted(1));
+            assertFalse(none.isQuoted(2));
+
+            CsvRecord padded = Objects.requireNonNull(r.nextWithQuoteFlags());
+            assertEquals(2, r.reReadCount());
+            assertTrue(padded.isQuoted(0), "whitespace outside the quotes");
+            assertFalse(padded.isQuoted(1), "a quote inside an unquoted value");
+            assertEquals("x\"y", padded.getValue(1));
+            assertSame(MissingValue.MIS, padded.getUnquotedMissing(2));
+
+            CsvRecord past = Objects.requireNonNull(r.next());
+            assertEquals(2, r.reReadCount(), "past the sample: no quote touches the dot");
+            assertFalse(past.isQuoted(0), "past the sample only sentinel cells are exact");
+            assertSame(MissingValue.MIS, past.getUnquotedMissing(2));
+            assertNull(r.nextWithQuoteFlags());
+        }
+        finally
+        {
+            r.stopParsing();
+        }
+    }
+
+
     private static CsvRecordReader reader(String aCsv)
     {
         CsvParserSettings ps = new CsvParserSettings();

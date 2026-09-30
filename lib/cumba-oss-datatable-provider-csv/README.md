@@ -38,5 +38,11 @@ Read-only CSV provider for the Cumba OSS data-table SPI. Built on
   `._` / `.A`..`.Z` its own special missing (`MIS__`, `MIS_A`..`MIS_Z`), in
   every column type; such a cell is no type evidence. A **quoted** one is
   text. Lower-case `.a`, `.AB` or `..` are ordinary text.
+- **Any quoted value is a string** (owner ruling K7c, 2026-09-30): a column
+  holding a quoted cell anywhere in the type-guessing rows (`guessingRowCount`,
+  default 10 240) -- a quoted number, or a quoted empty `""`, included -- is
+  `STRING` and keeps every cell's text. Unquoted cells keep the usual
+  inference. Past the scanned rows the types are fixed, so a quoted number in
+  a column already typed `DOUBLE` is parsed as that number.
 
 See the root [README](../../README.md) for project-wide context.
