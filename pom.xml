@@ -40,7 +40,7 @@
         <!-- project.basedir requires 3.9.12+ -->
         <maven.version>3.9.12</maven.version>
         <!-- revision should be set externally; this is just a fallback -->
-        <revision>0.5.0-SNAPSHOT</revision>
+        <revision>0.6.0-SNAPSHOT</revision>
 
         <maven.compiler.release>${java.version}</maven.compiler.release>
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -118,8 +118,8 @@
             the internal pin moves, move this one too or the test goes red here only.
         -->
         <dependency.cdisc-rules-engine-cache.tag>v0.17.1</dependency.cdisc-rules-engine-cache.tag>
-        <dependency.cumba-oss-commons.version>0.5.0</dependency.cumba-oss-commons.version>
-        <dependency.cumba-oss-formats.version>0.6.0</dependency.cumba-oss-formats.version>
+        <dependency.cumba-oss-commons.version>0.6.0-SNAPSHOT</dependency.cumba-oss-commons.version>
+        <dependency.cumba-oss-formats.version>0.7.0-SNAPSHOT</dependency.cumba-oss-formats.version>
         <dependency.jackson.version>2.22.2</dependency.jackson.version>
         <dependency.univocity.version>2.9.1</dependency.univocity.version>
         <dependency.excel-streaming-reader.version>5.3.0</dependency.excel-streaming-reader.version>
