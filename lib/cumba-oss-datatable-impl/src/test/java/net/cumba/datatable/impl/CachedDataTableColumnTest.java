@@ -555,9 +555,11 @@ class CachedDataTableColumnTest
      * {@code getDataValue}, so both column-level predicates must say so too:
      * {@code isEmptyOrMissing(row)} agrees with {@code getDataValue(row).isEmptyOrMissing()} and
      * {@code isMissingOrNull(row)} with {@code getDataValue(row).isMissingOrInvalid()}. Checked
-     * over a mixed column (NaN, Float NaN, {@code ""} except in LONG, {@code null}, a present
-     * value) and an all-NaN column, which the default factory may compress to a constant buffer.
-     * Every disagreement is collected, so a red run names each type, row and predicate at once.
+     * over a mixed column (NaN, Float NaN, {@code ""}, {@code null}, a present value) and an
+     * all-NaN column. OSS never compresses a buffer, so the all-NaN column is backed by the same
+     * {@code DataBufferObject} as the mixed one; it is kept for symmetry with the internal twin,
+     * where it compresses to {@code DataBuffer0Bit} and exercises a different buffer. Every
+     * disagreement is collected, so a red run names each type, row and predicate at once.
      */
     @Test
     void isEmptyOrMissing_nanInGeneralPath_agreesWithGetDataValue()
@@ -568,15 +570,9 @@ class CachedDataTableColumnTest
             CachedDataTableColumn mixed = new CachedDataTableColumn(0, type);
             mixed.addElement((Object) Double.NaN);
             mixed.addElement((Object) Float.NaN);
-            if (type != DataValueType.LONG)
-            {
-                // A String in a LONG column is a type mismatch the buffer decodes as MIS_ERROR
-                // (missing to isMissingOrInvalid, not to isMissingOrNull): the out-of-scope
-                // mismatch class of this plan (review L4), not a NaN case.
-                mixed.addElement((Object) "");
-            }
+            mixed.addElement((Object) "");
             mixed.addElement((Object) null);
-            mixed.addElement(presentValueFor(type));
+            mixed.addElement((Object) "x");
             mixed.complete();
             collectDisagreements(type + " mixed", mixed, disagreements);
             for (long row = 0; row < 2; row++)
@@ -597,16 +593,6 @@ class CachedDataTableColumnTest
             collectDisagreements(type + " all-NaN", allNaN, disagreements);
         }
         assertEquals(List.of(), disagreements, "column vs value level disagree");
-    }
-
-
-    private static Object presentValueFor(DataValueType aType)
-    {
-        if (aType == DataValueType.LONG)
-        {
-            return 7L;
-        }
-        return "x";
     }
 
 

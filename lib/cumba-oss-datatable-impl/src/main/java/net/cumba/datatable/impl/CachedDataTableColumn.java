@@ -330,7 +330,7 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
 
     /**
      * A fast path to check whether the cell at the given row carries <b>no usable value</b> — it is
-     * {@code null}, a {@link MissingValue}, or a zero-length {@link String}.
+     * {@code null}, a {@link MissingValue}, a zero-length {@link String}, or a boxed NaN.
      *
      * <p>
      * This is the <em>blankness</em> notion: it is deliberately wider than
@@ -357,15 +357,26 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
      * Type-dispatched so the hot path never allocates:
      * </p>
      * <ul>
-     * <li><b>Non-STRING columns</b> — an empty string is impossible in a double / long / boolean
-     * buffer, so blankness collapses to <em>missing</em> and the answer comes from
+     * <li><b>STRING and OTHER columns</b> — the raw stored object is tested directly (OTHER since
+     * sweep D7). For STRING it is the interned {@code String} the loader put there, so no
+     * {@code IDataValue} is built and {@code getValueAsString()} (which calls {@code toString()})
+     * is never reached.</li>
+     * <li><b>Every other type</b> (DOUBLE, LONG, BOOLEAN; MISSING is answered above) — an empty
+     * string is impossible in a double / long / boolean buffer, so blankness collapses to
+     * <em>missing</em> and the answer comes from
      * {@link net.cumba.datatable.impl.databuffer.IDataBuffer#isMissing(int)}, which the numeric
      * buffers implement against their primitive storage. {@code getValue} is never called, so the
      * {@code Double} / {@code Long} box is never created.</li>
-     * <li><b>STRING columns</b> — the raw stored object is tested directly. It is the interned
-     * {@code String} the loader put there, so no {@code IDataValue} is built and
-     * {@code getValueAsString()} (which calls {@code toString()}) is never reached.</li>
      * </ul>
+     *
+     * <p>
+     * ⚠ <b>The {@code isMissing} arm assumes the default buffer factory.</b> It is sound for the
+     * buffers {@code DefaultDataBufferFactory} creates for those types: {@code DataBufferLong}
+     * (LONG) and {@code DataBufferInt} (BOOLEAN) refuse a NaN at write ({@code canStore}), so no
+     * boxed NaN can reach them, and {@code DataBufferDouble.isMissing} is {@code Double.isNaN}. A
+     * replacement factory that backed one of these types with a buffer whose {@code isMissing} is
+     * not missing-correct would make this answer wrongly.
+     * </p>
      */
     @Override
     public boolean isEmptyOrMissing(long aRow) throws IndexOutOfBoundsException
