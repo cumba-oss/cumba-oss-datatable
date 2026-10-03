@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import lombok.CustomLog;
 import lombok.Getter;
@@ -28,6 +30,8 @@ import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
+import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.provider.IDataTableProvider;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
@@ -41,6 +45,55 @@ public class CsvTableProvider extends AbstractDataTableProvider
      * The default number of rows to be used to guess the row types.
      */
     public static final int DEFAULT_GUESS_ROW_COUNT = 10_240;
+
+    /**
+     * Charset to use when decoding the CSV file. Defined independently from the CSV exporter's
+     * charset property so reader and writer can evolve separately.
+     */
+    public static final Property PROP_CHARSET = Property.forOneOfOrCustom(//
+            "Charset", //
+            "Character set used to decode the CSV file. The list is a set of common "
+                    + "suggestions; any JVM-supported charset name may be entered.", //
+            StandardCharsets.UTF_8.name(), //
+            StandardCharsets.UTF_8.name(), //
+            "US-ASCII", //
+            "ISO-8859-1", //
+            "windows-1252", //
+            "windows-1250", //
+            "windows-1251", //
+            "Shift_JIS", //
+            "GB2312", //
+            "Big5", //
+            "EUC-JP", //
+            "EUC-KR");
+
+    public static final Property PROP_DELIMITER = Property.forString(//
+            "Value Delimiter", //
+            "The character used to separate values within a record. Leave empty to auto-detect.", //
+            "");
+
+    public static final Property LINE_SEPARATOR = Property.forString(//
+            "Record Delimiter", //
+            "The character sequence used to separate records. Leave empty to auto-detect.", //
+            "");
+
+    public static final Property PROP_QUOTE = Property.forString(//
+            "Quote", //
+            "Character used for escaping values where the field delimiter is part of the value.", //
+            "\"");
+
+    public static final Property PROP_QUOTE_ESCAPE = Property.forString(//
+            "Quote Escape", //
+            "Character used for escaping quotes inside an already quoted value.", //
+            "\"");
+
+    public static final Property GUESS_ROW_COUNT = Property.forInteger(//
+            "Guess Row Count", //
+            "Number of data rows scanned to determine column data types.", //
+            DEFAULT_GUESS_ROW_COUNT);
+
+    private static final List<Property> FILE_PROPERTIES = List.of(PROP_CHARSET, PROP_DELIMITER,
+            LINE_SEPARATOR, PROP_QUOTE, PROP_QUOTE_ESCAPE, GUESS_ROW_COUNT);
 
     /**
      * The number of rows to be used to guess the column types.
@@ -78,10 +131,198 @@ public class CsvTableProvider extends AbstractDataTableProvider
     @Setter
     private char quoteEscape = '"';
 
+    /**
+     * Resolve a {@link Charset} from the given property map, falling back to UTF-8 if unset or
+     * unparseable.
+     */
+    public static Charset resolveCharset(Map<Property, String> aProperties)
+    {
+        if (aProperties == null)
+        {
+            return StandardCharsets.UTF_8;
+        }
+        String requested = aProperties.get(PROP_CHARSET);
+        // NullAway does not narrow through CDT.isBlankOrNull (it carries no @Contract), so the
+        // non-blank arm is asserted explicitly; Property.defaultValue() is non-null by record
+        // component.
+        String name = CDT.isBlankOrNull(requested) ? PROP_CHARSET.defaultValue()
+                : Objects.requireNonNull(requested);
+        try
+        {
+            return Charset.forName(name);
+        }
+        catch (Exception _)
+        {
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+
+    /**
+     * Apply all provider properties from the given map onto this provider's state. Missing or blank
+     * entries leave the corresponding field at its default (auto-detect for delimiter and line
+     * separator).
+     */
+    protected void applyProperties(Map<Property, String> aProperties)
+    {
+        setCharset(resolveCharset(aProperties));
+        if (aProperties == null)
+        {
+            return;
+        }
+
+        // ⚠⚠ CDT.isBlankOrNull() delegates to String.isBlank(), which is true for a tab, a
+        // space or a newline -- exactly the values a real TSV/whitespace-delimited or
+        // explicit-CRLF configuration would supply. Treating them as "unset" silently fell
+        // back to auto-detect, discarding the user's explicit choice with no warning: a
+        // configured "\t" delimiter was ignored and a configured "\n"/"\r\n" line separator
+        // could never even reach buildParserSettings' explicit branch. Only genuine emptiness
+        // means "leave at auto-detect" -- matching the property's own description and the
+        // quote/quoteEscape branches below, which already use isEmpty() for the same reason.
+        String delim = aProperties.get(PROP_DELIMITER);
+        setDelimiter(delim == null || delim.isEmpty() ? null : delim);
+
+        String ls = aProperties.get(LINE_SEPARATOR);
+        setLineSeparator(ls == null || ls.isEmpty() ? null : ls);
+
+        String q = aProperties.get(PROP_QUOTE);
+        if (q != null && !q.isEmpty())
+        {
+            setQuote(q.charAt(0));
+        }
+        else
+        {
+            setQuote(PROP_QUOTE.defaultValue().charAt(0));
+        }
+
+        String qe = aProperties.get(PROP_QUOTE_ESCAPE);
+        if (qe != null && !qe.isEmpty())
+        {
+            setQuoteEscape(qe.charAt(0));
+        }
+        else
+        {
+            setQuoteEscape(PROP_QUOTE_ESCAPE.defaultValue().charAt(0));
+        }
+
+        String grc = aProperties.get(GUESS_ROW_COUNT);
+        if (CDT.isBlankOrNull(grc))
+        {
+            // A reused provider must not keep a stale sample size from an earlier call --
+            // the javadoc above promises the default for a missing/blank entry, and until now
+            // this was the one field that silently broke that promise.
+            setGuessingRowCount(DEFAULT_GUESS_ROW_COUNT);
+        }
+        else
+        {
+            // isBlankOrNull(grc) was false above, so grc is non-null here.
+            String grcValue = Objects.requireNonNull(grc);
+            try
+            {
+                int val = Integer.parseInt(grcValue.trim());
+                setGuessingRowCount(val > 0 ? val : DEFAULT_GUESS_ROW_COUNT);
+            }
+            catch (NumberFormatException _)
+            {
+                LOGGER.log(System.Logger.Level.DEBUG,
+                        "Invalid " + GUESS_ROW_COUNT.name() + " value: " + grc);
+            }
+        }
+    }
+
+
     @Override
     public List<FileInfo> getSupportedFileInfos()
     {
         return CsvProviderSupplier.FIS;
+    }
+
+
+    @SuppressWarnings("PMD.EmptyCatchBlock")
+    @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        String firstLine = peekFirstLine(aUri);
+        if (firstLine == null || firstLine.isEmpty())
+        {
+            return FILE_PROPERTIES;
+        }
+
+        Property delimiterProp = PROP_DELIMITER;
+        try
+        {
+            char detected = findDelimChar(firstLine);
+            delimiterProp = Property.forString(PROP_DELIMITER.name(), PROP_DELIMITER.description(),
+                    Character.toString(detected));
+        }
+        catch (IOException _)
+        {
+            // first line could not be interpreted -- keep the static default
+        }
+
+        return List.of(PROP_CHARSET, delimiterProp, LINE_SEPARATOR, PROP_QUOTE, PROP_QUOTE_ESCAPE,
+                GUESS_ROW_COUNT);
+    }
+
+
+    /**
+     * Best-effort read of the first line of the given URI, using the currently configured
+     * {@link #getCharset() charset}. Returns {@code null} on any I/O failure so the caller can fall
+     * back to static defaults.
+     */
+    private @Nullable String peekFirstLine(URI aUri)
+    {
+        try (InputStream in = URIHelper.openStream(aUri);
+                BufferedReader br = new BufferedReader(new InputStreamReader(in, getCharset())))
+        {
+            return br.readLine();
+        }
+        catch (IOException ex)
+        {
+            LOGGER.log(System.Logger.Level.DEBUG,
+                    "Unable to peek first line of " + aUri + ": " + ex.getMessage());
+            return null;
+        }
+    }
+
+
+    @Override
+    public DataTableMeta provideMetaData(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        applyProperties(aProperties);
+        return provideMetaData(aUri, aFileInfo);
+    }
+
+
+    @Override
+    public DataTableMeta provideMetaData(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        applyProperties(aProperties);
+        return provideMetaData(aMember, aFileInfo);
+    }
+
+
+    @Override
+    public IDataTable provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        applyProperties(aProperties);
+        return provide(aUri, aFileInfo);
+    }
+
+
+    @Override
+    public @Nullable IDataTable provide(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        applyProperties(aProperties);
+        return provide(aMember, aFileInfo);
     }
 
 
@@ -225,9 +466,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
     /**
      * Build a {@link CsvParserSettings} honouring the configured delimiter, line separator, quote
      * and quote-escape. Auto-detects the delimiter from the first line when no explicit delimiter
-     * was set via {@code setDelimiter(String)}, and uses univocity's line separator detection when
-     * no line separator was set via {@code setLineSeparator(String)}. The stream must support
-     * {@code mark}/{@code reset}.
+     * was supplied via {@link #PROP_DELIMITER}, and uses univocity's line separator detection when
+     * no {@link #LINE_SEPARATOR} was supplied. The stream must support {@code mark}/{@code reset}.
      */
     protected CsvParserSettings buildParserSettings(BufferedInputStream aStream) throws IOException
     {
@@ -236,12 +476,14 @@ public class CsvTableProvider extends AbstractDataTableProvider
         // ⚠⚠ Deliberately NOT CDT.isBlankOrNull(): a tab or a newline is a legitimate,
         // explicitly-configured delimiter / line separator (TSV, explicit CRLF), and
         // isBlankOrNull's String.isBlank() treats both as "unset". Only genuine absence means
-        // "auto-detect".
+        // "auto-detect" -- applyProperties already normalises anything blank-but-non-empty away,
+        // so getDelimiter()/getLineSeparator() are either null or a real, non-empty value here.
         // ⚠ Read ONCE into a local. Null-checking one call and dereferencing a second is
         // NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE: nothing guarantees the second call returns the
-        // same non-null value, so the check would protect nothing. This repository does NOT
-        // suppress that pattern, while the internal twin does suppress it project-wide -- so the
-        // upstream spelling passes there and reds here. Keep the locals.
+        // same non-null value, so the check protects nothing. The internal repository suppresses
+        // that SpotBugs pattern project-wide (duplicate coverage of NullAway); the published twin
+        // does not, so the old spelling is green in one tree and red in the other. Keep the
+        // locals so both trees carry one spelling.
         String configuredDelimiter = getDelimiter();
         if (configuredDelimiter == null || configuredDelimiter.isEmpty())
         {
@@ -508,11 +750,18 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 {
                     // K7 / K7b (owner, 2026-09-30): an unquoted ".", "._" or ".A".."Z" is that SAS
                     // missing in EVERY column type -- its own identity, stored as CdtTableBuilder
-                    // stores it, in a DOUBLE or LONG buffer too; a quoted one falls through (text
-                    // in a STRING column, MIS in a numeric one -- no number to parse).
+                    // stores it, in a DOUBLE buffer too; a quoted one falls through (text in a
+                    // STRING column, MIS in a numeric one -- no number to parse).
                     aDataColumn.addElement(missing);
                     continue;
                 }
+                // ⚠ determineTypes() only ever produces DataValueType.DOUBLE or .STRING (see
+                // its own javadoc), and no metadata-library override changes a column's type
+                // (DataTableMetaSupport.addColumn takes the type argument as authoritative) --
+                // so a LONG (or any other) column can never actually reach this parser. A
+                // dedicated LONG case was tried and removed: it was dead code with two
+                // permanently NO_COVERAGE mutants and no seam to construct a test through this
+                // provider's public API, since CsvTableDataParser is a private nested class.
                 switch (aMetaColumn.getType())
                 {
                 case DOUBLE:
@@ -525,19 +774,6 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     else
                     {
                         aDataColumn.addElement(dblVal);
-                    }
-                    break;
-                }
-                case LONG:
-                {
-                    try
-                    {
-                        long lngVal = row.getLongValue(aColumnIndex);
-                        aDataColumn.addElement(lngVal);
-                    }
-                    catch (Exception _)
-                    {
-                        aDataColumn.addElement(MissingValue.MIS);
                     }
                     break;
                 }

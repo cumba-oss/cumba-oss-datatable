@@ -8,8 +8,10 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
 import org.junit.jupiter.api.BeforeEach;
@@ -220,9 +222,8 @@ class CsvUnquotedDotMissingTest
     {
         URI uri = write("A,B\n'.',.\n'x',\".\"\n");
 
-        provider.setQuote('\'');
-        provider.setQuoteEscape('\'');
-        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
+        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV,
+                Map.of(CsvTableProvider.PROP_QUOTE, "'", CsvTableProvider.PROP_QUOTE_ESCAPE, "'"));
 
         assertEquals(".", table.getValue(0, 0), "quoted with the configured quote");
         assertSame(MissingValue.MIS, table.getValue(0, 1));
@@ -240,9 +241,9 @@ class CsvUnquotedDotMissingTest
     {
         URI uri = write("A||B||C;\"a\"||.||\".\";\"b\"||\".\"||.;");
 
-        provider.setDelimiter("||");
-        provider.setLineSeparator(";");
-        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
+        Map<Property, String> props = Map.of(CsvTableProvider.PROP_DELIMITER, "||",
+                CsvTableProvider.LINE_SEPARATOR, ";");
+        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV, props);
 
         assertEquals(2, table.getRowCount());
         assertEquals("a", table.getValue(0, 0));
@@ -262,8 +263,8 @@ class CsvUnquotedDotMissingTest
     {
         URI uri = write("A,B;\"a\",.;\"b\",\".\";");
 
-        provider.setLineSeparator(";");
-        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
+        IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV,
+                Map.of(CsvTableProvider.LINE_SEPARATOR, ";"));
 
         assertEquals(2, table.getRowCount());
         assertSame(MissingValue.MIS, table.getValue(0, 1));
