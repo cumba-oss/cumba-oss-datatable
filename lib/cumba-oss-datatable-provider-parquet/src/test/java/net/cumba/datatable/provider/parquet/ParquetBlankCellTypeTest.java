@@ -39,9 +39,9 @@ import org.junit.jupiter.api.io.TempDir;
  * Fix #161 secured that at ingestion, by flattening a null STRING cell to {@code ""} here. That is
  * no longer the mechanism: Parquet <em>can</em> express a null in a character column, the model now
  * keeps it, and finding-equivalence is guaranteed at consumption instead — every blankness consumer
- * asks {@code isEmptyOrMissing()}, and value resolution goes through
- * {@code ScalarSemantics.resolvedString}, for which a {@code MissingValue} in a character column
- * reads exactly as {@code ""} does.
+ * asks {@code IDataTable.isEmptyOrMissing(row, col)} /
+ * {@code IDataTableColumn.isEmptyOrMissing(row)}, for which a {@code MissingValue} and a {@code ""}
+ * are alike.
  * <p>
  * So the assertion that moved is the <em>representation</em> one; the guard itself is kept, because
  * the defect it was written against has not gone away.

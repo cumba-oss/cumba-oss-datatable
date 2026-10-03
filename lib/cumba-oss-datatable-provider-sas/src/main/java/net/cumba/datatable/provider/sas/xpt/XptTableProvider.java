@@ -7,14 +7,12 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.net.URI;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
@@ -606,35 +604,6 @@ public class XptTableProvider extends AbstractDataTableProvider
         return sb.toString();
     }
 
-
-    /**
-     * Stream a non-{@code file:} URI to a local temporary file so the random-access XPT parser can
-     * read it. corej's {@code AbstractGenericProvider} does not provide a {@code downloadToFile}
-     * helper (it was dropped in the OSS extraction), so the provider supplies its own.
-     *
-     * @param aUri
-     *            the source URI.
-     * @return a temporary file holding the downloaded content (caller deletes it).
-     * @throws IOException
-     *             on any I/O error.
-     */
-    protected File downloadToFile(URI aUri) throws IOException
-    {
-        File tmp = File.createTempFile("corej-xpt-", ".xpt");
-        try (InputStream in = URIHelper.openStream(aUri))
-        {
-            Files.copy(in, tmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        }
-        catch (IOException | RuntimeException ex)
-        {
-            // Don't leak the temp file if the download fails before it is handed back to the
-            // caller (the caller is responsible for cleanup only once we return it).
-            Files.deleteIfExists(tmp.toPath());
-            throw ex;
-        }
-        return tmp;
-    }
-
     private static class XptTableDataParser extends AbstractTableDataParser<XptObservation>
     {
 
@@ -662,9 +631,7 @@ public class XptTableProvider extends AbstractDataTableProvider
                 case null -> aDataColumn
                         .addElement(aMetaColumn.getType() == DataValueType.STRING ? ""
                                 : MissingValue.MIS_UNKNOWN);
-                // CDT.tri is poly-null: a non-null argument yields a non-null result, but NullAway
-                // cannot express that contract, so capture and assert non-null here.
-                case String str -> aDataColumn.addElement(Objects.requireNonNull(tri(str)));
+                case String str -> aDataColumn.addElement(tri(str));
                 case Number num ->
                 {
                     double dbl = num.doubleValue();

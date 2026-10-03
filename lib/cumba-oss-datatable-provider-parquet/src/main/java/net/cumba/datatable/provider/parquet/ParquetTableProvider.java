@@ -4,13 +4,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.jerolba.carpet.CarpetReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.file.Files;
-import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -28,7 +26,6 @@ import net.cumba.datatable.DataTableColumnMeta.DataTableColumnMetaBuilder;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
-import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
@@ -485,36 +482,6 @@ public class ParquetTableProvider extends AbstractDataTableProvider
         };
     }
 
-
-    /**
-     * Stream a non-{@code file:} URI to a local temporary file so the random-access Parquet reader
-     * can read it. corej's {@code AbstractGenericProvider} does not provide a
-     * {@code downloadToFile} helper (it was dropped in the OSS extraction), so the provider
-     * supplies its own.
-     *
-     * @param aUri
-     *            the source URI.
-     * @return a temporary file holding the downloaded content (caller deletes it).
-     * @throws IOException
-     *             on any I/O error.
-     */
-    protected File downloadToFile(URI aUri) throws IOException
-    {
-        File tmp = File.createTempFile("cumba-oss-parquet-", ".parquet");
-        try (InputStream in = URIHelper.openStream(aUri))
-        {
-            Files.copy(in, tmp.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        }
-        catch (IOException | RuntimeException ex)
-        {
-            // Don't leak the temp file if the download fails before it is handed back to the
-            // caller (the caller is responsible for cleanup only once we return it).
-            Files.deleteIfExists(tmp.toPath());
-            throw ex;
-        }
-        return tmp;
-    }
-
     /**
      * Inner table data parser that processes rows from Carpet's {@code Map<String, Object>} output.
      * Each row is a map of column name to value. Values are dispatched to columns based on column
@@ -576,19 +543,6 @@ public class ParquetTableProvider extends AbstractDataTableProvider
 
                 if (val == null)
                 {
-                    // A Parquet null is an explicit "no value" that the format can express in a
-                    // column of ANY type, character included, so it is loaded as MissingValue.MIS
-                    // in every column type. An empty string the file genuinely contains arrives as
-                    // "" through the `instanceof String` arm below and stays "" — the two are
-                    // distinct in the model.
-                    //
-                    // This supersedes Fix #161's mechanism (which mapped a null STRING cell to ""
-                    // here so a blank cell was format-independent at ingestion) while keeping its
-                    // goal: finding-equivalence is now guaranteed at CONSUMPTION, because every
-                    // blankness consumer asks isEmptyOrMissing(), for which a MissingValue and a
-                    // "" are both blank. Only the grouping-key encoding keeps them apart, and
-                    // there deliberately (they are distinct keys with a shared disposition).
-                    //
                     // F-prov-15 (owner ruling: MIS is correct). A Parquet null carries no
                     // missing-value semantics of its own — the format has exactly one kind of
                     // null — so it maps to MissingValue.MIS, the stack-wide default for any
@@ -600,7 +554,8 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                 }
                 else if (val instanceof String str)
                 {
-                    // tri(non-null) never returns null (only tri(null) does); str is non-null here.
+                    // tri(non-null) never returns null (only tri(null) does); str is non-null
+                    // here.
                     aDataColumn.addElement(Objects.requireNonNull(tri(str)));
                 }
                 else if (val instanceof Boolean boolVal)
@@ -617,8 +572,8 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                     // ⚠ This branch MUST come before the `instanceof Number` branch below:
                     // BigDecimal is itself a Number, so with the branches in the other order the
                     // `Number` arm silently swallows every BigDecimal and this guard never runs —
-                    // measured against a real 29-integer-digit DECIMAL(38,9) fixture, which loaded
-                    // as 1.2345678901234567E19 with no exception at all.
+                    // measured 2026-09-12 against a real 29-integer-digit DECIMAL(38,9) fixture,
+                    // which loaded as 1.2345678901234567E19 with no exception at all.
                     double d = bd.doubleValue();
                     if (BigDecimal.valueOf(d).compareTo(bd) != 0)
                     {
