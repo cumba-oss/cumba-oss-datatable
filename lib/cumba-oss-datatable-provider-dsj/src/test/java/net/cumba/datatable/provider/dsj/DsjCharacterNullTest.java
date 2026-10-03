@@ -21,15 +21,15 @@ import org.junit.jupiter.api.Test;
  * A Dataset-JSON {@code null} is loaded as a {@link MissingValue} in <b>every</b> column type,
  * character included; an empty string the file genuinely contains stays an empty string.
  *
- * <h2>⚠ This supersedes Fix #161's mechanism while keeping its goal</h2>
+ * <h2>⚠ Blankness is settled at consumption, not at ingestion</h2>
  * <p>
- * Fix #161 made a blank cell format-independent <em>at ingestion</em> — this provider mapped a
- * {@code null} in a STRING column to {@code ""} so that no consumer could see a difference. Under
- * the settled design the model keeps the distinction (Dataset-JSON can express a character null;
- * CSV, CDT, XLSX, SAS7BDAT and XPT cannot) and the engine is made blind to it <em>at
- * consumption</em>: every blankness consumer asks {@code isEmptyOrMissing()}, and value resolution
- * goes through {@code ScalarSemantics.resolvedString}, which renders a blank character cell as
- * {@code ""} whichever way the file spelled it.
+ * This provider used to map a {@code null} in a STRING column to {@code ""} so that no consumer
+ * could see a difference. Under the settled design the <em>model</em> keeps the distinction
+ * (Dataset-JSON and Parquet can express a character null; CSV, CDT, XLSX, SAS7BDAT and XPT cannot —
+ * a blank character field there simply <em>is</em> the empty string) and consumers are made blind
+ * to it instead: every blankness consumer asks {@code IDataTable.isEmptyOrMissing(row, col)} /
+ * {@code IDataTableColumn.isEmptyOrMissing(row)}, for which a {@link MissingValue} and a {@code ""}
+ * are both blank.
  * <p>
  * ⚠⚠ The fixture carries the {@code null} and the {@code ""} in the <b>same character column</b>.
  * One without the other is vacuous — it passes under either design.

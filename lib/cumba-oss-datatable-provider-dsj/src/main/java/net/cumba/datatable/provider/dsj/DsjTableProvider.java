@@ -61,8 +61,7 @@ import org.jspecify.annotations.Nullable;
  * parser framework for parallel column population.
  *
  * <p>
- * This is the v2 implementation that replaces the custom slice-based pipeline with the standard
- * {@link AbstractTableDataParser} infrastructure.
+ * Row-based parsing built on the standard {@link AbstractTableDataParser} infrastructure.
  * </p>
  */
 @CustomLog
@@ -186,7 +185,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
     @Override
     public IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo) throws IOException
     {
-        DataSetJsonTableParallelParser dsjtp = new DataSetJsonTableParallelParser();
+        DataSetJsonTableParallelParser dsjtp = createParallelParser();
         if (parallelism != null)
         {
             dsjtp.setParallelism(parallelism);
@@ -284,7 +283,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
         // once was.
         //
         // F-prov-01 (a declared-vs-parsed row-count mismatch must not be returned as a
-        // successful load) is enforced one layer down since cumba-oss-cdisc-dsj gained
+        // successful load) is enforced one layer down since the Dataset-JSON parser gained
         // DataSetJsonTableParser.verifyRecordCount: every parseDataSet route -- the
         // single-threaded one, the rows-less one and the parallel NDJSON one -- ends in
         // that verification, reading the same declared "records" value handleMetadata
@@ -294,9 +293,9 @@ public class DsjTableProvider extends AbstractDataTableProvider
         // delivered to our handlers versus rows this provider actually assembled. The
         // parallel path fans out into a chunk-parser map keyed by chunkIdx and
         // concatenates it in assembleResult; a chunk lost or double-counted there is
-        // invisible to the parser's own tally. It is kept deliberately for that, and no
-        // test covers it -- assembleResult is private, so a test has no seam to inject an
-        // assembly shortfall.
+        // invisible to the parser's own tally. It is kept deliberately for that, and
+        // covered by DsjTableProviderScriptedChunkTest through the createParallelParser()
+        // seam.
         //
         // The declared count must be taken from the document's "records" attribute as
         // captured PRE-parse (declaredRows[0]; -1 means the document does not declare
@@ -514,6 +513,21 @@ public class DsjTableProvider extends AbstractDataTableProvider
     }
 
 
+    /**
+     * Creates the {@link DataSetJsonTableParallelParser} used by {@link #provide(URI, FileInfo)}.
+     * Protected as a deliberate test seam (owner ruling, Q35/G8): the real parser splits an NDJSON
+     * file into byte-range chunks whose row alignment depends on file layout and thread timing, so
+     * chunk-boundary behaviour (merge order, the delivery-vs-assembly check) is not
+     * deterministically testable through real files. A test may override this to supply a parser
+     * that replays a scripted, fixed sequence of chunk batches through the same handlers the real
+     * parser drives.
+     */
+    protected DataSetJsonTableParallelParser createParallelParser()
+    {
+        return new DataSetJsonTableParallelParser();
+    }
+
+
     private int handleMetadata(DsjTable aTable, URI aURI, DataTableMeta[] aMetaHolder,
             IDataTypeMapper[][] aMappersHolder)
     {
@@ -672,10 +686,7 @@ public class DsjTableProvider extends AbstractDataTableProvider
         {
         case INTEGER:
             // J2: store integer-declared columns as floating point internally so a declared-integer
-            // cell holding a decimal (non-conformant data) is not truncated. DataValueDouble
-            // renders
-            // a whole double as "3" (trims .0), and both LONG and DOUBLE collapse to "Num", so the
-            // type-metadata rules are unaffected.
+            // cell holding a decimal (non-conformant data) is not truncated.
             return DataValueType.DOUBLE;
         case DECIMAL:
             return DataValueType.DOUBLE;
@@ -759,13 +770,13 @@ public class DsjTableProvider extends AbstractDataTableProvider
                         // genuinely contains arrives as "" through the `instanceof String` arm
                         // below and stays "" — the two are distinct in the model.
                         //
-                        // This supersedes Fix #161's mechanism (which mapped a STRING null to ""
-                        // here so a blank cell was format-independent at ingestion) while keeping
-                        // its goal: finding-equivalence is now guaranteed at CONSUMPTION, because
-                        // every blankness consumer asks isEmptyOrMissing(), for which a
-                        // MissingValue and a "" are both blank. Only the grouping-key encoding
-                        // keeps them apart, and there deliberately (they are distinct keys with a
-                        // shared disposition).
+                        // Finding-equivalence is guaranteed at CONSUMPTION instead: blankness
+                        // consumers ask IDataTable/IDataTableColumn.isEmptyOrMissing(), for which
+                        // a MissingValue and a "" are both blank. Where they stay apart is
+                        // RAW-VALUE identity — anything that compares raw values (merge/join keys,
+                        // hash indexes) treats the two forms as distinct keys with a shared
+                        // disposition. (The engine's own grouping does NOT keep them apart: it
+                        // folds a missing cell to "" via its string-keyed path, deliberately.)
                         //
                         // NB. `val == null` here means the source cell really was null: a mapper
                         // that answers null for a present value is handled by the arm above.
