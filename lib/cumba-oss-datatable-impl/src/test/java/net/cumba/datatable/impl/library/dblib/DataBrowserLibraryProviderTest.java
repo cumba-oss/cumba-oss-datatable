@@ -416,6 +416,50 @@ class DataBrowserLibraryProviderTest
     }
 
 
+    /**
+     * A metadata column without a native type (the {@code .dblib} format carries none) maps to a
+     * {@link DataTableColumnMeta} whose {@code nativeType} is {@code null}: the provider does not
+     * invent one from the column type.
+     */
+    @Test
+    void testProvideLibraryMemberColumnsKeepsAnAbsentNativeTypeNull() throws IOException
+    {
+        URI memberUri = URI.create("file:///data/dm.csv");
+        URI libraryUri = URI.create("file:///lib/test.dblib");
+        DataBrowserLibraryBean bean = DataBrowserLibraryBean.builder().name("TestLib").build();
+
+        try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
+        {
+            IColumnMetadata col = mock(IColumnMetadata.class);
+            when(col.getName()).thenReturn("STUDYID");
+            when(col.getLabel()).thenReturn("Study Identifier");
+            when(col.getType()).thenReturn(DataValueType.STRING);
+            when(col.getDisplayFormat()).thenReturn(null);
+            when(col.getNativeType()).thenReturn(null);
+            when(col.getIndex()).thenReturn(0);
+            when(col.getLength()).thenReturn(20);
+
+            IDataTableMetadata tableMeta = mock(IDataTableMetadata.class);
+            when(tableMeta.getColumns()).thenReturn(List.of(col));
+
+            IMetadataLibrary metadata = mock(IMetadataLibrary.class);
+            when(metadata.getDataTable("DM")).thenReturn(Optional.of(tableMeta));
+
+            lib.setMetadata(metadata);
+
+            DataBrowserMember member = new DataBrowserMember(lib, memberUri, "DM", null);
+
+            List<? extends DataTableColumnMeta> columns = provider
+                    .provideLibraryMemberColumns(member).toList();
+
+            assertEquals(1, columns.size());
+            assertEquals("STUDYID", columns.get(0).getName());
+            assertNull(columns.get(0).getNativeType(),
+                    "an absent native type stays absent; it is not replaced by the type token");
+        }
+    }
+
+
     @Test
     void testProvideLibraryMemberColumnsNoMetaNoBean() throws IOException
     {
