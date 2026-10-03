@@ -85,7 +85,8 @@ public class OverlayDataTable extends AbstractDataTable
      *            the number of rows
      * @return a new OverlayDataTable with no columns and null cell values
      */
-    public static OverlayDataTable empty(String aName, @Nullable String aLabel, int aRowCount)
+    public static OverlayDataTable empty(@Nullable String aName, @Nullable String aLabel,
+            int aRowCount)
     {
         DataTableMeta meta = DataTableMeta.builder().name(aName)
                 .label(aLabel != null ? aLabel : aName).rowCount(aRowCount).totalRowCount(aRowCount)
@@ -363,7 +364,7 @@ public class OverlayDataTable extends AbstractDataTable
      * @param aNewLabel
      *            the new label
      */
-    public void setColumnLabel(String aColumnName, String aNewLabel)
+    public void setColumnLabel(String aColumnName, @Nullable String aNewLabel)
     {
         int idx = findColumnIndex(aColumnName);
         if (idx >= 0)
@@ -383,7 +384,7 @@ public class OverlayDataTable extends AbstractDataTable
      * @param aNewFormat
      *            the new display format string
      */
-    public void setColumnFormat(String aColumnName, String aNewFormat)
+    public void setColumnFormat(String aColumnName, @Nullable String aNewFormat)
     {
         int idx = findColumnIndex(aColumnName);
         if (idx >= 0)

@@ -47,13 +47,16 @@ public interface IGenericProvider<V>
      * @param aFileInfo
      *            the optional FileInfo how to interpret the file. If this is not one of the
      *            {@link FileInfo}s from {@link #getSupportedFileInfos()}, the result is undefined.
-     * @return the object that was created by reading the content of the given URI. This must not be
-     *         null!
+     * @return the object that was created by reading the content of the given URI, or {@code null}
+     *         when this provider cannot serve the URI (a deliberate "cannot provide" signal — the
+     *         factories null-check and fall through to the next provider). Implementations that can
+     *         always provide may narrow their override to a non-null return.
      * @throws IOException
      *             in case the content of the URI can not be interpreted in a way to generate a
      *             valid result object. This can be either error when reading the content or error
      *             when interpreting it.
      */
+    @Nullable
     V provide(URI aUri, @Nullable FileInfo aFileInfo) throws IOException;
 
 
@@ -63,14 +66,14 @@ public interface IGenericProvider<V>
      *
      * @param aUri
      *            the URI to read the content from.
-     * @return the object that was created by reading the content of the given URI. This must not be
-     *         null!
+     * @return the object that was created by reading the content of the given URI, or {@code null}
+     *         when this provider cannot serve the URI (see {@link #provide(URI, FileInfo)}).
      * @throws IOException
      *             in case the content of the URI can not be interpreted in a way to generate a
      *             valid result object. This can be either error when reading the content or error
      *             when interpreting it.
      */
-    default V provide(URI aUri) throws IOException
+    default @Nullable V provide(URI aUri) throws IOException
     {
         return provide(aUri, null);
     }

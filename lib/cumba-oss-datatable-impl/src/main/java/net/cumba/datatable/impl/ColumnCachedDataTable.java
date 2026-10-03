@@ -1,5 +1,6 @@
 package net.cumba.datatable.impl;
 
+import java.util.List;
 import lombok.AccessLevel;
 import lombok.CustomLog;
 import lombok.Setter;
@@ -28,6 +29,14 @@ public class ColumnCachedDataTable extends AbstractDataTable
     public ColumnCachedDataTable(DataTableMeta aMeta, IDataTableColumn... aColumns)
     {
         columns = aColumns;
+        setMetaData(aMeta);
+    }
+
+
+    @SuppressWarnings("this-escape")
+    public ColumnCachedDataTable(DataTableMeta aMeta, List<? extends IDataTableColumn> aColumns)
+    {
+        columns = aColumns.toArray(IDataTableColumn[]::new);
         setMetaData(aMeta);
     }
 
@@ -70,6 +79,14 @@ public class ColumnCachedDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Delegates to the column's own fast path
+     * ({@link CachedDataTableColumn#isEmptyOrMissing(long)}) rather than boxing the cell.
+     * </p>
+     */
     @Override
     public boolean isEmptyOrMissing(long aRow, int aColumn) throws IndexOutOfBoundsException
     {

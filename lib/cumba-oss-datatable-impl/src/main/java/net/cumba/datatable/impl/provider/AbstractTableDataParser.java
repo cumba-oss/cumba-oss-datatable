@@ -257,10 +257,10 @@ public abstract class AbstractTableDataParser<T>
 
 
     /**
-     * Compares the declared length of every STRING column in {@code aMeta} against the
-     * {@link CachedDataTableColumn}'s {@code getMaxValueLength()} (actual max observed length)
-     * captured by {@link CachedDataTableColumn#complete()} and produces an updated column array
-     * when any declared length is less than the observed length.
+     * Compares the declared length of every STRING column in {@code aMeta} against the actual max
+     * observed length ({@code getMaxValueLength()}) captured by
+     * {@link CachedDataTableColumn#complete()} and produces an updated column array when any
+     * declared length is less than the observed length.
      *
      * <p>
      * Returns {@code null} when no column needs adjustment — callers should then keep the original
@@ -275,6 +275,26 @@ public abstract class AbstractTableDataParser<T>
      */
     protected DataTableColumnMeta @Nullable [] reconcileColumnLengths(DataTableMeta aMeta)
     {
+        return reconcileColumnLengths(aMeta, dataColumns);
+    }
+
+
+    /**
+     * Pure variant of {@link #reconcileColumnLengths(DataTableMeta)} operating on an explicit
+     * column array. Exposed as {@code public static} so alternative loaders that fill the
+     * {@link CachedDataTableColumn}s themselves (e.g. the parallel BDAT pipeline) can reproduce the
+     * exact length reconciliation without subclassing this parser.
+     *
+     * @param aMeta
+     *            the table metadata.
+     * @param aColumns
+     *            the completed data columns, index-aligned with {@code aMeta}.
+     * @return an adjusted column array, or {@code null} when no STRING column needs its declared
+     *         length bumped.
+     */
+    public static DataTableColumnMeta @Nullable [] reconcileColumnLengths(DataTableMeta aMeta,
+            CachedDataTableColumn[] aColumns)
+    {
         int colCount = aMeta.getColumnCount();
         DataTableColumnMeta[] out = null;
         for (int i = 0; i < colCount; i++)
@@ -285,7 +305,7 @@ public abstract class AbstractTableDataParser<T>
                 continue;
             }
             int declared = cm.getLength();
-            int observed = dataColumns[i].getMaxValueLength();
+            int observed = aColumns[i].getMaxValueLength();
             if (observed <= declared)
             {
                 // Declared length already covers all values — nothing to do for this column.
