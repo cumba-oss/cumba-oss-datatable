@@ -299,6 +299,14 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
      * {@code DataBuffer0Bit} already pre-computes missingness that way, so this only repairs the
      * buffers that inherit the default.
      * </p>
+     *
+     * <p>
+     * ⚠ The general path also counts <b>a boxed NaN the buffer decodes as missing</b> (a
+     * {@code Double} or {@code Float} NaN): an object-holding buffer's {@code getValue} hands it
+     * out undecoded, while {@code getDataValue} decodes it to a {@code DataValueMissing}
+     * ({@code MissingValue.forNaN}), so without that test this method would call present a cell
+     * whose own data value is missing (PLAN-other-column-nan-blankness, ruling D1).
+     * </p>
      */
     @Override
     public boolean isMissingOrNull(long aRow) throws IndexOutOfBoundsException
@@ -315,7 +323,8 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
             return dataBuffer.isMissing(idx);
         }
         Object v = dataBuffer.getValue(idx);
-        return v == null || v instanceof MissingValue;
+        return v == null || v instanceof MissingValue
+                || (v instanceof Number n && Double.isNaN(n.doubleValue()));
     }
 
 
@@ -334,6 +343,14 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
      * A MISSING-typed column is blank at every row: every cell's data value is a
      * {@code DataValueMissing}, whatever the buffer holds, so it is answered before any buffer is
      * read.
+     * </p>
+     *
+     * <p>
+     * ⚠ The general path also counts <b>a boxed NaN the buffer decodes as missing</b> (a
+     * {@code Double} or {@code Float} NaN, in any column type whose answer comes from
+     * {@code getValue}): {@code getDataValue} decodes it to a {@code DataValueMissing}
+     * ({@code MissingValue.forNaN}), so without that test this method would call a cell present
+     * whose own data value is blank (PLAN-other-column-nan-blankness, ruling D1).
      * </p>
      *
      * <p>
@@ -369,7 +386,8 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
             return dataBuffer.isMissing(idx);
         }
         Object v = dataBuffer.getValue(idx);
-        return v == null || v instanceof MissingValue || (v instanceof String s && s.isEmpty());
+        return v == null || v instanceof MissingValue || (v instanceof String s && s.isEmpty())
+                || (v instanceof Number n && Double.isNaN(n.doubleValue()));
     }
 
 

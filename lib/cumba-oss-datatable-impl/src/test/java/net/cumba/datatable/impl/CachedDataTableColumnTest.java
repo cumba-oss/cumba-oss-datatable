@@ -602,7 +602,11 @@ class CachedDataTableColumnTest
 
     private static Object presentValueFor(DataValueType aType)
     {
-        return aType == DataValueType.LONG ? (Object) Long.valueOf(7L) : "x";
+        if (aType == DataValueType.LONG)
+        {
+            return 7L;
+        }
+        return "x";
     }
 
 
