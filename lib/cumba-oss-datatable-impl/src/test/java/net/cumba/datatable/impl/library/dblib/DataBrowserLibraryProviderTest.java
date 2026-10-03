@@ -21,6 +21,7 @@ import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserColumnMetaBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean;
+import net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
@@ -410,6 +411,8 @@ class DataBrowserLibraryProviderTest
             assertEquals("Study Identifier", columns.get(0).getLabel());
             assertEquals(DataValueType.STRING, columns.get(0).getType());
             assertEquals(20, columns.get(0).getLength());
+            assertEquals("text", columns.get(0).getNativeType(),
+                    "a present native type is carried over unchanged");
             assertEquals("AGE", columns.get(1).getName());
             assertEquals(DataValueType.DOUBLE, columns.get(1).getType());
         }
@@ -430,20 +433,18 @@ class DataBrowserLibraryProviderTest
 
         try (DataBrowserLibrary lib = new DataBrowserLibrary(libraryUri, bean))
         {
-            IColumnMetadata col = mock(IColumnMetadata.class);
-            when(col.getName()).thenReturn("STUDYID");
-            when(col.getLabel()).thenReturn("Study Identifier");
-            when(col.getType()).thenReturn(DataValueType.STRING);
-            when(col.getDisplayFormat()).thenReturn(null);
-            when(col.getNativeType()).thenReturn(null);
-            when(col.getIndex()).thenReturn(0);
-            when(col.getLength()).thenReturn(20);
-
-            IDataTableMetadata tableMeta = mock(IDataTableMetadata.class);
-            when(tableMeta.getColumns()).thenReturn(List.of(col));
-
-            IMetadataLibrary metadata = mock(IMetadataLibrary.class);
-            when(metadata.getDataTable("DM")).thenReturn(Optional.of(tableMeta));
+            // A real metadata library over a .dblib bean: the format carries no native type.
+            DataBrowserColumnMetaBean colBean = DataBrowserColumnMetaBean.builder()
+                    .uri(memberUri.toString()).name("STUDYID").label("Study Identifier")
+                    .type("STRING").build();
+            IMetadataLibrary metadata = DataBrowserMetadataLibrary.from(DataBrowserLibraryBean
+                    .builder().name("MetaLib").columnMeta(new DataBrowserColumnMetaBean[]
+                    {
+                            colBean
+                    }).build(), libraryUri);
+            assertNull(
+                    metadata.getDataTable("DM").orElseThrow().getColumns().get(0).getNativeType(),
+                    "non-vacuity: the source column carries no native type");
 
             lib.setMetadata(metadata);
 
