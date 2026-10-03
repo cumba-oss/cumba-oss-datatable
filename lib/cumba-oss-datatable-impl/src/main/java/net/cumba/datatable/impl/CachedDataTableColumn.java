@@ -22,8 +22,8 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * An {@link IDataTableColumn} implementation that stores its data in a local {@link IDataBuffer}.
- * Values are added during table construction and the buffer is compressed on {@link #complete()}.
- * This column owns its data and does not reference back to the table.
+ * Values are added during table construction; {@link #complete()} trims the buffer to size (this
+ * twin never compresses it). This column owns its data and does not reference back to the table.
  */
 public class CachedDataTableColumn extends AbstractDataTableColumn
 {
