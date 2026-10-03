@@ -474,10 +474,10 @@ public class DataTableMeta implements IDataTableMeta, Cloneable
         }
 
 
-        // Builder field reset to its uninitialised state; the @lombok.NonNull columns field is
-        // enforced at build() time, so leaving the builder slot null here is safe.
-        @SuppressWarnings("NullAway")
         @JsonIgnore
+        // Nulls the generated builder slot; the @lombok.NonNull columns field is enforced at
+        // build() time, so the null assignment is safe.
+        @SuppressWarnings("NullAway")
         public DataTableMetaBuilder clearColumns()
         {
             columns = null;
@@ -545,8 +545,8 @@ public class DataTableMeta implements IDataTableMeta, Cloneable
          *            the array of columns to set.
          * @return this builder.
          */
-        // Mirrors the runtime contract: a null array resets the builder's columns slot (the
-        // @lombok.NonNull columns field is enforced at build()), so the null assignment is safe.
+        // Nulls the generated builder slot when aColumns is null (the @lombok.NonNull columns field
+        // is enforced at build()), so the null assignment is safe.
         @SuppressWarnings("NullAway")
         public DataTableMetaBuilder columns(DataTableColumnMeta @Nullable [] aColumns)
         {

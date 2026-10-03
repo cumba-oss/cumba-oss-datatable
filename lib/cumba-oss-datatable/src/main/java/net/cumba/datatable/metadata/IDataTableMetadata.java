@@ -69,18 +69,6 @@ public interface IDataTableMetadata extends IMetadataElement
 
 
     /**
-     * Returns the dataset structure description (e.g., "One record per subject", "One record per
-     * subject per visit per test").
-     *
-     * @return the structure description, or {@code null} if not available.
-     */
-    default @Nullable String getStructure()
-    {
-        return null;
-    }
-
-
-    /**
      * Returns the dataset's declared subclass names (Define-XML 2.1 {@code <def:SubClass>}, e.g.
      * "TIME-TO-EVENT"), in declaration order.
      *
@@ -90,6 +78,18 @@ public interface IDataTableMetadata extends IMetadataElement
     default List<String> getSubClassNames()
     {
         return List.of();
+    }
+
+
+    /**
+     * Returns the dataset structure description (e.g., "One record per subject", "One record per
+     * subject per visit per test").
+     *
+     * @return the structure description, or {@code null} if not available.
+     */
+    default @Nullable String getStructure()
+    {
+        return null;
     }
 
 }

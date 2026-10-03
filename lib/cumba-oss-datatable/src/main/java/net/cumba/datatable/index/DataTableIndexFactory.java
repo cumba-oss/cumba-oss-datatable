@@ -87,7 +87,7 @@ public abstract class DataTableIndexFactory
 
     /**
      * Create a new data table index from the given table by using the given columns.<br/>
-     * The index is created with blocks in no expected order.
+     * The index is created with blocks in no expected order (not sorted).
      *
      * @param aTable
      *            the table to create the index from.

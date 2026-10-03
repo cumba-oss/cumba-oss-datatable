@@ -40,8 +40,46 @@ public interface IDataTableColumn
 
 
     /**
+     * Returns a read only List that is a view into this column.
+     *
+     * <p>
+     * ⚠ The element type is {@code @Nullable Object} because that is what {@link #getValue(long)},
+     * the provider this view is built on, may hand out — a gap slot in a {@code DataBufferString},
+     * a stored {@code null} in a {@code DataBufferObject}, a {@code null} dictionary level in a
+     * {@code DataBufferFactor} or a {@code null} constant in a {@code DataBuffer0Bit}; R's
+     * {@code factor(exclude=NULL)} puts a real one in a shipped fixture. The declaration used to
+     * read {@code List<Object>} — a NON-null element type over a nullable provider, which NullAway
+     * cannot flag because it does not check a method reference's return against a generic type
+     * argument. Nothing about the runtime answer changed; only the declaration stopped lying.
+     * </p>
+     *
+     * <p>
+     * ⛔ This is <b>not</b> a licence to fold the {@code null} to a value here. Which value it owes
+     * is type-dependent (numeric owes {@code MissingValue.MIS}, character owes {@code ""}), and
+     * this interface carries no declared type — so the only type-free answer would contradict one
+     * of the two rows. The typed channel, {@link #getDataValue(long)}, is where the value-or-
+     * missing contract lives and it is already null-free.
+     * </p>
+     *
+     * @return a read only List that is a view into this column.
+     */
+    default List<@Nullable Object> getValueList()
+    {
+        long rcl = getRowCount();
+        int rc = (rcl > Integer.MAX_VALUE) ? Integer.MAX_VALUE : Math.toIntExact(rcl);
+        List<@Nullable Object> view = new GenericListView<>(this::getValue, rc);
+        return view;
+    }
+
+
+    /**
      * Returns a stream that contains all values of this column in the order the values are in this
      * column.
+     *
+     * <p>
+     * ⚠ The element type is {@code @Nullable Object} for the same reason as {@link #getValueList()}
+     * — see that method for the measurement and for why the {@code null} is not folded here.
+     * </p>
      *
      * @return a stream that contains all values of this column in the order the values are in this
      *         column.
@@ -59,7 +97,8 @@ public interface IDataTableColumn
      *            the row index of the first value to retrieve in the stream.
      * @param aEndRowIndex
      *            the row index of the first value to not retrieve in the stream anymore.
-     * @return a stream that contains the values of the requested range of the column.
+     * @return a stream that contains the values of the requested range of the column. ⚠ Its element
+     *         type is {@code @Nullable Object}; see {@link #getValueList()}.
      */
     default Stream<@Nullable Object> getValues(long aStartRowIndex, long aEndRowIndex)
     {
@@ -136,6 +175,19 @@ public interface IDataTableColumn
 
 
     /**
+     * Returns a read only list for data values of this column.
+     *
+     * @return a read only list for data values of this column.
+     */
+    default List<IDataValue> getDataValueList()
+    {
+        long rcl = getRowCount();
+        int rc = (rcl > Integer.MAX_VALUE) ? Integer.MAX_VALUE : Math.toIntExact(rcl);
+        return new GenericListView<>(this::getDataValue, rc);
+    }
+
+
+    /**
      * Compute a non-boxing hash for the value at the given row. The default implementation falls
      * back to {@link #getValue(long)} and hashes the boxed result; buffer-backed columns override
      * this to route directly into the underlying data buffer's typed hash path.
@@ -193,7 +245,7 @@ public interface IDataTableColumn
      * <p>
      * ⚠ Prefer this column-level call over {@code getDataValue(aRow).isEmptyOrMissing()}: it
      * answers from the raw stored value, so no {@code IDataValue} is allocated and no string is
-     * materialised. Buffer-backed columns override it to skip boxing for numeric buffers as well.
+     * materialised. Buffer-backed columns override it to skip boxing for double buffers as well.
      * </p>
      *
      * @param aRow
@@ -207,62 +259,6 @@ public interface IDataTableColumn
     {
         Object v = getValue(aRow);
         return v == null || v instanceof MissingValue || (v instanceof String s && s.isEmpty());
-    }
-
-    // ⭐ The List-returning views, ported 2026-09-20 with GenericListView itself.
-    // They were withheld only because that ONE JDK-only helper class was absent here --
-    // not because of any feature. A single helper is not a feature, so it travels and
-    // these travel with it. ⚑ The port also forced a real fix: GenericListView's type
-    // variable had no @Nullable upper bound, so GenericListView<@Nullable Object> was an
-    // illegal instantiation under JSpecify. THIS repository's NullAway caught it; the
-    // internal one did not. The bound was added in BOTH trees.
-    // The getFormattedDataValue family stays withheld: it reaches values.DataValueFormatted,
-    // which belongs to the formats feature and is genuinely out.
-
-
-    /**
-     * Returns a read only List that is a view into this column.
-     *
-     * <p>
-     * ⚠ The element type is {@code @Nullable Object} because that is what {@link #getValue(long)},
-     * the provider this view is built on, may hand out — a gap slot in a {@code DataBufferString},
-     * a stored {@code null} in a {@code DataBufferObject}, a {@code null} dictionary level in a
-     * {@code DataBufferFactor} or a {@code null} constant in a {@code DataBuffer0Bit}; R's
-     * {@code factor(exclude=NULL)} puts a real one in a shipped fixture. The declaration used to
-     * read {@code List<Object>} — a NON-null element type over a nullable provider, which NullAway
-     * cannot flag because it does not check a method reference's return against a generic type
-     * argument. Nothing about the runtime answer changed; only the declaration stopped lying.
-     * </p>
-     *
-     * <p>
-     * ⛔ This is <b>not</b> a licence to fold the {@code null} to a value here. Which value it owes
-     * is type-dependent (numeric owes {@code MissingValue.MIS}, character owes {@code ""}), and
-     * this interface carries no declared type — so the only type-free answer would contradict one
-     * of the two rows. The typed channel, {@link #getDataValue(long)}, is where the value-or-
-     * missing contract lives and it is already null-free.
-     * </p>
-     *
-     * @return a read only List that is a view into this column.
-     */
-    default List<@Nullable Object> getValueList()
-    {
-        long rcl = getRowCount();
-        int rc = (rcl > Integer.MAX_VALUE) ? Integer.MAX_VALUE : Math.toIntExact(rcl);
-        List<@Nullable Object> view = new GenericListView<>(this::getValue, rc);
-        return view;
-    }
-
-
-    /**
-     * Returns a read only list for data values of this column.
-     *
-     * @return a read only list for data values of this column.
-     */
-    default List<IDataValue> getDataValueList()
-    {
-        long rcl = getRowCount();
-        int rc = (rcl > Integer.MAX_VALUE) ? Integer.MAX_VALUE : Math.toIntExact(rcl);
-        return new GenericListView<>(this::getDataValue, rc);
     }
 
 }

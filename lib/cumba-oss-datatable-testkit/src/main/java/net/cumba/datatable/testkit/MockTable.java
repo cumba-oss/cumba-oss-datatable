@@ -943,14 +943,10 @@ public final class MockTable
             // cell, through BOTH wrap paths: DataValueSupport.getAsDataValue(null, STRING) and
             // AbstractDataBuffer.createDataValue's STRING arm both mint
             // DataValueMissing(MissingValue.MIS), whose getValueAsString() is MIS.toString(),
-            // the SAS missing dot.
-            //
-            // ⚠ The pin lives UPSTREAM only: NullCharCellIsMissingTest is a
-            // cumba-datatable-impl test and this repository does not carry it, because the
-            // seam it drives (SimpleDatatableFactory) is not part of the reduced impl module.
-            // So the STRING arm of AbstractDataBuffer.createDataValue is unpinned HERE -- the
-            // shipped providers reach the same answer by storing MissingValue.MIS themselves,
-            // which is why nothing downstream observes the difference.
+            // the SAS missing dot. Pinned upstream by NullCharCellIsMissingTest
+            // (cumba-datatable-impl), which drives SimpleDatatableFactory — absent from the
+            // reduced impl (R18); downstream the shipped providers store MissingValue.MIS
+            // themselves.
             //
             // ⚠ getValue() moving null -> MIS also moves everything build() derives from the
             // raw cell: table.getValue / column.getValue (via cellAt) and hashCodeAt (via

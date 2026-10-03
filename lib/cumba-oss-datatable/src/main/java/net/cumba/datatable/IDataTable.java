@@ -5,6 +5,7 @@ import java.util.NoSuchElementException;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
+
 import net.cumba.datatable.values.DataValueSupport;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
@@ -13,6 +14,9 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * Provides access to data that is stored in a table structure.<br/>
+ * <p>
+ * <b>Every {@link IDataTable} is immutable unless it implements a mutable sub-interface.</b>
+ * </p>
  */
 public interface IDataTable
 {

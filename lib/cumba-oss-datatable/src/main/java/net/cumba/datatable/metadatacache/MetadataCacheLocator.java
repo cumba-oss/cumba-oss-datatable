@@ -17,15 +17,6 @@ import org.jspecify.annotations.Nullable;
  * </p>
  *
  * <p>
- * ⚠ <b>This javadoc deliberately differs from the internal copy</b>, which names
- * {@code net.cumba.datatable.dictionary.DictionaryStoreLocator}, {@code ViewerMain} and a
- * {@code Tools ▸ …} menu. The first is in {@code dictionary}, one of the packages this distribution
- * does not carry, and a {@code @link} to it fails the javadoc gate; the other two are
- * desktop-application concerns that do not exist here. A sync copying the internal text back will
- * re-break the build — see the deliberate-divergence register in the OSS blueprint.
- * </p>
- *
- * <p>
  * ⚠⚠ {@link #defaultStore()} is the app's OWN default — the LAST tier of the cascade. It does not
  * consult {@link #ENV_METADATA_STORE} or {@link #SP_METADATA_STORE}; callers check those first (see
  * {@link #configuredStore()}). Duplicating the check here would make "which one wins" unanswerable

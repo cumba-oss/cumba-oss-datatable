@@ -44,6 +44,14 @@ public class DataValueMissing implements IDataValue
      * property, not an NPE escaping into the caller — instead of deserialising into a null-carrying
      * cell. {@code DataValueMissingTest} pins both halves.
      * </p>
+     *
+     * <p>
+     * No document the stack writes has that shape (measured 2026-09-18: nothing persists this
+     * hierarchy, a produced node always carries {@code value}, no {@code src/main} calls
+     * {@code DataValueMissing.builder()}), so the throw is reachable only from a hand-written or
+     * foreign message; ⛔ not a load-time regression — the annotation stays as a stage-2
+     * precondition of the null-free value channel.
+     * </p>
      */
     @NonNull
     private final MissingValue value;

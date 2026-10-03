@@ -1,6 +1,7 @@
 package net.cumba.datatable;
 
 import java.util.NoSuchElementException;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;

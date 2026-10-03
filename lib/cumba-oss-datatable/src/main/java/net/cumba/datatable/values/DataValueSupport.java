@@ -21,67 +21,6 @@ public class DataValueSupport
     public static final double EPSILON = 1e-13;
     // OSS-IDENTITY-REGION datatable-numeric-epsilon END
 
-    /**
-     * Per-type "default missing" value used when initialising new cells (synthetic added rows on
-     * source columns, and added columns with empty user-supplied default). Mirrors SAS character
-     * semantics: a STRING column has no missing sentinel — an empty string is its missing value —
-     * while numeric / boolean / other types map to {@link MissingValue#MIS}.
-     *
-     * @param aType
-     *            the column's data type. Must not be {@code null}.
-     * @return {@code DataValueString("")} for {@link DataValueType#STRING};
-     *         {@code DataValueMissing(MissingValue.MIS)} for every other type.
-     */
-    public static IDataValue defaultForType(DataValueType aType)
-    {
-        if (aType == DataValueType.STRING)
-        {
-            return new DataValueString("");
-        }
-        return new DataValueMissing(MissingValue.MIS);
-    }
-
-
-    // OSS-IDENTITY-REGION datatable-key-blankness BEGIN: the blankness every join and group key
-    // rests on (GroupKeyPolicy, pinned set datatable-key-identity); byte-identical in both twins.
-    /**
-     * <b>The single implementation of "this cell carries no usable value"</b>: it is {@code null},
-     * missing/invalid, or its string form is empty.
-     *
-     * <p>
-     * ⭐ It is the blankness of every join and group key: {@link GroupKeyPolicy#isBlankKeyComponent}
-     * answers with it, so it is byte-identical in {@code cumba-datatable} and
-     * {@code cumba-oss-datatable} — a pinned region of the meta repo's
-     * {@code check_oss_identity.py datatable-key-identity}, beside {@code GroupKeyPolicy} itself.
-     * </p>
-     *
-     * <p>
-     * ⚠⚠ <b>It lives on this class, not only as {@link IDataValue#isEmptyOrMissing()}, on
-     * purpose.</b> {@code IDataValue} is an interface the test suite mocks in many places, and a
-     * Mockito mock answers {@code false} to an <em>unstubbed default method</em> rather than
-     * running it. Routing the engine's grouping predicate straight at the default therefore
-     * silently changed the answer for every mocked cell in the suite — measured: it reddened
-     * {@code GroupKeyPolicyUnificationTest}, {@code RuleRunnerRecordKeyTest} and others, none of
-     * which had anything to do with blank cells. Calling a static on a concrete class cannot be
-     * intercepted that way, so the one implementation stays honest for mocks and real values alike.
-     * </p>
-     *
-     * <p>
-     * ⚠ When you have a column and a row rather than an {@link IDataValue}, prefer
-     * {@link net.cumba.datatable.IDataTableColumn#isEmptyOrMissing(long)} — it answers from the raw
-     * stored value and allocates nothing.
-     * </p>
-     *
-     * @param aValue
-     *            the cell to test; {@code null} counts as blank.
-     * @return true if the cell is null, missing, invalid, or an empty string.
-     */
-    public static boolean isEmptyOrMissing(@Nullable IDataValue aValue)
-    {
-        return aValue == null || aValue.isMissingOrInvalid() || aValue.getValueAsString().isEmpty();
-    }
-    // OSS-IDENTITY-REGION datatable-key-blankness END
-
     // OSS-IDENTITY-REGION datatable-numeric-mathcontext BEGIN
     /**
      * Array containing pre instantiated {@link MathContext}'s for rounding.
@@ -402,6 +341,68 @@ public class DataValueSupport
 
 
     /**
+     * Per-type "default missing" value used when initialising new cells (synthetic added rows on
+     * source columns, and added columns with empty user-supplied default). Mirrors SAS character
+     * semantics: a STRING column has no missing sentinel — an empty string is its missing value —
+     * while numeric / boolean / other types map to {@link MissingValue#MIS}.
+     *
+     * @param aType
+     *            the column's data type. Must not be {@code null}.
+     * @return {@code DataValueString("")} for {@link DataValueType#STRING};
+     *         {@code DataValueMissing(MissingValue.MIS)} for every other type.
+     */
+    public static IDataValue defaultForType(DataValueType aType)
+    {
+        if (aType == DataValueType.STRING)
+        {
+            return new DataValueString("");
+        }
+        return new DataValueMissing(MissingValue.MIS);
+    }
+
+
+    // OSS-IDENTITY-REGION datatable-key-blankness BEGIN: the blankness every join and group key
+    // rests on (GroupKeyPolicy, pinned set datatable-key-identity); byte-identical in both twins.
+    /**
+     * <b>The single implementation of "this cell carries no usable value"</b>: it is {@code null},
+     * missing/invalid, or its string form is empty.
+     *
+     * <p>
+     * ⭐ It is the blankness of every join and group key: {@link GroupKeyPolicy#isBlankKeyComponent}
+     * answers with it, so it is byte-identical in {@code cumba-datatable} and
+     * {@code cumba-oss-datatable} — a pinned region of the meta repo's
+     * {@code check_oss_identity.py datatable-key-identity}, beside {@code GroupKeyPolicy} itself.
+     * </p>
+     *
+     * <p>
+     * ⚠⚠ <b>It lives on this class, not only as {@link IDataValue#isEmptyOrMissing()}, on
+     * purpose.</b> {@code IDataValue} is an interface the test suite mocks in many places, and a
+     * Mockito mock answers {@code false} to an <em>unstubbed default method</em> rather than
+     * running it. Routing the engine's grouping predicate straight at the default therefore
+     * silently changed the answer for every mocked cell in the suite — measured: it reddened
+     * {@code GroupKeyPolicyUnificationTest}, {@code RuleRunnerRecordKeyTest} and others, none of
+     * which had anything to do with blank cells. Calling a static on a concrete class cannot be
+     * intercepted that way, so the one implementation stays honest for mocks and real values alike.
+     * </p>
+     *
+     * <p>
+     * ⚠ When you have a column and a row rather than an {@link IDataValue}, prefer
+     * {@link net.cumba.datatable.IDataTableColumn#isEmptyOrMissing(long)} — it answers from the raw
+     * stored value and allocates nothing.
+     * </p>
+     *
+     * @param aValue
+     *            the cell to test; {@code null} counts as blank.
+     * @return true if the cell is null, missing, invalid, or an empty string.
+     */
+    public static boolean isEmptyOrMissing(@Nullable IDataValue aValue)
+    {
+        return aValue == null || aValue.isMissingOrInvalid() || aValue.getValueAsString().isEmpty();
+    }
+    // OSS-IDENTITY-REGION datatable-key-blankness END
+
+
+    /**
      * Create a {@link IDataValue} instance from the given value object by aiming for the given
      * type.
      *
@@ -427,10 +428,10 @@ public class DataValueSupport
         {
             // ⭐ A stored MissingValue keeps its identity for EVERY target type: whether a cell
             // is missing cannot depend on the column's type. Resolved BEFORE the switch on
-            // purpose. getAsDataValueString wraps anything non-null through toString(), so a
-            // missing cell used to become the plain string ".", ".A" or "NA" and answered
-            // "not missing" — on exactly the character columns that Dataset-JSON, Parquet and
-            // .cdt store a MissingValue in.
+            // purpose. getAsDataValueString wraps anything non-null through toString() (as every
+            // text-wrapping arm does), so a missing cell used to become the plain string ".",
+            // ".A" or "NA" and answered "not missing" — on exactly the character columns that
+            // store a MissingValue.
             return new DataValueMissing(missingvalue);
         }
 

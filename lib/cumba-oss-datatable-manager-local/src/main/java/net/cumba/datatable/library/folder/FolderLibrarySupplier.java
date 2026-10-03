@@ -44,7 +44,7 @@ public class FolderLibrarySupplier implements ILibrarySupplier
             // A file-scheme URI the default filesystem cannot address (an authority component,
             // an opaque form): not a folder we can serve. Before 2026-09-14 this THREW out of
             // canProvideFor, taking down every provider-discovery loop that touched such a URI
-            // -- discovery answers questions, it must not crash on them.
+            // — discovery answers questions, it must not crash on them.
             return false;
         }
     }
