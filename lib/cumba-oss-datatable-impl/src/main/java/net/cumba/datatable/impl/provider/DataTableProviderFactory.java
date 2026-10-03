@@ -233,12 +233,13 @@ public class DataTableProviderFactory
                     return res;
                 }
             }
+            catch (VirtualMachineError fatal)
+            {
+                // out of memory, stack overflow: never recorded, never wrapped, no next supplier
+                throw fatal;
+            }
             catch (Throwable ex)
             {
-                if (ex instanceof VirtualMachineError fatal)
-                {
-                    throw fatal;
-                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }
@@ -278,12 +279,13 @@ public class DataTableProviderFactory
                     return res;
                 }
             }
+            catch (VirtualMachineError fatal)
+            {
+                // out of memory, stack overflow: never recorded, never wrapped, no next supplier
+                throw fatal;
+            }
             catch (Throwable ex)
             {
-                if (ex instanceof VirtualMachineError fatal)
-                {
-                    throw fatal;
-                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }
@@ -341,12 +343,13 @@ public class DataTableProviderFactory
                     return res;
                 }
             }
+            catch (VirtualMachineError fatal)
+            {
+                // out of memory, stack overflow: never recorded, never wrapped, no next supplier
+                throw fatal;
+            }
             catch (Throwable ex)
             {
-                if (ex instanceof VirtualMachineError fatal)
-                {
-                    throw fatal;
-                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }
@@ -449,12 +452,13 @@ public class DataTableProviderFactory
                     return res;
                 }
             }
+            catch (VirtualMachineError fatal)
+            {
+                // out of memory, stack overflow: never recorded, never wrapped, no next supplier
+                throw fatal;
+            }
             catch (Throwable ex)
             {
-                if (ex instanceof VirtualMachineError fatal)
-                {
-                    throw fatal;
-                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }
