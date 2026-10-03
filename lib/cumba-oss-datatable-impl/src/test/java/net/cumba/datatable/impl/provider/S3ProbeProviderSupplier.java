@@ -3,10 +3,13 @@ package net.cumba.datatable.impl.provider;
 import java.io.IOException;
 import java.net.URI;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
+import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.metadata.IMetadataLibrary;
 import net.cumba.datatable.provider.IDataTableProvider;
 import net.cumba.datatable.provider.IProviderSupplier;
@@ -46,7 +49,7 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
     /** Controls what type of throwable to raise. */
     enum FailMode
     {
-        IO_EXCEPTION, RUNTIME_EXCEPTION, ERROR
+        IO_EXCEPTION, RUNTIME_EXCEPTION, ERROR, OUT_OF_MEMORY
     }
 
     static volatile FailMode failMode = FailMode.IO_EXCEPTION;
@@ -65,7 +68,13 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
      * If non-null, returned by the provider's getProviderProperties overloads (both URI and
      * member). Null keeps the interface-default behaviour (empty list).
      */
-    static volatile List<net.cumba.datatable.io.Property> providerProperties;
+    static volatile List<Property> providerProperties;
+
+    /**
+     * The property map the most recent provider received through one of its {@code Map}-carrying
+     * {@code provide} / {@code provideMetaData} overloads; null while none was called.
+     */
+    static final AtomicReference<Map<Property, String>> LAST_PROPERTIES = new AtomicReference<>();
 
     /**
      * Reset the static control state to a quiescent default. Tests <b>must</b> call this in
@@ -80,6 +89,7 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
         throwOnSetters = false;
         providerProperties = null;
         LAST_PROVIDER.set(null);
+        LAST_PROPERTIES.set(null);
         S3ProbeFallbackSupplier.reset();
     }
 
@@ -133,19 +143,17 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
 
 
         @Override
-        public List<net.cumba.datatable.io.Property> getProviderProperties(URI aUri,
-                FileInfo aFileInfo)
+        public List<Property> getProviderProperties(URI aUri, FileInfo aFileInfo)
         {
-            List<net.cumba.datatable.io.Property> props = providerProperties;
+            List<Property> props = providerProperties;
             return props != null ? props : List.of();
         }
 
 
         @Override
-        public List<net.cumba.datatable.io.Property> getProviderProperties(
-                net.cumba.datatable.library.ILibraryMember aMember, FileInfo aFileInfo)
+        public List<Property> getProviderProperties(ILibraryMember aMember, FileInfo aFileInfo)
         {
-            List<net.cumba.datatable.io.Property> props = providerProperties;
+            List<Property> props = providerProperties;
             return props != null ? props : List.of();
         }
 
@@ -187,9 +195,7 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
 
 
         @Override
-        public IDataTable provide(net.cumba.datatable.library.ILibraryMember aMember,
-                FileInfo aFileInfo)
-            throws IOException
+        public IDataTable provide(ILibraryMember aMember, FileInfo aFileInfo) throws IOException
         {
             if (failOnProvide)
             {
@@ -210,6 +216,45 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
         }
 
 
+        @Override
+        public IDataTable provide(URI aUri, FileInfo aFileInfo, Map<Property, String> aProperties)
+            throws IOException
+        {
+            LAST_PROPERTIES.set(aProperties);
+            return provide(aUri, aFileInfo);
+        }
+
+
+        @Override
+        public IDataTable provide(ILibraryMember aMember, FileInfo aFileInfo,
+                Map<Property, String> aProperties)
+            throws IOException
+        {
+            LAST_PROPERTIES.set(aProperties);
+            return provide(aMember, aFileInfo);
+        }
+
+
+        @Override
+        public DataTableMeta provideMetaData(URI aUri, FileInfo aFileInfo,
+                Map<Property, String> aProperties)
+            throws IOException
+        {
+            LAST_PROPERTIES.set(aProperties);
+            return provideMetaData(aUri, aFileInfo);
+        }
+
+
+        @Override
+        public DataTableMeta provideMetaData(ILibraryMember aMember, FileInfo aFileInfo,
+                Map<Property, String> aProperties)
+            throws IOException
+        {
+            LAST_PROPERTIES.set(aProperties);
+            return provideMetaData(aMember, aFileInfo);
+        }
+
+
         private void throwForMode(String aSite) throws IOException
         {
             if (mode == FailMode.IO_EXCEPTION)
@@ -221,6 +266,12 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
                 // Neither an IOException nor a RuntimeException: the shape a NoClassDefFoundError
                 // from a half-present provider takes, which the factory must survive per supplier.
                 throw new NoClassDefFoundError("probe forced failure at " + aSite);
+            }
+            if (mode == FailMode.OUT_OF_MEMORY)
+            {
+                // A VirtualMachineError: the factory must let it propagate at once, unwrapped,
+                // never record it and try the next supplier.
+                throw new OutOfMemoryError("probe forced failure at " + aSite);
             }
             throw new IllegalStateException("probe forced failure at " + aSite);
         }

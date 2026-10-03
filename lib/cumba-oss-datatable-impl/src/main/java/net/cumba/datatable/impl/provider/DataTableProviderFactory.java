@@ -133,7 +133,8 @@ public class DataTableProviderFactory
      * {@link GenericProviderFactory#provide(URI, FileInfo, Predicate)} is kept: every throwable a
      * provider raises is recorded and the next supplier is tried; the first one is rethrown as is
      * when it is an {@link IOException} or a {@link RuntimeException}, and wrapped in an
-     * {@link IOException} otherwise.
+     * {@link IOException} otherwise. The one exception is a {@link VirtualMachineError} (out of
+     * memory, stack overflow): it propagates at once, unwrapped, and no further supplier is tried.
      * </p>
      */
     @Override
@@ -234,6 +235,10 @@ public class DataTableProviderFactory
             }
             catch (Throwable ex)
             {
+                if (ex instanceof VirtualMachineError fatal)
+                {
+                    throw fatal;
+                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }
@@ -275,6 +280,10 @@ public class DataTableProviderFactory
             }
             catch (Throwable ex)
             {
+                if (ex instanceof VirtualMachineError fatal)
+                {
+                    throw fatal;
+                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }
@@ -289,6 +298,9 @@ public class DataTableProviderFactory
      * Provide only the {@link DataTableMeta} for the given URI without reading row data. The first
      * supplier that can handle the URI wins; the resulting provider is queried via
      * {@link IDataTableProvider#provideMetaData(URI, FileInfo, Map)}.
+     * <p>
+     * The per-supplier error contract is the one of {@link #provide(URI, FileInfo, Predicate)}.
+     * </p>
      *
      * @param aURI
      *            the URI to provide metadata for.
@@ -329,8 +341,12 @@ public class DataTableProviderFactory
                     return res;
                 }
             }
-            catch (RuntimeException | IOException ex)
+            catch (Throwable ex)
             {
+                if (ex instanceof VirtualMachineError fatal)
+                {
+                    throw fatal;
+                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }
@@ -342,9 +358,9 @@ public class DataTableProviderFactory
 
 
     /**
-     * Combine successive failures during {@code provideMetaData} probing: the first non-null
-     * throwable becomes the primary, all subsequent ones are recorded via
-     * {@link Throwable#addSuppressed}. Always logs at DEBUG.
+     * Combine successive failures while probing the suppliers: the first non-null throwable becomes
+     * the primary, all subsequent ones are recorded via {@link Throwable#addSuppressed}. Always
+     * logs at DEBUG.
      */
     private static Throwable recordSuppressedException(@Nullable Throwable aPrimary, Throwable aNew)
     {
@@ -365,9 +381,9 @@ public class DataTableProviderFactory
 
 
     /**
-     * If any supplier threw while probing metadata, re-throw it preserving the original type when
-     * it is an {@link IOException} or {@link RuntimeException}; otherwise wrap into an IOException.
-     * No-op when {@code aThrowable} is null.
+     * If any supplier threw while probing, re-throw it preserving the original type when it is an
+     * {@link IOException} or {@link RuntimeException}; otherwise wrap into an IOException. No-op
+     * when {@code aThrowable} is null.
      */
     private static void rethrowAggregatedMetaError(@Nullable Throwable aThrowable)
         throws IOException
@@ -390,6 +406,9 @@ public class DataTableProviderFactory
 
     /**
      * Provide only the {@link DataTableMeta} for the given library member without reading row data.
+     * <p>
+     * The per-supplier error contract is the one of {@link #provide(URI, FileInfo, Predicate)}.
+     * </p>
      *
      * @param aMember
      *            the library member to provide metadata for.
@@ -430,8 +449,12 @@ public class DataTableProviderFactory
                     return res;
                 }
             }
-            catch (RuntimeException | IOException ex)
+            catch (Throwable ex)
             {
+                if (ex instanceof VirtualMachineError fatal)
+                {
+                    throw fatal;
+                }
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
             }

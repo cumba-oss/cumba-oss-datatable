@@ -11,6 +11,10 @@ import java.util.Collections;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.impl.CachedDataTableColumn;
+import net.cumba.datatable.impl.ColumnCachedDataTable;
+import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
+import net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary;
 import net.cumba.datatable.impl.provider.S3ProbeProviderSupplier.FailMode;
 import net.cumba.datatable.impl.provider.S3ProbeProviderSupplier.S3ProbeProvider;
 import net.cumba.datatable.library.ILibraryMember;
@@ -22,9 +26,9 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 /**
- * F-A8 / F-A9 / F-A13 — verifies that {@link DataTableProviderFactory} clears the provider's
- * {@code listener} and {@code metadata} fields in the per-supplier catch block (F-A9), and that no
- * proactive {@code setLoadingProgressListener(null)} happens before the metadata-read try (F-A8).
+ * F-A9 / F-A13 — verifies that {@link DataTableProviderFactory} clears the provider's state in the
+ * per-supplier catch block (F-A9), keeps the per-supplier error contract of
+ * {@code GenericProviderFactory.provide} (D2), and leaves the state wired on the success path.
  *
  * <p>
  * The {@link S3ProbeProviderSupplier} is registered via
@@ -53,31 +57,96 @@ class DataTableProviderFactoryStateClearTest
         S3ProbeProviderSupplier.reset();
     }
 
-    // ================== D2: the per-supplier error contract of provide(URI, FileInfo) ==========
+    // ================== D2: the per-supplier error contract of provide and provideMetaData ======
 
 
     /**
      * One provider raising an {@link Error} (the shape a {@code NoClassDefFoundError} from a
      * half-present provider takes) must not end the probe: the factory records it, clears that
      * provider's state and tries the next supplier, whose table is returned. Pins that the
-     * 2-argument entry point — routed through the state-clearing loop — keeps
-     * {@code GenericProviderFactory.provide}'s catch-everything contract.
+     * initializer entry point — routed through the state-clearing loop — keeps
+     * {@code GenericProviderFactory.provide}'s catch-everything contract. The initializer wires a
+     * metadata library, so the cleared state is observable: without the override the probe provider
+     * would keep it.
      */
     @Test
     void provideUri_errorFromOneProviderFallsThroughToTheNextSupplier() throws IOException
     {
         S3ProbeProviderSupplier.failNext = true;
         S3ProbeProviderSupplier.failMode = FailMode.ERROR;
-        IDataTable fallback = Mockito.mock(IDataTable.class);
+        IDataTable fallback = fallbackTable();
         S3ProbeFallbackSupplier.enabled = true;
         S3ProbeFallbackSupplier.table = fallback;
+        IMetadataLibrary md = metadataLibrary();
 
-        IDataTable res = factory.provide(PROBE_URI, S3ProbeProviderSupplier.PROBE_INFO);
+        IDataTable res = factory.provide(PROBE_URI, S3ProbeProviderSupplier.PROBE_INFO, p ->
+        {
+            p.setMetadata(md);
+            return true;
+        });
 
         assertSame(fallback, res, "the next supplier's table is returned after the Error");
         S3ProbeProvider p = S3ProbeProviderSupplier.LAST_PROVIDER.get();
         assertNotNull(p, "the failing probe provider was asked first");
         assertNull(p.metadata(), "the failing provider's state is cleared");
+    }
+
+
+    /**
+     * The metadata loop keeps the same contract: an {@link Error} from one provider is recorded and
+     * the next supplier's metadata is returned.
+     */
+    @Test
+    void provideMetaDataUri_errorFromOneProviderFallsThroughToTheNextSupplier() throws IOException
+    {
+        S3ProbeProviderSupplier.failNext = true;
+        S3ProbeProviderSupplier.failMode = FailMode.ERROR;
+        IDataTable fallback = fallbackTable();
+        S3ProbeFallbackSupplier.enabled = true;
+        S3ProbeFallbackSupplier.table = fallback;
+
+        DataTableMeta res = factory.provideMetaData(PROBE_URI, S3ProbeProviderSupplier.PROBE_INFO,
+                metadataLibrary(), Collections.emptyMap());
+
+        assertSame(fallback.getMetaData(), res,
+                "the next supplier's metadata is returned after the Error");
+        S3ProbeProvider p = S3ProbeProviderSupplier.LAST_PROVIDER.get();
+        assertNotNull(p, "the failing probe provider was asked first");
+        assertNull(p.metadata(), "the failing provider's state is cleared");
+    }
+
+
+    /**
+     * A {@link VirtualMachineError} is never recorded: it propagates at once, unwrapped, and the
+     * next supplier is not tried — even though one is ready to answer.
+     */
+    @Test
+    void provideUri_outOfMemoryPropagatesUnwrapped()
+    {
+        S3ProbeProviderSupplier.failNext = true;
+        S3ProbeProviderSupplier.failMode = FailMode.OUT_OF_MEMORY;
+        S3ProbeFallbackSupplier.enabled = true;
+        S3ProbeFallbackSupplier.table = fallbackTable();
+
+        OutOfMemoryError ex = assertThrows(OutOfMemoryError.class, () -> factory.provide(PROBE_URI,
+                S3ProbeProviderSupplier.PROBE_INFO, metadataLibrary(), Collections.emptyMap()));
+        assertSame(OutOfMemoryError.class, ex.getClass());
+    }
+
+
+    /** The metadata loop lets a {@link VirtualMachineError} through the same way. */
+    @Test
+    void provideMetaDataUri_outOfMemoryPropagatesUnwrapped()
+    {
+        S3ProbeProviderSupplier.failNext = true;
+        S3ProbeProviderSupplier.failMode = FailMode.OUT_OF_MEMORY;
+        S3ProbeFallbackSupplier.enabled = true;
+        S3ProbeFallbackSupplier.table = fallbackTable();
+
+        OutOfMemoryError ex = assertThrows(OutOfMemoryError.class,
+                () -> factory.provideMetaData(PROBE_URI, S3ProbeProviderSupplier.PROBE_INFO,
+                        metadataLibrary(), Collections.emptyMap()));
+        assertSame(OutOfMemoryError.class, ex.getClass());
     }
 
 
@@ -101,7 +170,7 @@ class DataTableProviderFactoryStateClearTest
 
 
     @Test
-    void provideUri_ioExceptionClearsListenerAndMetadata()
+    void provideUri_ioExceptionClearsProviderState()
     {
         S3ProbeProviderSupplier.failNext = true;
         S3ProbeProviderSupplier.failMode = FailMode.IO_EXCEPTION;
@@ -117,7 +186,7 @@ class DataTableProviderFactoryStateClearTest
 
 
     @Test
-    void provideUri_runtimeExceptionClearsListenerAndMetadata()
+    void provideUri_runtimeExceptionClearsProviderState()
     {
         S3ProbeProviderSupplier.failNext = true;
         S3ProbeProviderSupplier.failMode = FailMode.RUNTIME_EXCEPTION;
@@ -133,7 +202,7 @@ class DataTableProviderFactoryStateClearTest
 
 
     @Test
-    void provideMember_ioExceptionClearsListenerAndMetadata()
+    void provideMember_ioExceptionClearsProviderState()
     {
         S3ProbeProviderSupplier.failNext = true;
         ILibraryMember member = Mockito.mock(ILibraryMember.class);
@@ -194,8 +263,8 @@ class DataTableProviderFactoryStateClearTest
         // The throwOnSetters tripwire is wired to fire only on null writes — so the initial
         // setMetadata(metadata) inside the provideMetaData loop succeeds, the metadata read then
         // throws (failNext), the catch block invokes clearProviderState which calls
-        // setLoadingProgressListener(null) → tripwire throws → clearProviderState must absorb it
-        // and let the original IOException from the metadata read be rethrown.
+        // setMetadata(null) → tripwire throws → clearProviderState must absorb it and let the
+        // original IOException from the metadata read be rethrown.
         S3ProbeProviderSupplier.failNext = true;
         S3ProbeProviderSupplier.failMode = FailMode.IO_EXCEPTION;
         S3ProbeProviderSupplier.throwOnSetters = true;
@@ -212,48 +281,11 @@ class DataTableProviderFactoryStateClearTest
         assertNotNull(S3ProbeProviderSupplier.LAST_PROVIDER.get());
     }
 
-    // ================== F-A8: successful metadata read does NOT clear listener ==================
+    // ================== F-A9 negative: the success path leaves the provider state wired =======
 
 
     @Test
-    void provideMetaDataUri_successDoesNotClearListenerSideChannel()
-    {
-        // F-A8 removed the proactive setLoadingProgressListener(null) call before the try. The
-        // listener field on the probe provider is left untouched; since we don't pre-set it
-        // anywhere, it stays at its construction default (null) — but the important behavioural
-        // fact is that no null write was performed. We use throwOnSetters to detect a write to
-        // setLoadingProgressListener: if F-A8's deletion regressed, the factory would call it and
-        // throwOnSetters would surface as an IllegalStateException out of the factory.
-        S3ProbeProviderSupplier.failNext = false;
-        S3ProbeProviderSupplier.successMeta = mockMeta();
-
-        // throwOnSetters trips ANY setter call. setMetadata happens before the try and is expected
-        // — so we cannot leave it on for the whole call. Instead, we use a custom probe behaviour:
-        // arm throwOnSetters *only* after setMetadata. Simulate this by using the listener-only
-        // tripwire: pre-set the listener field to a sentinel via reflection? Too invasive.
-        // Simpler: just assert listener stays null after the successful call (post-F-A8 the
-        // factory writes nothing to listener; pre-F-A8 it would have written null which is
-        // observationally indistinguishable — *but* in conjunction with the failure-path test
-        // that observes the explicit catch-block clear, the success path being silent is what
-        // F-A8 guarantees).
-        IMetadataLibrary metadata = Mockito.mock(IMetadataLibrary.class);
-
-        DataTableMeta res = assertDoesNotThrowReturning(() -> factory.provideMetaData(PROBE_URI,
-                S3ProbeProviderSupplier.PROBE_INFO, metadata, Collections.emptyMap()));
-
-        assertNotNull(res, "probe returns the configured successMeta");
-        S3ProbeProvider p = S3ProbeProviderSupplier.LAST_PROVIDER.get();
-        assertNotNull(p);
-        assertSame(metadata, p.metadata(),
-                "F-A8: metadata stayed wired through to the provider on the success path");
-    }
-
-    // ================== F-A9 negative: success path leaves listener+metadata wired
-    // ==================
-
-
-    @Test
-    void provideUri_successDoesNotClearListenerOrMetadata()
+    void provideUri_successLeavesProviderStateWired()
     {
         S3ProbeProviderSupplier.failNext = false;
         S3ProbeProviderSupplier.successDataTable = Mockito.mock(IDataTable.class);
@@ -279,6 +311,23 @@ class DataTableProviderFactoryStateClearTest
                 .type(DataValueType.STRING).build();
         return DataTableMeta.builder().name("probe").setColumns(cm).rowCount(0).totalRowCount(0)
                 .build();
+    }
+
+
+    /** A real one-column, zero-row table for the fallback supplier to answer with. */
+    private static IDataTable fallbackTable()
+    {
+        CachedDataTableColumn col = new CachedDataTableColumn(0, DataValueType.STRING);
+        col.complete();
+        return new ColumnCachedDataTable(mockMeta(), col);
+    }
+
+
+    /** A real, empty metadata library. */
+    private static IMetadataLibrary metadataLibrary()
+    {
+        return DataBrowserMetadataLibrary.from(DataBrowserLibraryBean.builder().name("md").build(),
+                URI.create("file:///tmp/state-clear.dblib"));
     }
 
     private interface ThrowingSupplier<T>
