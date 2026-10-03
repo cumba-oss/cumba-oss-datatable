@@ -11,8 +11,11 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 import java.util.stream.Stream;
+import net.cumba.cdisc.define.DefineCache;
+import net.cumba.cdisc.define.DefineSupport;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import org.junit.jupiter.api.Test;
@@ -106,6 +109,74 @@ class DefineXmlLibraryProviderTest
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
 
         assertNull(provider.getDescription());
+    }
+
+    // ==================== F-E7: narrowed catch in computeStudyDefaultName ====================
+
+
+    /**
+     * F-E7: {@code computeStudyDefaultName} used to swallow {@code Exception} which masked real
+     * parse errors and forced the second {@code provide()} attempt to surface them. After the
+     * narrowing, only {@link IOException} is caught here — runtime errors propagate immediately.
+     *
+     * <p>
+     * The observable behaviour from
+     * {@link DefineXmlLibraryProvider#getProviderProperties(URI, net.cumba.datatable.io.FileInfo)}
+     * is that an unreachable file returns the property list without throwing. Anything more
+     * invasive would require mocking {@code DefineCache}.
+     */
+    @Test
+    void testGetProviderPropertiesReturnsPropertyListForMissingFile()
+    {
+        DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
+        URI missing = URI.create("file:///definitely/does/not/exist.xml");
+        List<Property> props = provider.getProviderProperties(missing, null);
+        assertNotNull(props);
+        assertEquals(1, props.size(), "expected a single library-name property");
+    }
+
+
+    /**
+     * F-dtcdisc-05: {@code computeStudyDefaultName}'s javadoc promises {@code null} "on any failure
+     * so callers fall back to the URI-based default", but it caught only {@link IOException}.
+     * Define-XML parsing and {@code DefineMetadataLibrary.from(...)} can raise unchecked failures,
+     * and those escaped {@code getProviderProperties} entirely — the library would not open at all
+     * — where the documented behaviour is the plain URI-based fallback.
+     *
+     * <p>
+     * The shared {@link DefineCache} singleton is swapped for one whose loader throws unchecked,
+     * and restored in the finally block so no other test in this JVM sees it.
+     * </p>
+     */
+    @Test
+    void getProviderPropertiesFallsBackWhenTheDefineLoadThrowsUnchecked() throws Exception
+    {
+        java.lang.reflect.Field field = DefineCache.class.getDeclaredField("sharedInstance");
+        field.setAccessible(true);
+        Object previous = field.get(null);
+        field.set(null, new DefineCache()
+        {
+
+            @Override
+            protected DefineSupport loadDefine(URI aUri)
+            {
+                throw new java.nio.file.InvalidPathException(aUri.toString(),
+                        "structurally odd Define-XML");
+            }
+        });
+        try
+        {
+            DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
+            List<Property> props = provider
+                    .getProviderProperties(URI.create("file:///no/such/define.xml"), null);
+
+            assertEquals(1, props.size());
+            assertNotNull(props.get(0));
+        }
+        finally
+        {
+            field.set(null, previous);
+        }
     }
 
     // ==================== F-E19: validation-report leaf id matcher ====================
@@ -276,7 +347,6 @@ class DefineXmlLibraryProviderTest
     }
 
     // ==================== buildSources(): dataset-level def:HasNoData ====================
-    // Ported from the internal twin: the HasNoData filter in buildSources() had no direct test.
 
 
     @Test

@@ -20,8 +20,8 @@ import org.junit.jupiter.api.Test;
  * Advanced tests for {@link DefineCache} covering revalidation via mocked {@code lastModified}, the
  * timeout fast-path, and a concurrency check on the double-checked locking inside
  * {@link DefineCache#sharedInstance()}, plus the reaping of entries whose {@code SoftReference} has
- * cleared -- driven through {@link DefineCache.CacheEntry#clearReference()} rather than by trying
- * to provoke the collector, which no test can do deterministically.
+ * cleared — driven through {@link DefineCache.CacheEntry#clearReference()} rather than by trying to
+ * provoke the collector, which no test can do deterministically.
  */
 class DefineCacheAdvancedTest
 {
@@ -211,10 +211,9 @@ class DefineCacheAdvancedTest
      *
      * <p>
      * The predecessor of this test called {@code getOrLoad} twice and asserted the same instance
-     * came back -- it named {@code cleanUpCache} but never put a cleared reference in the map, so
-     * it could not tell reaping from doing nothing. Clearing the
-     * {@link java.lang.ref.SoftReference} directly is the same event the collector raises under
-     * heap pressure, minus the race.
+     * came back — it named {@code cleanUpCache} but never put a cleared reference in the map, so it
+     * could not tell reaping from doing nothing. Clearing the {@link java.lang.ref.SoftReference}
+     * directly is the same event the collector raises under heap pressure, minus the race.
      * </p>
      */
     @Test
@@ -245,8 +244,8 @@ class DefineCacheAdvancedTest
 
     /**
      * The point of the cleanup: a long session that opens many defines, each of which is eventually
-     * collected, must not accumulate map entries. Without the reap this map only ever grows --
-     * every define.xml ever opened leaves its URI and a dead {@code CacheEntry} behind.
+     * collected, must not accumulate map entries. Without the reap this map only ever grows — every
+     * define.xml ever opened leaves its URI and a dead {@code CacheEntry} behind.
      */
     @Test
     void aSessionOfCollectedDefinesDoesNotGrowTheCache() throws Exception

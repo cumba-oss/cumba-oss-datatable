@@ -141,7 +141,7 @@ final class ItemGroupClassDisambiguationModule extends SimpleModule
             // TextNode
             // and so threw ClassCastException there; that does NOT reproduce — Jackson-XML gives
             // an EMPTY ObjectNode for an empty element, which binds to an all-null bean (pinned
-            // by an internal binding test). No input was found that reaches the fallback
+            // by ItemGroupDefClassBindingTest). No input was found that reaches the fallback
             // below. The cast was genuinely unchecked, so the guard stays, but it is insurance
             // rather than a fix for an observed failure.
             if (tree instanceof ObjectNode node)

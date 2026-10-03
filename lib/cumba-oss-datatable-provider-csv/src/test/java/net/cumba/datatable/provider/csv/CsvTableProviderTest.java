@@ -241,10 +241,11 @@ class CsvTableProviderTest
 
 
     /**
-     * Fix #161, character half: a short row's absent <b>character</b> field reads as an empty
-     * string, not a {@link MissingValue}. A CSV cannot express a null, so the very same blank cell
-     * must not read differently depending only on whether its row happened to be short. The
-     * ordinary path already yields {@code ""} for a present-but-empty character field.
+     * A short row's absent <b>character</b> field reads as an empty string, not a
+     * {@link MissingValue}: a CSV cannot express a null, so the very same blank cell must not read
+     * differently depending only on whether its row happened to be short. The ordinary path already
+     * yields {@code ""} for a present-but-empty character field.
+     *
      */
     @Test
     void testProvideShortRowsInACharacterColumnReadAsEmptyString() throws Exception

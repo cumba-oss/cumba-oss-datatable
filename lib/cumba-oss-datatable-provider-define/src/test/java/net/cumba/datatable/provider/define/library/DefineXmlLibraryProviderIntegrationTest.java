@@ -25,6 +25,7 @@ import net.cumba.cdisc.define.ODM;
 import net.cumba.cdisc.define.Study;
 import net.cumba.cdisc.define.SupplementalDoc;
 import net.cumba.datatable.impl.library.dblib.DataBrowserLibrary;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryProvider;
 import org.junit.jupiter.api.AfterEach;
@@ -109,6 +110,45 @@ class DefineXmlLibraryProviderIntegrationTest
                 .leaf(Leaf.builder().id("L." + aName).href(aHref).build()).build();
     }
 
+    // ==================== getProviderProperties ====================
+
+
+    @Test
+    void getProviderProperties_returnsLibraryNameDefault()
+    {
+        URI uri = uniqueUri("props");
+        DefineSupport stub = buildSupport(uri, mdvWith(List.of(), List.of()),
+                GlobalVariables.builder().studyName("STUDY-A").build());
+        DefineCache.sharedInstance().setDefineLoader(_ -> stub);
+
+        DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
+        List<Property> props = provider.getProviderProperties(uri, null);
+
+        assertEquals(1, props.size());
+        Property p = props.get(0);
+        assertEquals(ILibraryProvider.LIBRARY_NAME_PROPERTY_NAME, p.name());
+        // study name + standard + version = "STUDY-A - SDTM-IG 3.4"
+        assertEquals("STUDY-A - SDTM-IG 3.4", p.defaultValue());
+    }
+
+
+    @Test
+    void getProviderProperties_swallowsLoadFailure()
+    {
+        URI uri = uniqueUri("propfail");
+        DefineCache.sharedInstance().setDefineLoader(_ ->
+        {
+            throw new IOException("simulated");
+        });
+
+        DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
+        List<Property> props = provider.getProviderProperties(uri, null);
+
+        // even if load fails, the property is still returned (with URI-derived default)
+        assertEquals(1, props.size());
+        assertNotNull(props.get(0).defaultValue());
+    }
+
     // ==================== provide() ====================
 
 
@@ -130,12 +170,20 @@ class DefineXmlLibraryProviderIntegrationTest
         try (IDataTableLibrary lib = provider.provide(uri, null))
         {
             assertNotNull(lib);
-            assertInstanceOf(DataBrowserLibrary.class, lib);
-            assertEquals("STUDY-B - SDTM-IG 3.4", lib.getName());
-            assertEquals(1, ((DataBrowserLibrary) lib).getBean().getSources().length);
-            assertEquals("DM", ((DataBrowserLibrary) lib).getBean().getSources()[0].getName());
+            // The same object as lib, which the enclosing try-with-resources closes.
+            @SuppressWarnings("PMD.CloseResource")
+            DataBrowserLibrary dbLib = assertInstanceOf(DataBrowserLibrary.class, lib);
+            assertEquals("STUDY-B - SDTM-IG 3.4", dbLib.getName());
+            assertEquals(1, dbLib.getBean().getSources().length);
+            assertEquals("DM", dbLib.getBean().getSources()[0].getName());
             // no validation-report supplemental doc → no attribute
-            assertNull(((DataBrowserLibrary) lib).getBean().getAttributes());
+            assertNull(dbLib.getBean().getAttributes());
+            // Kills a VoidMethodCallMutator removing lib.setMetadata(metadata): without it the
+            // returned library's metadata (and therefore its codelist-driven format catalog)
+            // would
+            // silently be absent.
+            assertNotNull(dbLib.getMetadata());
+            assertEquals("STUDY-B", dbLib.getMetadata().getName());
         }
     }
 
@@ -153,10 +201,10 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        try (IDataTableLibrary lib = provider.provide(uri, null))
         {
-            assertEquals(1, dbLib.getBean().getSources().length);
-            assertEquals("A", dbLib.getBean().getSources()[0].getName());
+            assertEquals(1, ((DataBrowserLibrary) lib).getBean().getSources().length);
+            assertEquals("A", ((DataBrowserLibrary) lib).getBean().getSources()[0].getName());
         }
     }
 
@@ -173,10 +221,27 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        try (IDataTableLibrary lib = provider.provide(uri, null))
         {
-            assertEquals(1, dbLib.getBean().getSources().length);
-            assertEquals("A", dbLib.getBean().getSources()[0].getName());
+            assertEquals(1, ((DataBrowserLibrary) lib).getBean().getSources().length);
+            assertEquals("A", ((DataBrowserLibrary) lib).getBean().getSources()[0].getName());
+        }
+    }
+
+
+    @Test
+    void provide_honoursUserSuppliedLibraryName() throws IOException
+    {
+        URI uri = uniqueUri("user-name");
+        DefineSupport stub = buildSupport(uri, mdvWith(List.of(), List.of()),
+                GlobalVariables.builder().studyName("STUDY-X").build());
+        DefineCache.sharedInstance().setDefineLoader(_ -> stub);
+
+        DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
+        Property prop = provider.getProviderProperties(uri, null).get(0);
+        try (IDataTableLibrary lib = provider.provide(uri, null, Map.of(prop, "MyOverride")))
+        {
+            assertEquals("MyOverride", lib.getName());
         }
     }
 
@@ -232,16 +297,16 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        try (IDataTableLibrary lib = provider.provide(uri, null))
         {
-            Map<String, String> attrs = dbLib.getBean().getAttributes();
+            Map<String, String> attrs = ((DataBrowserLibrary) lib).getBean().getAttributes();
             assertNotNull(attrs);
             String reportUri = attrs.get(ILibraryProvider.ATTRIBUTE_VALIDATION_REPORT);
             assertNotNull(reportUri);
             assertTrue(reportUri.endsWith("p21-report.xlsx"), reportUri);
 
             // and exposed via getLibraryAttribute as well
-            Object lookup = provider.getLibraryAttribute(dbLib,
+            Object lookup = provider.getLibraryAttribute(lib,
                     ILibraryProvider.ATTRIBUTE_VALIDATION_REPORT);
             assertEquals(reportUri, lookup);
         }
@@ -266,9 +331,9 @@ class DefineXmlLibraryProviderIntegrationTest
         DefineCache.sharedInstance().setDefineLoader(_ -> stub);
 
         DefineXmlLibraryProvider provider = new DefineXmlLibraryProvider();
-        try (DataBrowserLibrary dbLib = (DataBrowserLibrary) provider.provide(uri, null))
+        try (IDataTableLibrary lib = provider.provide(uri, null))
         {
-            assertNull(dbLib.getBean().getAttributes());
+            assertNull(((DataBrowserLibrary) lib).getBean().getAttributes());
         }
     }
 

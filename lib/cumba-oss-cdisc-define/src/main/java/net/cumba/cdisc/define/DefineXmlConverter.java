@@ -58,9 +58,7 @@ public final class DefineXmlConverter
     public enum Version
     {
 
-        V1_0(0, "1.0", "1.0.0", ODM_NS_12, "1.2", DEF_NS_10),
-        V2_0(1, "2.0", "2.0.0", ODM_NS_13, "1.3.2", DEF_NS_20),
-        V2_1(2, "2.1", "2.1.0", ODM_NS_13, "1.3.2", DEF_NS_21);
+        V1_0(0, "1.0", "1.0.0"), V2_0(1, "2.0", "2.0.0"), V2_1(2, "2.1", "2.1.0");
 
         private final int rank;
 
@@ -68,21 +66,11 @@ public final class DefineXmlConverter
 
         private final String defineVersion;
 
-        private final String odmNamespace;
-
-        private final String odmVersion;
-
-        private final String defNamespace;
-
-        Version(int rank, String label, String defineVersion, String odmNamespace,
-                String odmVersion, String defNamespace)
+        Version(int rank, String label, String defineVersion)
         {
             this.rank = rank;
             this.label = label;
             this.defineVersion = defineVersion;
-            this.odmNamespace = odmNamespace;
-            this.odmVersion = odmVersion;
-            this.defNamespace = defNamespace;
         }
 
 
@@ -117,24 +105,6 @@ public final class DefineXmlConverter
         public String defineVersion()
         {
             return defineVersion;
-        }
-
-
-        String odmNamespace()
-        {
-            return odmNamespace;
-        }
-
-
-        String odmVersion()
-        {
-            return odmVersion;
-        }
-
-
-        String defNamespace()
-        {
-            return defNamespace;
         }
 
 
