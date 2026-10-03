@@ -19,6 +19,7 @@ import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.provider.sas.testsupport.LoggerCapture;
+import net.cumba.datatable.values.DataValueType;
 import net.cumba.sasutils.VariableType;
 import net.cumba.sasutils.bdat.ColumnName;
 import net.cumba.sasutils.bdat.DatasetBdat;
