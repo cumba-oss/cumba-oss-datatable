@@ -320,7 +320,22 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
 
 
     /**
-     * {@inheritDoc}
+     * A fast path to check whether the cell at the given row carries <b>no usable value</b> — it is
+     * {@code null}, a {@link MissingValue}, or a zero-length {@link String}.
+     *
+     * <p>
+     * This is the <em>blankness</em> notion: it is deliberately wider than
+     * {@link #isMissingOrNull(long)}, because a source {@code null} in a character column (which
+     * the Dataset-JSON and Parquet loaders represent as a {@link MissingValue}) and an empty string
+     * the file genuinely contains are <b>both</b> blank.
+     * </p>
+     *
+     * <p>
+     * A MISSING-typed column is blank at every row: every cell's data value is a
+     * {@code DataValueMissing}, whatever the buffer holds, so it is answered before any buffer is
+     * read.
+     * </p>
+     *
      * <p>
      * Type-dispatched so the hot path never allocates:
      * </p>
@@ -339,6 +354,10 @@ public class CachedDataTableColumn extends AbstractDataTableColumn
     public boolean isEmptyOrMissing(long aRow) throws IndexOutOfBoundsException
     {
         int idx = Math.toIntExact(ensureValidRow(aRow));
+        if (type == DataValueType.MISSING)
+        {
+            return true;
+        }
         if (dataBuffer.size() <= idx)
         {
             return true;
