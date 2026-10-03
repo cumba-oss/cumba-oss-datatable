@@ -2,20 +2,25 @@ package net.cumba.datatable.impl.io;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Tests for {@link AbstractGenericProvider#downloadToFile}: content is copied byte-exactly, the
- * temp-file variant carries the source extension, and a failing download raises IOException.
+ * temp-file variant carries the source extension and is readable by its owner only, and a failing
+ * download raises IOException without leaving its temp file behind.
  */
 class AbstractGenericProviderDownloadTest
 {
@@ -64,6 +69,28 @@ class AbstractGenericProviderDownloadTest
             assertNotNull(out);
             assertTrue(out.getName().endsWith(".csv"), out.getName());
             assertArrayEquals(Files.readAllBytes(src), Files.readAllBytes(out.toPath()));
+        }
+        finally
+        {
+            Files.deleteIfExists(out.toPath());
+        }
+    }
+
+
+    /** The downloaded temp file is created owner-only (0600), not with the umask's permissions. */
+    @Test
+    void tempFileVariantIsReadableByItsOwnerOnly() throws IOException
+    {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "POSIX file permissions only");
+        Path src = tmp.resolve("table.csv");
+        Files.writeString(src, "A,B\n1,2\n");
+
+        File out = new Probe().downloadToFile(src.toUri());
+        try
+        {
+            assertEquals(PosixFilePermissions.fromString("rw-------"),
+                    Files.getPosixFilePermissions(out.toPath()));
         }
         finally
         {
@@ -166,11 +193,30 @@ class AbstractGenericProviderDownloadTest
     }
 
 
+    /**
+     * A missing source raises IOException, and the temp file the download had already created is
+     * deleted. The probe records the very file the real copy was asked to fill, so the check names
+     * that file rather than scanning a temp directory other processes also write to.
+     */
     @Test
     void missingSourceRaisesIoException()
     {
-        Probe probe = new Probe();
+        File[] target = new File[1];
+        Probe probe = new Probe()
+        {
+
+            @Override
+            protected void downloadToFile(java.net.URI aUri, File aFile, int aBufferSize)
+                throws IOException
+            {
+                target[0] = aFile;
+                super.downloadToFile(aUri, aFile, aBufferSize);
+            }
+        };
         assertThrows(IOException.class,
                 () -> probe.downloadToFile(tmp.resolve("absent.bin").toUri()));
+        assertNotNull(target[0], "the temp-file variant reached the copy");
+        assertTrue(target[0].getName().startsWith("temp_cumba"), target[0].getName());
+        assertFalse(target[0].exists(), "the failed download left its temp file behind");
     }
 }
