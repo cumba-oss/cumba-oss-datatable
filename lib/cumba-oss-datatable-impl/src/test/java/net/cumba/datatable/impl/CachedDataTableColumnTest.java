@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import net.cumba.datatable.values.DataValueMissing;
 import net.cumba.datatable.values.DataValueType;
@@ -16,6 +17,14 @@ import org.junit.jupiter.api.Test;
 
 class CachedDataTableColumnTest
 {
+
+    /**
+     * The column types whose blankness fast path reads {@code getValue} rather than the buffer's
+     * {@code isMissing} — OSS: the fast arm routes every type but STRING and OTHER to the buffer (a
+     * registered twin difference, sweep D7), so only these two read {@code getValue}.
+     */
+    private static final List<DataValueType> TYPES_READ_BY_VALUE = List.of(DataValueType.STRING,
+            DataValueType.OTHER);
 
     private CachedDataTableColumn stringColumn;
 
@@ -536,6 +545,81 @@ class CachedDataTableColumnTest
             assertEquals(col.getDataValue(row).isEmptyOrMissing(), col.isEmptyOrMissing(row),
                     "column vs value level disagree at row " + row);
             assertTrue(col.isEmptyOrMissing(row), "a MISSING-typed cell is blank at row " + row);
+        }
+    }
+
+
+    /**
+     * PLAN-other-column-nan-blankness: a boxed NaN — {@code Double.NaN} or {@code Float.NaN} — in a
+     * column whose fast path reads {@code getValue} (TYPES_READ_BY_VALUE) is decoded as missing by
+     * {@code getDataValue}, so both column-level predicates must say so too:
+     * {@code isEmptyOrMissing(row)} agrees with {@code getDataValue(row).isEmptyOrMissing()} and
+     * {@code isMissingOrNull(row)} with {@code getDataValue(row).isMissingOrInvalid()}. Checked
+     * over a mixed column (NaN, Float NaN, {@code ""} except in LONG, {@code null}, a present
+     * value) and an all-NaN column, which the default factory may compress to a constant buffer.
+     * Every disagreement is collected, so a red run names each type, row and predicate at once.
+     */
+    @Test
+    void isEmptyOrMissing_nanInGeneralPath_agreesWithGetDataValue()
+    {
+        List<String> disagreements = new ArrayList<>();
+        for (DataValueType type : TYPES_READ_BY_VALUE)
+        {
+            CachedDataTableColumn mixed = new CachedDataTableColumn(0, type);
+            mixed.addElement((Object) Double.NaN);
+            mixed.addElement((Object) Float.NaN);
+            if (type != DataValueType.LONG)
+            {
+                // A String in a LONG column is a type mismatch the buffer decodes as MIS_ERROR
+                // (missing to isMissingOrInvalid, not to isMissingOrNull): the out-of-scope
+                // mismatch class of this plan (review L4), not a NaN case.
+                mixed.addElement((Object) "");
+            }
+            mixed.addElement((Object) null);
+            mixed.addElement(presentValueFor(type));
+            mixed.complete();
+            collectDisagreements(type + " mixed", mixed, disagreements);
+            for (long row = 0; row < 2; row++)
+            {
+                // the direction of ruling D1: a boxed NaN is blank, not merely consistent
+                if (!mixed.isEmptyOrMissing(row))
+                {
+                    disagreements.add(type + " mixed row " + row + " NaN not blank (D1)");
+                }
+            }
+
+            CachedDataTableColumn allNaN = new CachedDataTableColumn(0, type);
+            for (int i = 0; i < 3; i++)
+            {
+                allNaN.addElement((Object) Double.NaN);
+            }
+            allNaN.complete();
+            collectDisagreements(type + " all-NaN", allNaN, disagreements);
+        }
+        assertEquals(List.of(), disagreements, "column vs value level disagree");
+    }
+
+
+    private static Object presentValueFor(DataValueType aType)
+    {
+        return aType == DataValueType.LONG ? (Object) Long.valueOf(7L) : "x";
+    }
+
+
+    private static void collectDisagreements(String aLabel, CachedDataTableColumn aColumn,
+            List<String> aOut)
+    {
+        for (long row = 0; row < aColumn.getRowCount(); row++)
+        {
+            IDataValue dv = aColumn.getDataValue(row);
+            if (aColumn.isEmptyOrMissing(row) != dv.isEmptyOrMissing())
+            {
+                aOut.add(aLabel + " row " + row + " isEmptyOrMissing");
+            }
+            if (aColumn.isMissingOrNull(row) != dv.isMissingOrInvalid())
+            {
+                aOut.add(aLabel + " row " + row + " isMissingOrNull");
+            }
         }
     }
 
