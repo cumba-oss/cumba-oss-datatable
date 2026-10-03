@@ -604,4 +604,26 @@ class CachedDataTableColumnTest
         assertTrue(col.isEmptyOrMissing(1));
     }
 
+
+    /**
+     * A MISSING-typed column is blank at every row: every cell's data value is a
+     * {@code DataValueMissing}, whatever the buffer holds, so the column-level answer must agree
+     * with {@code getDataValue(row).isEmptyOrMissing()} for a raw {@code null}, a
+     * {@link MissingValue} and a non-missing object alike.
+     */
+    @Test
+    void isEmptyOrMissing_missingTypedColumn_agreesWithGetDataValue()
+    {
+        CachedDataTableColumn col = new CachedDataTableColumn(0, DataValueType.MISSING);
+        col.addElement((Object) null);
+        col.addElement(MissingValue.MIS);
+        col.addElement("x");
+        col.complete();
+        for (long row = 0; row < 3; row++)
+        {
+            assertEquals(col.getDataValue(row).isEmptyOrMissing(), col.isEmptyOrMissing(row),
+                    "column vs value level disagree at row " + row);
+        }
+    }
+
 }
