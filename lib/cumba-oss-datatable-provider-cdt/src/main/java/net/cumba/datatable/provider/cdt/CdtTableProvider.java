@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
@@ -14,6 +15,8 @@ import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
+import net.cumba.datatable.library.ILibraryMember;
 
 import org.jspecify.annotations.Nullable;
 
@@ -23,6 +26,20 @@ import org.jspecify.annotations.Nullable;
  */
 public class CdtTableProvider extends AbstractDataTableProvider
 {
+
+    /**
+     * Placeholder property. When {@code true} the provider will enforce that every data block ends
+     * with a matching closing fence line. Currently unused — fence closers are always optional on
+     * read — reserved so the switch can be flipped later without breaking callers that already set
+     * it. Not exposed from {@link #getProviderProperties(URI, FileInfo)} while the behaviour is not
+     * yet implemented, so the UI does not prompt for it.
+     */
+    public static final Property STRICT_FENCE = Property.forBoolean("Strict Fence",
+            "Require every data block to end with a matching closing fence line. Reserved"
+                    + " for future use; currently accepted but not enforced.",
+            true);
+
+    private static final List<Property> PROPERTIES = List.of();
 
     @SuppressWarnings("this-escape")
     public CdtTableProvider()
@@ -36,6 +53,30 @@ public class CdtTableProvider extends AbstractDataTableProvider
     public List<FileInfo> getSupportedFileInfos()
     {
         return CdtProviderSupplier.FIS;
+    }
+
+
+    @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return PROPERTIES;
+    }
+
+
+    @Override
+    public List<Property> getProviderProperties(ILibraryMember aMember,
+            @Nullable FileInfo aFileInfo)
+    {
+        return PROPERTIES;
+    }
+
+
+    @Override
+    public IDataTable provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        return provide(aUri, aFileInfo);
     }
 
 
