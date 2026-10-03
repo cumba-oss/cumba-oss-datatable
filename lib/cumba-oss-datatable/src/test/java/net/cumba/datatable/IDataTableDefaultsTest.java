@@ -476,6 +476,28 @@ class IDataTableDefaultsTest
 
 
     @Test
+    void column_getValueList_returnsListView()
+    {
+        IDataTable t = threeRowTable();
+        IDataTableColumn c = t.getColumn(0);
+        List<@Nullable Object> view = c.getValueList();
+        assertEquals(3, view.size());
+        assertEquals("a", view.get(0));
+        assertEquals("c", view.get(2));
+    }
+
+
+    @Test
+    void column_getDataValueList_returnsListView()
+    {
+        IDataTable t = threeRowTable();
+        IDataTableColumn c = t.getColumn(0);
+        List<IDataValue> view = c.getDataValueList();
+        assertEquals(3, view.size());
+    }
+
+
+    @Test
     void column_isMissingOrNull_works()
     {
         DataTableMeta meta = DataTableMeta.builder().setColumns(col(0, "S", DataValueType.STRING))
@@ -524,69 +546,93 @@ class IDataTableDefaultsTest
 
 
     /**
-     * A table whose single character column carries, in order: a real value, an explicit
-     * {@link MissingValue} (what the Dataset-JSON / Parquet loaders now store for a source
-     * {@code null}), an empty string the file genuinely contained, and a bare {@code null}.
+     * A table carrying, in one character column, each of the four states the blankness predicate
+     * has to separate: a populated value, an empty string, a {@link MissingValue}, and a raw
+     * {@code null}.
      */
     private static StubTable blanknessTable()
     {
-        DataTableMeta meta = DataTableMeta.builder().name("t")
-                .setColumns(col(0, "S", DataValueType.STRING)).rowCount(4).totalRowCount(4).build();
+        DataTableMeta meta = DataTableMeta.builder().name("blank")
+                .setColumns(col(0, "S", DataValueType.STRING), col(1, "L", DataValueType.LONG))
+                .rowCount(4).totalRowCount(4).build();
         return new StubTable(meta, new Object[][]
         {
                 {
-                        "a"
+                        "a", 1L
                 },
                 {
-                        MissingValue.MIS
+                        "", 2L
                 },
                 {
-                        ""
+                        MissingValue.MIS, MissingValue.MIS
                 },
                 {
-                        null
+                        null, null
                 }
         });
     }
 
 
-    /**
-     * ⚑ The whole point of the predicate: rows 1 and 2 hold <em>different</em> things — a
-     * {@code MissingValue} and a genuine {@code ""} — and it must answer the same for both, while
-     * still answering {@code false} for the populated control row. Without the control row every
-     * assertion here would hold on a predicate that simply returns {@code true}.
-     */
     @Test
-    void isEmptyOrMissing_foldsMissingNullAndEmptyStringAlike()
+    void isEmptyOrMissing_foldsEmptyStringMissingAndNull()
     {
-        StubTable t = blanknessTable();
+        IDataTable t = blanknessTable();
 
-        assertFalse(t.isEmptyOrMissing(0, 0), "a populated cell is not blank");
-        assertTrue(t.isEmptyOrMissing(1, 0), "a MissingValue is blank");
-        assertTrue(t.isEmptyOrMissing(2, 0), "an empty string is blank");
+        assertFalse(t.isEmptyOrMissing(0, 0), "a populated value is not blank");
+        assertTrue(t.isEmptyOrMissing(1, 0), "an empty string is blank");
+        assertTrue(t.isEmptyOrMissing(2, 0), "a MissingValue is blank");
         assertTrue(t.isEmptyOrMissing(3, 0), "a null is blank");
     }
 
 
-    /**
-     * ⚠ {@code isMissingOrNull} must NOT have moved: it stays the narrower notion, so the empty
-     * string at row 2 is missing to {@code isEmptyOrMissing} and not to {@code isMissingOrNull}.
-     * That difference is the one that makes the two predicates worth having separately.
-     */
     @Test
-    void isEmptyOrMissing_isStrictlyWiderThanIsMissingOrNull()
+    void isEmptyOrMissing_isWiderThanIsMissingOrNull()
     {
-        StubTable t = blanknessTable();
+        IDataTable t = blanknessTable();
 
-        assertFalse(t.isMissingOrNull(2, 0), "an empty string is not a missing marker");
-        assertTrue(t.isEmptyOrMissing(2, 0), "…but it is blank");
+        // The empty string is the whole point: blank, but not missing.
+        assertTrue(t.isEmptyOrMissing(1, 0));
+        assertFalse(t.isMissingOrNull(1, 0));
+    }
 
-        for (long r = 0; r < 4; r++)
-        {
-            long row = r;
-            assertTrue(!t.isMissingOrNull(row, 0) || t.isEmptyOrMissing(row, 0),
-                    () -> "isMissingOrNull must imply isEmptyOrMissing, row " + row);
-        }
+
+    @Test
+    void isEmptyOrMissing_numericColumnIgnoresTheEmptyStringArm()
+    {
+        IDataTable t = blanknessTable();
+
+        assertFalse(t.isEmptyOrMissing(0, 1));
+        assertFalse(t.isEmptyOrMissing(1, 1), "a populated number is never blank");
+        assertTrue(t.isEmptyOrMissing(2, 1));
+        assertTrue(t.isEmptyOrMissing(3, 1));
+    }
+
+
+    @Test
+    void isEmptyOrMissing_outOfRangeThrows()
+    {
+        IDataTable t = blanknessTable();
+
+        assertThrows(IndexOutOfBoundsException.class, () -> t.isEmptyOrMissing(4, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.isEmptyOrMissing(0, 9));
+    }
+
+
+    @Test
+    void column_isEmptyOrMissing_foldsEmptyStringMissingAndNull()
+    {
+        IDataTable t = blanknessTable();
+        IDataTableColumn c = t.getColumn(0);
+
+        assertFalse(c.isEmptyOrMissing(0));
+        assertTrue(c.isEmptyOrMissing(1), "an empty string is blank");
+        assertTrue(c.isEmptyOrMissing(2), "a MissingValue is blank");
+        assertTrue(c.isEmptyOrMissing(3), "a null is blank");
+
+        // A populated non-String cell: the empty-string arm must not swallow it.
+        IDataTableColumn num = t.getColumn(1);
+        assertFalse(num.isEmptyOrMissing(0));
+        assertTrue(num.isEmptyOrMissing(2));
     }
 
 
@@ -606,28 +652,66 @@ class IDataTableDefaultsTest
     }
 
 
+    /**
+     * The interface defaults and the value-level predicate agree on EVERY row of the fixture: a
+     * populated value, an empty string, a {@link MissingValue} in a character column, and a raw
+     * {@code null} ({@code DataValueSupport.getAsDataValue} wraps a null as
+     * {@code DataValueMissing(MIS)}, so both levels call it blank).
+     *
+     * <p>
+     * ⭐ Row 2 — the {@link MissingValue} in a <b>character</b> column — used to be excluded here,
+     * because the value level saw the rendered {@code "."} while the column level saw the raw
+     * sentinel. That disagreement was the defect PLAN-cdt-char-missing-contract phase 6 removed
+     * (the missing-value check is now resolved above the type switch), so the loop covers all four
+     * rows and the exclusion is gone.
+     * </p>
+     */
     @Test
-    void isEmptyOrMissing_outOfBounds_throws()
+    void column_isEmptyOrMissing_agreesWithTheValueLevel()
     {
-        StubTable t = blanknessTable();
-        assertThrows(IndexOutOfBoundsException.class, () -> t.isEmptyOrMissing(9, 0));
-        assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(0).isEmptyOrMissing(9));
+        IDataTableColumn c = blanknessTable().getColumn(0);
+
+        for (long row : new long[]
+        {
+                0, 1, 2, 3
+        })
+        {
+            assertEquals(c.getDataValue(row).isEmptyOrMissing(), c.isEmptyOrMissing(row),
+                    "column vs value level disagree at row " + row);
+        }
     }
 
 
     /**
-     * ⭐ The table-level pin of the {@code DataValueSupport.getAsDataValue} missing-value hoist
-     * (PLAN-cdt-char-missing-contract phase 6): a stored {@link MissingValue} in a CHARACTER column
-     * stays missing through the <em>typed</em> channel too, while its rendering is unchanged.
-     * Before the hoist the STRING arm of the type switch stringified it, so this cell answered a
-     * {@code DataValueString} of {@code "."} that reported {@code isMissingOrInvalid() == false}.
+     * ⭐ <b>Rewritten, not deleted</b> — PLAN-cdt-char-missing-contract phase 6. This test used to
+     * be called {@code getDataValue_rendersAMissingValueAsItsStringInACharacterColumn} and pinned
+     * the OPPOSITE contract: that asking for a cell <em>as a</em> {@link DataValueType#STRING}
+     * rendered a {@link MissingValue} into its display text, so the returned {@code IDataValue}
+     * answered {@code isMissingOrInvalid() == false} and callers were told to ask blankness of the
+     * table or column instead.
+     *
+     * <p>
+     * That asymmetry was a defect, not a design: {@code DataValueSupport.getAsDataValue} resolved
+     * its type switch before its {@code instanceof MissingValue} check, and only the STRING and
+     * VARIABLE arms — which stringify anything non-null — swallowed the sentinel. Every provider
+     * that stores a {@link MissingValue} in a character column (Dataset-JSON, Parquet, RDS, OSB,
+     * XLSX, {@code .cdt}) was therefore answered "not missing" through the interface default, while
+     * the buffer-backed override in {@code AbstractDataBuffer.createDataValue} — which has always
+     * tested {@code instanceof MissingValue} first — said "missing" for the same cell.
+     * </p>
+     *
+     * <p>
+     * ⛔ The RENDERING did not change: a missing cell still displays as its display text
+     * ({@code "."} for {@code MIS}), so nothing shown or exported moves. Only the answer to "is
+     * this missing?" does.
+     * </p>
      */
     @Test
     void getDataValue_keepsAMissingValueMissingInACharacterColumn()
     {
-        StubTable t = blanknessTable();
+        IDataTable t = blanknessTable();
 
-        IDataValue charCell = t.getDataValue(1, 0);
+        IDataValue charCell = t.getDataValue(2, 0);
         assertEquals(".", charCell.getValueAsString(),
                 "the rendering is unchanged — a missing cell still displays as its text");
         assertTrue(charCell.isMissingOrInvalid(),
@@ -635,8 +719,13 @@ class IDataTableDefaultsTest
         assertTrue(charCell.isEmptyOrMissing());
 
         // The raw-value predicates were always correct, and still are.
-        assertTrue(t.isEmptyOrMissing(1, 0));
-        assertTrue(t.getColumn(0).isEmptyOrMissing(1));
-    }
+        assertTrue(t.isEmptyOrMissing(2, 0));
+        assertTrue(t.getColumn(0).isEmptyOrMissing(2));
 
+        // A numeric column never had the problem: every numeric helper returns null for a
+        // MissingValue, so control always reached the shared missing arm.
+        IDataValue numCell = t.getDataValue(2, 1);
+        assertTrue(numCell.isMissingOrInvalid(), "a MissingValue survives in a numeric column");
+        assertTrue(numCell.isEmptyOrMissing());
+    }
 }

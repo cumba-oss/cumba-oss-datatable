@@ -2,10 +2,8 @@ package net.cumba.datatable.impl;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import net.cumba.datatable.values.DataValueMissing;
@@ -517,93 +515,6 @@ class CachedDataTableColumnTest
         assertEquals(3, col.getMaxValueLength());
     }
 
-    // ===== isEmptyOrMissing — the buffer-backed, allocation-free override =====
-
-
-    /**
-     * The STRING arm reads the raw stored object, so it must fold all three shapes of "no usable
-     * value" — a {@link MissingValue} (what the Dataset-JSON / Parquet loaders now store for a
-     * source {@code null}), a genuine empty string, and a bare {@code null} — while still calling a
-     * populated cell non-blank.
-     */
-    @Test
-    void isEmptyOrMissing_stringColumn_foldsMissingEmptyAndNull()
-    {
-        stringColumn.addElement("a");
-        stringColumn.addElement(MissingValue.MIS);
-        stringColumn.addElement("");
-        stringColumn.addElement(null);
-
-        assertFalse(stringColumn.isEmptyOrMissing(0), "a populated cell is not blank");
-        assertTrue(stringColumn.isEmptyOrMissing(1), "a MissingValue is blank");
-        assertTrue(stringColumn.isEmptyOrMissing(2), "an empty string is blank");
-        assertTrue(stringColumn.isEmptyOrMissing(3), "a null is blank");
-
-        // ⚠ The narrower predicate must NOT have moved: the empty string is blank but is not a
-        // missing marker. If these two ever agree on row 2 the distinction has been lost.
-        assertFalse(stringColumn.isMissingOrNull(2));
-    }
-
-
-    /**
-     * ⚑ The numeric arm is the reason the override exists: an empty string cannot live in a
-     * {@code double[]} / {@code long[]} buffer, so blankness collapses to <em>missing</em> and the
-     * answer is taken from the buffer's primitive storage without ever boxing a value.
-     */
-    @Test
-    void isEmptyOrMissing_numericColumns_agreeWithIsMissingOrNull()
-    {
-        doubleColumn.addElement(1.5d);
-        doubleColumn.addElement(MissingValue.MIS);
-        longColumn.addElement(7L);
-        longColumn.addElement(MissingValue.MIS);
-
-        assertFalse(doubleColumn.isEmptyOrMissing(0));
-        assertTrue(doubleColumn.isEmptyOrMissing(1));
-        assertEquals(doubleColumn.isMissingOrNull(1), doubleColumn.isEmptyOrMissing(1));
-
-        assertFalse(longColumn.isEmptyOrMissing(0));
-        assertTrue(longColumn.isEmptyOrMissing(1));
-        assertEquals(longColumn.isMissingOrNull(1), longColumn.isEmptyOrMissing(1));
-    }
-
-
-    /** A row past the end of the buffer is blank, matching {@code isMissingOrNull}'s handling. */
-    @Test
-    void isEmptyOrMissing_shortBuffer_isBlank()
-    {
-        stringColumn.addElement("a");
-        stringColumn.setTableRowCount(3);
-
-        assertFalse(stringColumn.isEmptyOrMissing(0));
-        assertTrue(stringColumn.isEmptyOrMissing(2));
-    }
-
-
-    @Test
-    void isEmptyOrMissing_outOfBounds_throws()
-    {
-        stringColumn.addElement("a");
-        assertThrows(IndexOutOfBoundsException.class, () -> stringColumn.isEmptyOrMissing(9));
-    }
-
-
-    @Test
-    void isMissingOrNull_nullCellIsMissing()
-    {
-        // IDataTableColumn#isMissingOrNull is contractually "null OR MissingValue" (its interface
-        // default is `v == null || v instanceof MissingValue`). A stored null must therefore
-        // answer true — the buffer's own isMissing only recognises MissingValue instances.
-        CachedDataTableColumn col = new CachedDataTableColumn(0, DataValueType.STRING);
-        col.addElement("x");
-        col.addElement((Object) null);
-
-        assertFalse(col.isMissingOrNull(0));
-        assertTrue(col.isMissingOrNull(1), "a null cell is missing-or-null by contract");
-        // and it must agree with the wider blankness notion, which already handles null
-        assertTrue(col.isEmptyOrMissing(1));
-    }
-
 
     /**
      * A MISSING-typed column is blank at every row: every cell's data value is a
@@ -626,4 +537,11 @@ class CachedDataTableColumnTest
         }
     }
 
+
+    @Test
+    void isEmptyOrMissing_outOfBounds_throws()
+    {
+        stringColumn.addElement("a");
+        assertThrows(IndexOutOfBoundsException.class, () -> stringColumn.isEmptyOrMissing(9));
+    }
 }

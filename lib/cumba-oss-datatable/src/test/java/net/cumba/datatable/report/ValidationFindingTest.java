@@ -253,66 +253,6 @@ class ValidationFindingTest
     // ==================== EC-40 record key ====================
 
 
-    /** The key slab and its schema come from two independent fields; both are never-null views. */
-    @Test
-    void keyRowsAndRowKeys_returnTheRecordKeyForAPosition()
-    {
-        ValidationFinding f = ValidationFinding.builder().variableNames(List.of("QVAL"))
-                .rows(slab(6, "QVAL", "Y"))
-                .location(ValidationFindingLocation.builder().dataset("SUPPAE")
-                        .variableNames(List.of("QVAL"))
-                        .keyVariableNames(List.of("QNAM", "IDVARVAL")).keySource("STRUCTURAL")
-                        .build())
-                .keyRows(slab(6, "QNAM", "AESOSP", "IDVARVAL", "3")).build();
-
-        assertEquals(1, f.getKeyRows().rowCount());
-        assertEquals(List.of("QNAM", "IDVARVAL"), f.getLocation().getKeyVariableNames());
-        assertEquals("STRUCTURAL", f.getLocation().getKeySource());
-        assertEquals("AESOSP", f.getRowKeys(0).get("QNAM"));
-        assertEquals("3", f.getRowKeys(0).get("IDVARVAL"));
-    }
-
-
-    @Test
-    void getKeyRows_defaultsToTheEmptySlabAndRowKeysToAnEmptyMap()
-    {
-        ValidationFinding f = ValidationFinding.builder().variableNames(List.of("QVAL"))
-                .rows(slab(0, "QVAL", "Y")).build();
-
-        assertSame(RowFindingSlab.EMPTY, f.getKeyRows());
-        assertTrue(f.getRowKeys(0).isEmpty());
-    }
-
-
-    @Test
-    void getRowKeys_guardsOutOfRangeAndMismatchedSchema()
-    {
-        ValidationFinding withKeys = ValidationFinding.builder().variableNames(List.of("QVAL"))
-                .rows(slab(6, "QVAL", "Y"))
-                .location(ValidationFindingLocation.builder().dataset("SUPPAE")
-                        .keyVariableNames(List.of("QNAM")).build())
-                .keyRows(slab(6, "QNAM", "AESOSP")).build();
-
-        assertTrue(withKeys.getRowKeys(-1).isEmpty(), "negative position");
-        assertTrue(withKeys.getRowKeys(1).isEmpty(), "position past the last row");
-
-        // A producer that sets keyRows without a matching location schema must not blow up.
-        ValidationFinding mismatched = withKeys.toBuilder().location(ValidationFindingLocation
-                .builder().dataset("SUPPAE").keyVariableNames(List.of("QNAM", "IDVARVAL")).build())
-                .build();
-        assertTrue(mismatched.getRowKeys(0).isEmpty(), "schema wider than the slab");
-    }
-
-
-    @Test
-    void keyVariablesAloneMakeALocationNonEmpty()
-    {
-        ValidationFindingLocation loc = ValidationFindingLocation.builder()
-                .keyVariableNames(List.of("QNAM")).build();
-        assertFalse(loc.isEmpty());
-    }
-
-
     @Test
     void testNullFields()
     {

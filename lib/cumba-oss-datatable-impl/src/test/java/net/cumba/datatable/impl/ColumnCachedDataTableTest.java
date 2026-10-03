@@ -4,8 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.List;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTableColumn;
@@ -345,5 +347,45 @@ class ColumnCachedDataTableTest
         {
             assertFalse(orig.getMetaData().getColumn(i).hasUnmappedFormatValues());
         }
+    }
+
+
+    private static DataTableMeta meta(String... aColumnNames)
+    {
+        DataTableColumnMeta[] cols = new DataTableColumnMeta[aColumnNames.length];
+        for (int i = 0; i < aColumnNames.length; i++)
+        {
+            cols[i] = DataTableColumnMeta.builder().index(i).name(aColumnNames[i])
+                    .type(DataValueType.STRING).build();
+        }
+        return DataTableMeta.builder().name("t").setColumns(cols).build();
+    }
+
+
+    private static CachedDataTableColumn stringColumn(int aIndex, String... aValues)
+    {
+        CachedDataTableColumn col = new CachedDataTableColumn(aIndex, DataValueType.STRING);
+        for (String v : aValues)
+        {
+            col.addElement(v);
+        }
+        return col;
+    }
+
+
+    @Test
+    void listConstructorKeepsColumnsAndMetadata()
+    {
+        CachedDataTableColumn c0 = stringColumn(0, "a");
+        CachedDataTableColumn c1 = stringColumn(1, "b");
+        DataTableMeta m = meta("C0", "C1");
+
+        ColumnCachedDataTable t = new ColumnCachedDataTable(m, List.of(c0, c1));
+
+        assertSame(m, t.getMetaData());
+        assertEquals(2, t.getColumnCount());
+        assertSame(c0, t.getColumn(0));
+        assertSame(c1, t.getColumn(1));
+        assertEquals("b", t.getValue(0, 1));
     }
 }

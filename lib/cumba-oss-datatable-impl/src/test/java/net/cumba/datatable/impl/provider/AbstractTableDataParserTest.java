@@ -3,6 +3,7 @@ package net.cumba.datatable.impl.provider;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -440,5 +441,92 @@ class AbstractTableDataParserTest
         assertEquals("Charlie", table.getColumn(0).getValue(0));
         assertEquals("Alpha", table.getColumn(0).getValue(1));
         assertEquals("Bravo", table.getColumn(0).getValue(2));
+    }
+
+
+    private static DataTableMeta meta(DataTableColumnMeta... aCols)
+    {
+        return DataTableMeta.builder().name("test").setColumns(aCols).rowCount(0).totalRowCount(0)
+                .build();
+    }
+
+
+    private static DataTableColumnMeta col(int aIndex, String aName, DataValueType aType,
+            int aLength)
+    {
+        return DataTableColumnMeta.builder().index(aIndex).name(aName).type(aType).length(aLength)
+                .build();
+    }
+
+
+    private static CachedDataTableColumn completedColumn(int aIndex, String... aValues)
+    {
+        CachedDataTableColumn c = new CachedDataTableColumn(aIndex, DataValueType.STRING);
+        for (String v : aValues)
+        {
+            c.addElement(v);
+        }
+        c.complete();
+        return c;
+    }
+
+
+    @Test
+    void reconcileReturnsNullWhenDeclaredCoversObserved()
+    {
+        DataTableMeta m = meta(col(0, "COL0", DataValueType.STRING, 5));
+        assertNull(AbstractTableDataParser.reconcileColumnLengths(m, new CachedDataTableColumn[]
+        {
+                completedColumn(0, "abc")
+        }));
+    }
+
+
+    @Test
+    void reconcileReturnsNullWhenObservedEqualsDeclared()
+    {
+        // The boundary case: observed == declared needs NO adjustment.
+        DataTableMeta m = meta(col(0, "COL0", DataValueType.STRING, 3));
+        assertNull(AbstractTableDataParser.reconcileColumnLengths(m, new CachedDataTableColumn[]
+        {
+                completedColumn(0, "abc")
+        }));
+    }
+
+
+    @Test
+    void reconcileBumpsOnlyTheShortStringColumnAndKeepsTheOthers()
+    {
+        DataTableColumnMeta ok = col(0, "OK", DataValueType.STRING, 10);
+        DataTableColumnMeta shortCol = col(1, "SHORT", DataValueType.STRING, 1);
+        DataTableMeta m = meta(ok, shortCol);
+
+        DataTableColumnMeta[] out = AbstractTableDataParser.reconcileColumnLengths(m,
+                new CachedDataTableColumn[]
+                {
+                        completedColumn(0, "ab"), completedColumn(1, "abcd")
+                });
+
+        assertNotNull(out, "a declared length below the observed maximum must be adjusted");
+        assertEquals(2, out.length);
+        assertSame(ok, out[0], "untouched columns must be carried over as-is");
+        assertEquals("SHORT", out[1].getName());
+        assertEquals(4, out[1].getLength());
+    }
+
+
+    @Test
+    void reconcileNeverTouchesNonStringColumns()
+    {
+        // A LONG column reports maxValueLength 0; even a declared length of 0 must not trigger
+        // any adjustment for a non-string column.
+        DataTableMeta m = meta(col(0, "NUM", DataValueType.LONG, 0));
+        CachedDataTableColumn c = new CachedDataTableColumn(0, DataValueType.LONG);
+        c.addElement(42L);
+        c.complete();
+        assertNull(AbstractTableDataParser.reconcileColumnLengths(m, new CachedDataTableColumn[]
+        {
+                c
+        }));
     }
 }

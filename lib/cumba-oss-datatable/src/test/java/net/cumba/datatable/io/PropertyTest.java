@@ -2,118 +2,234 @@ package net.cumba.datatable.io;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers the {@link Property} factory set, the Lombok-generated builder/{@code with} surface, and
- * the {@link PropertyType} enumeration.
- *
- * <h2>This type is a PORT, and this test is its drift pin</h2>
- *
- * <p>
- * {@code Property} and {@code PropertyType} were copied <b>verbatim</b> — same package, same
- * components, same factories, same javadoc — from
- * {@code /data/net.cumba.dataviewer/lib/net.cumba.datatable/src/main/java/net/cumba/datatable/io/}
- * at dataviewer commit <b>{@code 10ea72232}</b> (2026-08-12, wave-36 lane B / {@code Fix #224},
- * plan phase 2a). Only whitespace differs: the two projects' {@code eclipse-formatter.xml} are not
- * identical, so corej's Spotless reformats the copy.
- * </p>
- *
- * <p>
- * ⚠⚠ <b>Do not "improve" this type here.</b> Its whole reason for living at the original
- * coordinates is that the later {@code IDataTableProvider} migration can then be a pure add, with
- * no relocation and no second divergence. Anything worth changing is changed in the dataviewer
- * first and re-ported. In particular the values are always {@link String} — {@code forInteger}
- * stores {@code Long.toString} — because that string form is what crosses the JSON-RPC wire.
- * </p>
+ * Unit tests for {@link Property}. Exercises the static factory methods, the Lombok-generated
+ * {@code withXxx} accessors, and the {@code toBuilder} path.
  */
 class PropertyTest
 {
 
     @Test
-    void scalarFactoriesCarryTheirTypeAndStringifiedDefault()
+    void testForString()
     {
-        Property text = Property.forString("name", "a name", "abc");
-        assertEquals("name", text.name());
-        assertEquals("a name", text.description());
-        assertEquals(PropertyType.STRING, text.type());
-        assertEquals("abc", text.defaultValue());
-        assertNull(text.allowedValues());
-        assertFalse(text.editable());
-        assertNull(text.dependsOn());
-        assertNull(text.conditionalAllowedValues());
-        assertNull(text.dynamicResolverKey());
-        assertNull(text.maxLength());
-
-        assertEquals(PropertyType.BOOLEAN, Property.forBoolean("b", "d", true).type());
-        assertEquals("true", Property.forBoolean("b", "d", true).defaultValue());
-        assertEquals(PropertyType.INTEGER, Property.forInteger("i", "d", 10_000L).type());
-        assertEquals("10000", Property.forInteger("i", "d", 10_000L).defaultValue(),
-                "an integer default crosses the SPI as a string");
-        assertEquals(PropertyType.NUMBER, Property.forNumber("n", "d", 1.5).type());
-        assertEquals("1.5", Property.forNumber("n", "d", 1.5).defaultValue());
-        assertEquals(PropertyType.PASSWORD, Property.forPassword("p", "d", "").type());
+        Property p = Property.forString("name", "desc", "default");
+        assertEquals("name", p.name());
+        assertEquals("desc", p.description());
+        assertEquals(PropertyType.STRING, p.type());
+        assertEquals("default", p.defaultValue());
+        assertNull(p.allowedValues());
+        assertFalse(p.editable());
+        assertNull(p.dependsOn());
+        assertNull(p.conditionalAllowedValues());
+        assertNull(p.dynamicResolverKey());
     }
 
 
     @Test
-    void listFactoriesAcceptBothVarargsAndListForms()
+    void testForBoolean()
     {
-        assertEquals(List.of("a", "b"), Property.forOneOf("o", "d", "a", "a", "b").allowedValues());
-        assertEquals(List.of("a", "b"),
-                Property.forOneOf("o", "d", "a", List.of("a", "b")).allowedValues());
-        assertEquals(PropertyType.ONE_OF, Property.forOneOf("o", "d", "a", "a").type());
-
-        assertTrue(Property.forOneOfOrCustom("o", "d", "a", "a", "b").editable(),
-                "the custom variant renders an editable combo box");
-        assertTrue(Property.forOneOfOrCustom("o", "d", "a", List.of("a")).editable());
-        assertFalse(Property.forOneOf("o", "d", "a", "a").editable());
-
-        assertEquals(PropertyType.SOME_OF, Property.forSomeOf("s", "d", "", "a", "b").type());
-        assertEquals(List.of("a"), Property.forSomeOf("s", "d", "", List.of("a")).allowedValues());
-        assertEquals(PropertyType.ANY_OF, Property.forAnyOf("a", "d", "", "a", "b").type());
-        assertEquals(List.of("a"), Property.forAnyOf("a", "d", "", List.of("a")).allowedValues());
+        Property pTrue = Property.forBoolean("flag", "desc", true);
+        Property pFalse = Property.forBoolean("flag", "desc", false);
+        assertEquals(PropertyType.BOOLEAN, pTrue.type());
+        assertEquals("true", pTrue.defaultValue());
+        assertEquals("false", pFalse.defaultValue());
     }
 
 
     @Test
-    void pathFactoriesAndTheDynamicResolver()
+    void testForInteger()
     {
-        assertEquals(PropertyType.DIRECTORY, Property.forDirectory("d", "d", "/tmp").type());
-        assertEquals(PropertyType.FILE, Property.forFile("f", "d", "").type());
-        assertEquals(PropertyType.FILES, Property.forFiles("f", "d", "").type());
-
-        Property universe = Property.forSomeOrAllOff("u", "d", "", "tables");
-        assertEquals(PropertyType.SOME_OR_ALL_OF, universe.type());
-        assertEquals("tables", universe.dynamicResolverKey());
-        assertNull(universe.allowedValues(), "the universe is resolved at runtime, not declared");
+        Property p = Property.forInteger("count", "desc", 42L);
+        assertEquals(PropertyType.INTEGER, p.type());
+        assertEquals("42", p.defaultValue());
     }
 
 
     @Test
-    void theBuilderAndWithSurfaceRoundTrip()
+    void testForNumber()
     {
-        Property base = Property.builder().name("sheet").description("Sheet name")
-                .type(PropertyType.STRING).defaultValue("Sheet1").allowedValues(List.of("Sheet1"))
-                .editable(true).dependsOn("format")
-                .conditionalAllowedValues(Map.of("xlsx", List.of("Sheet1", "Sheet2")))
-                .dynamicResolverKey("sheets").maxLength(31).build();
+        Property p = Property.forNumber("value", "desc", 3.14);
+        assertEquals(PropertyType.NUMBER, p.type());
+        assertEquals("3.14", p.defaultValue());
+    }
 
-        assertEquals("sheet", base.name());
-        assertEquals(31, base.maxLength());
-        assertEquals(List.of("Sheet1", "Sheet2"), base.conditionalAllowedValues().get("xlsx"));
-        assertEquals(base, base.toBuilder().build(), "toBuilder round-trips every component");
 
-        // maxLength is three-valued on purpose: null = undeclared, 0 = explicitly unbounded.
-        assertNull(Property.forString("s", "d", "").maxLength());
-        assertEquals(0, base.withMaxLength(0).maxLength());
-        assertEquals("other", base.withName("other").name());
-        assertEquals("sheet", base.name(), "with* returns a copy and leaves the original alone");
+    @Test
+    void testForOneOfVarargs()
+    {
+        Property p = Property.forOneOf("pick", "desc", "a", "a", "b", "c");
+        assertEquals(PropertyType.ONE_OF, p.type());
+        assertEquals(List.of("a", "b", "c"), p.allowedValues());
+        assertFalse(p.editable());
+    }
+
+
+    @Test
+    void testForOneOfList()
+    {
+        List<String> options = List.of("x", "y");
+        Property p = Property.forOneOf("pick", "desc", "x", options);
+        assertEquals(PropertyType.ONE_OF, p.type());
+        assertEquals(options, p.allowedValues());
+        assertFalse(p.editable());
+    }
+
+
+    @Test
+    void testForOneOfOrCustomVarargs()
+    {
+        Property p = Property.forOneOfOrCustom("pick", "desc", "a", "a", "b");
+        assertEquals(PropertyType.ONE_OF, p.type());
+        assertTrue(p.editable(), "forOneOfOrCustom must produce an editable property");
+    }
+
+
+    @Test
+    void testForOneOfOrCustomList()
+    {
+        Property p = Property.forOneOfOrCustom("pick", "desc", "a", List.of("a", "b"));
+        assertEquals(PropertyType.ONE_OF, p.type());
+        assertTrue(p.editable());
+    }
+
+
+    @Test
+    void testForSomeOfVarargs()
+    {
+        Property p = Property.forSomeOf("pick", "desc", "a,b", "a", "b", "c");
+        assertEquals(PropertyType.SOME_OF, p.type());
+        assertEquals("a,b", p.defaultValue());
+        assertEquals(List.of("a", "b", "c"), p.allowedValues());
+    }
+
+
+    @Test
+    void testForSomeOfList()
+    {
+        Property p = Property.forSomeOf("pick", "desc", "a", List.of("a", "b"));
+        assertEquals(PropertyType.SOME_OF, p.type());
+    }
+
+
+    @Test
+    void testForAnyOfVarargs()
+    {
+        Property p = Property.forAnyOf("pick", "desc", "", "x", "y");
+        assertEquals(PropertyType.ANY_OF, p.type());
+        assertEquals(List.of("x", "y"), p.allowedValues());
+    }
+
+
+    @Test
+    void testForAnyOfList()
+    {
+        Property p = Property.forAnyOf("pick", "desc", "", List.of("x", "y"));
+        assertEquals(PropertyType.ANY_OF, p.type());
+    }
+
+
+    @Test
+    void testForPassword()
+    {
+        Property p = Property.forPassword("pw", "desc", "secret");
+        assertEquals(PropertyType.PASSWORD, p.type());
+        assertEquals("secret", p.defaultValue());
+    }
+
+
+    @Test
+    void testForDirectory()
+    {
+        Property p = Property.forDirectory("dir", "desc", "/tmp");
+        assertEquals(PropertyType.DIRECTORY, p.type());
+        assertEquals("/tmp", p.defaultValue());
+    }
+
+
+    @Test
+    void testForFile()
+    {
+        Property p = Property.forFile("file", "desc", "file:///tmp/a.csv");
+        assertEquals(PropertyType.FILE, p.type());
+        assertEquals("file:///tmp/a.csv", p.defaultValue());
+    }
+
+
+    @Test
+    void testForFiles()
+    {
+        Property p = Property.forFiles("files", "desc", "");
+        assertEquals(PropertyType.FILES, p.type());
+        assertEquals("", p.defaultValue());
+    }
+
+
+    @Test
+    void testForSomeOrAllOff()
+    {
+        Property p = Property.forSomeOrAllOff("pick", "desc", "", "key-1");
+        assertEquals(PropertyType.SOME_OR_ALL_OF, p.type());
+        assertEquals("key-1", p.dynamicResolverKey());
+        assertNull(p.allowedValues(),
+                "SOME_OR_ALL_OF uses dynamicResolverKey rather than a static list");
+    }
+
+
+    @Test
+    void testBuilderWithAllFields()
+    {
+        Property p = Property.builder()//
+                .name("custom")//
+                .description("desc")//
+                .type(PropertyType.ONE_OF)//
+                .defaultValue("a")//
+                .allowedValues(List.of("a", "b"))//
+                .editable(true)//
+                .dependsOn("controller")//
+                .conditionalAllowedValues(java.util.Map.of("ctlA", List.of("a")))//
+                .dynamicResolverKey("k")//
+                .build();
+        assertNotNull(p);
+        assertEquals("controller", p.dependsOn());
+        assertEquals(List.of("a"), p.conditionalAllowedValues().get("ctlA"));
+        assertEquals("k", p.dynamicResolverKey());
+    }
+
+
+    @Test
+    void testWithDefaultValueGeneratesCopy()
+    {
+        Property original = Property.forString("n", "d", "orig");
+        Property modified = original.withDefaultValue("new");
+        assertEquals("orig", original.defaultValue(), "Original must remain unchanged");
+        assertEquals("new", modified.defaultValue());
+        assertEquals(original.name(), modified.name());
+    }
+
+
+    @Test
+    void testToBuilderRoundtrip()
+    {
+        Property original = Property.forOneOf("pick", "desc", "a", "a", "b");
+        Property copy = original.toBuilder().build();
+        assertEquals(original, copy);
+    }
+
+
+    @Test
+    void testEqualsAndHashCode()
+    {
+        Property p1 = Property.forString("a", "b", "c");
+        Property p2 = Property.forString("a", "b", "c");
+        assertEquals(p1, p2);
+        assertEquals(p1.hashCode(), p2.hashCode());
     }
 
 

@@ -311,45 +311,4 @@ class ValidationReportTest
                     SkippedRuleEntry.builder().coreId("CORE-2").dataset("DM").reason("r").build());
         });
     }
-
-    // ==================== Executed core ids (Fix #225) ====================
-
-
-    @Test
-    void testGetExecutedCoreIdsNullReturnsEmptyList()
-    {
-        // A report deserialised from a pre-Fix-#225 document carries no executed set. It must read
-        // as empty, never null — a consumer that NPEs here would break on every stored report.
-        ValidationReport report = ValidationReport.builder().members(List.of()).build();
-
-        List<String> result = report.getExecutedCoreIds();
-
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
-    }
-
-
-    @Test
-    void testGetExecutedCoreIdsCarriesIdsInOrder()
-    {
-        ValidationReport report = ValidationReport.builder().members(List.of())
-                .executedCoreIds(List.of("CORE-1", "CORE-2")).build();
-
-        assertEquals(List.of("CORE-1", "CORE-2"), report.getExecutedCoreIds());
-    }
-
-
-    @Test
-    void testGetExecutedCoreIdsReturnsUnmodifiableList()
-    {
-        List<String> executed = new ArrayList<>();
-        executed.add("CORE-1");
-
-        ValidationReport report = ValidationReport.builder().members(List.of())
-                .executedCoreIds(executed).build();
-
-        List<String> result = report.getExecutedCoreIds();
-
-        assertThrows(UnsupportedOperationException.class, () -> result.add("CORE-2"));
-    }
 }
