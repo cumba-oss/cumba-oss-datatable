@@ -14,9 +14,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.io.InputStream;
-import java.io.Reader;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import javax.xml.namespace.QName;
@@ -158,10 +156,10 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLStreamReader_reader_wrapped() throws XMLStreamException, IOException
+    void createXMLStreamReader_reader_wrapped() throws XMLStreamException
     {
         XMLStreamReader inner = mock(XMLStreamReader.class);
-        try (Reader r = new StringReader(""))
+        try (StringReader r = new StringReader(""))
         {
             when(delegate.createXMLStreamReader(r)).thenReturn(inner);
 
@@ -188,10 +186,10 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLStreamReader_systemIdAndReader_wrapped() throws XMLStreamException, IOException
+    void createXMLStreamReader_systemIdAndReader_wrapped() throws XMLStreamException
     {
         XMLStreamReader inner = mock(XMLStreamReader.class);
-        try (Reader r = new StringReader(""))
+        try (StringReader r = new StringReader(""))
         {
             when(delegate.createXMLStreamReader("sid", r)).thenReturn(inner);
 
@@ -246,15 +244,14 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLEventReader_reader_delegated() throws XMLStreamException, IOException
+    void createXMLEventReader_reader_delegated() throws XMLStreamException
     {
         XMLEventReader inner = mock(XMLEventReader.class);
-        try (Reader r = new StringReader(""))
+        try (StringReader r = new StringReader(""))
         {
             when(delegate.createXMLEventReader(r)).thenReturn(inner);
 
             XMLEventReader result = factory.createXMLEventReader(r);
-
             assertSame(inner, result);
         }
     }
@@ -274,15 +271,14 @@ class NamespaceAgnosticAttrFactoryTest
 
 
     @Test
-    void createXMLEventReader_systemIdAndReader_delegated() throws XMLStreamException, IOException
+    void createXMLEventReader_systemIdAndReader_delegated() throws XMLStreamException
     {
         XMLEventReader inner = mock(XMLEventReader.class);
-        try (Reader r = new StringReader(""))
+        try (StringReader r = new StringReader(""))
         {
             when(delegate.createXMLEventReader("sid", r)).thenReturn(inner);
 
             XMLEventReader result = factory.createXMLEventReader("sid", r);
-
             assertSame(inner, result);
         }
     }
