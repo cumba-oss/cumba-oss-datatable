@@ -1,1 +1,2 @@
 net.cumba.datatable.impl.provider.S3ProbeProviderSupplier
+net.cumba.datatable.impl.provider.S3ProbeFallbackSupplier

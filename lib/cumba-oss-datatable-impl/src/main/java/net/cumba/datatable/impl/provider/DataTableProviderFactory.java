@@ -3,12 +3,17 @@ package net.cumba.datatable.impl.provider;
 import java.io.IOException;
 import java.lang.System.Logger.Level;
 import java.net.URI;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
 import lombok.CustomLog;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.io.GenericProviderFactory;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.metadata.IMetadataLibrary;
 import net.cumba.datatable.provider.IDataTableProvider;
@@ -99,13 +104,7 @@ public class DataTableProviderFactory
             @Nullable IMetadataLibrary aMetadata)
         throws IOException
     {
-        Predicate<IDataTableProvider> init = p ->
-        {
-            p.setMetadata(aMetadata);
-            return true;
-        };
-
-        return provide(aURI, aFileInfo, init);
+        return provide(aURI, aFileInfo, aMetadata, Collections.emptyMap());
     }
 
 
@@ -113,22 +112,101 @@ public class DataTableProviderFactory
             @Nullable IMetadataLibrary aMetadata)
         throws IOException
     {
+        return provide(aMember, aFileInfo, aMetadata, Collections.emptyMap());
+    }
+
+
+    public @Nullable IDataTable provide(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Predicate<IDataTableProvider> aInitializer)
+        throws IOException
+    {
+        return provide(aMember, aFileInfo, aInitializer, Collections.emptyMap());
+    }
+
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Routed through the property-carrying loop below (with no properties), so that a provider
+     * failing mid-probe has its state cleared before the next supplier is tried — exactly as the
+     * metadata-carrying overloads do. The error contract of
+     * {@link GenericProviderFactory#provide(URI, FileInfo, Predicate)} is kept: every throwable a
+     * provider raises is recorded and the next supplier is tried; the first one is rethrown as is
+     * when it is an {@link IOException} or a {@link RuntimeException}, and wrapped in an
+     * {@link IOException} otherwise.
+     * </p>
+     */
+    @Override
+    public @Nullable IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo,
+            @Nullable Predicate<IDataTableProvider> aInitializer)
+        throws IOException
+    {
+        return provide(aURI, aFileInfo, aInitializer, Collections.emptyMap());
+    }
+
+
+    /**
+     * Provide a data table with the given provider properties.
+     *
+     * @param aURI
+     *            the URI to be loaded.
+     * @param aFileInfo
+     *            the optional FileInfo.
+     * @param aMetadata
+     *            the metadata library to be given to the provider.
+     * @param aProperties
+     *            the provider properties to be used.
+     * @return the loaded data table. This might be null.
+     * @throws IOException
+     *             in case no data table can be provided.
+     */
+    public @Nullable IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo,
+            @Nullable IMetadataLibrary aMetadata, Map<Property, String> aProperties)
+        throws IOException
+    {
         Predicate<IDataTableProvider> init = p ->
         {
             p.setMetadata(aMetadata);
             return true;
         };
 
-        return provide(aMember, aFileInfo, init);
+        return provide(aURI, aFileInfo, init, aProperties);
     }
 
 
-    @Override
-    public @Nullable IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo,
-            @Nullable Predicate<IDataTableProvider> aInitializer)
+    /**
+     * Provide a data table for a library member with the given provider properties.
+     *
+     * @param aMember
+     *            the library member to be loaded.
+     * @param aFileInfo
+     *            the optional FileInfo.
+     * @param aMetadata
+     *            the metadata library to be given to the provider.
+     * @param aProperties
+     *            the provider properties to be used.
+     * @return the loaded data table. This might be null.
+     * @throws IOException
+     *             in case no data table can be provided.
+     */
+    public @Nullable IDataTable provide(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            @Nullable IMetadataLibrary aMetadata, Map<Property, String> aProperties)
         throws IOException
     {
-        @Nullable
+        Predicate<IDataTableProvider> init = p ->
+        {
+            p.setMetadata(aMetadata);
+            return true;
+        };
+
+        return provide(aMember, aFileInfo, init, aProperties);
+    }
+
+
+    private @Nullable IDataTable provide(URI aURI, @Nullable FileInfo aFileInfo,
+            @Nullable Predicate<IDataTableProvider> aInitializer, Map<Property, String> aProperties)
+        throws IOException
+    {
         Throwable t = null;
 
         for (IProviderSupplier ps : getSuppliers())
@@ -148,13 +226,13 @@ public class DataTableProviderFactory
             }
             try
             {
-                IDataTable res = provider.provide(aURI, aFileInfo);
+                IDataTable res = provider.provide(aURI, aFileInfo, aProperties);
                 if (res != null)
                 {
                     return res;
                 }
             }
-            catch (RuntimeException | IOException ex)
+            catch (Throwable ex)
             {
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
@@ -166,11 +244,10 @@ public class DataTableProviderFactory
     }
 
 
-    public @Nullable IDataTable provide(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
-            @Nullable Predicate<IDataTableProvider> aInitializer)
+    private @Nullable IDataTable provide(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            @Nullable Predicate<IDataTableProvider> aInitializer, Map<Property, String> aProperties)
         throws IOException
     {
-        @Nullable
         Throwable t = null;
 
         for (IProviderSupplier ps : getSuppliers())
@@ -190,13 +267,13 @@ public class DataTableProviderFactory
             }
             try
             {
-                IDataTable res = callProvide(provider, aMember, aFileInfo);
+                IDataTable res = provider.provide(aMember, aFileInfo, aProperties);
                 if (res != null)
                 {
                     return res;
                 }
             }
-            catch (RuntimeException | IOException ex)
+            catch (Throwable ex)
             {
                 t = recordSuppressedException(t, ex);
                 clearProviderState(provider);
@@ -211,7 +288,7 @@ public class DataTableProviderFactory
     /**
      * Provide only the {@link DataTableMeta} for the given URI without reading row data. The first
      * supplier that can handle the URI wins; the resulting provider is queried via
-     * {@link IDataTableProvider#provideMetaData(URI, FileInfo)}.
+     * {@link IDataTableProvider#provideMetaData(URI, FileInfo, Map)}.
      *
      * @param aURI
      *            the URI to provide metadata for.
@@ -219,16 +296,17 @@ public class DataTableProviderFactory
      *            the optional FileInfo.
      * @param aMetadata
      *            the metadata library to be given to the provider.
+     * @param aProperties
+     *            the provider properties to be used.
      * @return the loaded metadata. This might be null if no supplier can handle the URI.
      * @throws IOException
      *             in case no metadata can be provided by any of the providers and at least one
      *             provider has thrown an IOException.
      */
     public @Nullable DataTableMeta provideMetaData(URI aURI, @Nullable FileInfo aFileInfo,
-            @Nullable IMetadataLibrary aMetadata)
+            @Nullable IMetadataLibrary aMetadata, Map<Property, String> aProperties)
         throws IOException
     {
-        @Nullable
         Throwable t = null;
 
         for (IProviderSupplier ps : getSuppliers())
@@ -245,7 +323,7 @@ public class DataTableProviderFactory
             provider.setMetadata(aMetadata);
             try
             {
-                DataTableMeta res = callProvideMetaData(provider, aURI, aFileInfo);
+                DataTableMeta res = provider.provideMetaData(aURI, aFileInfo, aProperties);
                 if (res != null)
                 {
                     return res;
@@ -319,15 +397,17 @@ public class DataTableProviderFactory
      *            the optional FileInfo.
      * @param aMetadata
      *            the metadata library to be given to the provider.
+     * @param aProperties
+     *            the provider properties to be used.
      * @return the loaded metadata. This might be null if no supplier can handle the member.
      * @throws IOException
      *             in case no metadata can be provided by any of the providers.
      */
     public @Nullable DataTableMeta provideMetaData(ILibraryMember aMember,
-            @Nullable FileInfo aFileInfo, @Nullable IMetadataLibrary aMetadata)
+            @Nullable FileInfo aFileInfo, @Nullable IMetadataLibrary aMetadata,
+            Map<Property, String> aProperties)
         throws IOException
     {
-        @Nullable
         Throwable t = null;
 
         for (IProviderSupplier ps : getSuppliers())
@@ -344,7 +424,7 @@ public class DataTableProviderFactory
             provider.setMetadata(aMetadata);
             try
             {
-                DataTableMeta res = callProvideMetaData(provider, aMember, aFileInfo);
+                DataTableMeta res = provider.provideMetaData(aMember, aFileInfo, aProperties);
                 if (res != null)
                 {
                     return res;
@@ -367,7 +447,7 @@ public class DataTableProviderFactory
      * pooled supplier doesn't leak the previous caller's state into subsequent unrelated calls.
      * Failures are logged at DEBUG and never propagate.
      */
-    private static void clearProviderState(IDataTableProvider aProvider)
+    private static void clearProviderState(@Nullable IDataTableProvider aProvider)
     {
         if (aProvider == null)
         {
@@ -384,27 +464,43 @@ public class DataTableProviderFactory
     }
 
 
-    private static @Nullable IDataTable callProvide(IDataTableProvider aProvider,
-            ILibraryMember aMember, @Nullable FileInfo aFileInfo)
-        throws IOException
+    /**
+     * Retrieve the provider properties for the given URI and file info.
+     *
+     * @param aUri
+     *            the URI to retrieve the properties for.
+     * @param aFileInfo
+     *            the optional FileInfo.
+     * @return the list of provider properties. This might be empty but never null.
+     */
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
     {
-        return aProvider.provide(aMember, aFileInfo);
+        Optional<IDataTableProvider> provider = getFirstProviderFor(aUri, aFileInfo);
+        return provider.map(p -> p.getProviderProperties(aUri, aFileInfo))
+                .orElse(Collections.emptyList());
     }
 
 
-    private static @Nullable DataTableMeta callProvideMetaData(IDataTableProvider aProvider,
-            URI aURI, @Nullable FileInfo aFileInfo)
-        throws IOException
+    /**
+     * Retrieve the provider properties for the given library member and file info.
+     *
+     * @param aMember
+     *            the library member to retrieve the properties for.
+     * @param aFileInfo
+     *            the optional FileInfo.
+     * @return the list of provider properties. This might be empty but never null.
+     */
+    public List<Property> getProviderProperties(ILibraryMember aMember,
+            @Nullable FileInfo aFileInfo)
     {
-        return aProvider.provideMetaData(aURI, aFileInfo);
-    }
-
-
-    private static @Nullable DataTableMeta callProvideMetaData(IDataTableProvider aProvider,
-            ILibraryMember aMember, @Nullable FileInfo aFileInfo)
-        throws IOException
-    {
-        return aProvider.provideMetaData(aMember, aFileInfo);
+        if (aMember == null)
+        {
+            return Collections.emptyList();
+        }
+        FileInfo fi = aFileInfo != null ? aFileInfo : aMember.getFileInfo();
+        Optional<IDataTableProvider> provider = getFirstProviderFor(aMember.getUri(), fi);
+        return provider.map(p -> p.getProviderProperties(aMember, fi))
+                .orElse(Collections.emptyList());
     }
 
 }

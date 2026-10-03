@@ -23,8 +23,8 @@ import net.cumba.datatable.provider.IProviderSupplier;
  *
  * <p>
  * The supplier exposes the most recently returned provider (per-thread / atomic) so tests can
- * assert that the factory has cleared {@code metadata} after a failed probe — without needing
- * reflection into the factory's internals.
+ * assert that the factory has cleared {@code metadata} / {@code loadingProgressListener} after a
+ * failed probe — without needing reflection into the factory's internals.
  */
 // The service loader instantiates this supplier reflectively, so the tests can only steer it
 // through static control fields; reset() restores them before each test.
@@ -46,7 +46,7 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
     /** Controls what type of throwable to raise. */
     enum FailMode
     {
-        IO_EXCEPTION, RUNTIME_EXCEPTION
+        IO_EXCEPTION, RUNTIME_EXCEPTION, ERROR
     }
 
     static volatile FailMode failMode = FailMode.IO_EXCEPTION;
@@ -57,9 +57,15 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
     static volatile DataTableMeta successMeta;
 
     /**
-     * If true, the provider's set-metadata throws — used to test clearProviderState.
+     * If true, the provider's set-listener / set-metadata throw — used to test clearProviderState.
      */
     static volatile boolean throwOnSetters = false;
+
+    /**
+     * If non-null, returned by the provider's getProviderProperties overloads (both URI and
+     * member). Null keeps the interface-default behaviour (empty list).
+     */
+    static volatile List<net.cumba.datatable.io.Property> providerProperties;
 
     /**
      * Reset the static control state to a quiescent default. Tests <b>must</b> call this in
@@ -72,7 +78,9 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
         successDataTable = null;
         successMeta = null;
         throwOnSetters = false;
+        providerProperties = null;
         LAST_PROVIDER.set(null);
+        S3ProbeFallbackSupplier.reset();
     }
 
 
@@ -92,8 +100,8 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
     }
 
     /**
-     * Provider returned by the test supplier. Captures its set-metadata calls and optionally throws
-     * when asked to provide.
+     * Provider returned by the test supplier. Captures its set-listener / set-metadata calls and
+     * optionally throws when asked to provide.
      */
     public static final class S3ProbeProvider implements IDataTableProvider
     {
@@ -125,6 +133,24 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
 
 
         @Override
+        public List<net.cumba.datatable.io.Property> getProviderProperties(URI aUri,
+                FileInfo aFileInfo)
+        {
+            List<net.cumba.datatable.io.Property> props = providerProperties;
+            return props != null ? props : List.of();
+        }
+
+
+        @Override
+        public List<net.cumba.datatable.io.Property> getProviderProperties(
+                net.cumba.datatable.library.ILibraryMember aMember, FileInfo aFileInfo)
+        {
+            List<net.cumba.datatable.io.Property> props = providerProperties;
+            return props != null ? props : List.of();
+        }
+
+
+        @Override
         public String getDescription()
         {
             return "probe";
@@ -141,8 +167,6 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
         @Override
         public void setMetadata(IMetadataLibrary aMetadata)
         {
-            // Tripwire only on null writes so the initializer path (non-null) can still wire the
-            // provider before the catch path attempts to clear it via clearProviderState.
             if (throwOnSetters && aMetadata == null)
             {
                 throw new IllegalStateException("setMetadata(null) boom");
@@ -191,6 +215,12 @@ public class S3ProbeProviderSupplier implements IProviderSupplier
             if (mode == FailMode.IO_EXCEPTION)
             {
                 throw new IOException("probe forced failure at " + aSite);
+            }
+            if (mode == FailMode.ERROR)
+            {
+                // Neither an IOException nor a RuntimeException: the shape a NoClassDefFoundError
+                // from a half-present provider takes, which the factory must survive per supplier.
+                throw new NoClassDefFoundError("probe forced failure at " + aSite);
             }
             throw new IllegalStateException("probe forced failure at " + aSite);
         }

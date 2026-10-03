@@ -15,6 +15,7 @@ import java.util.Map;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserValueFormatBean;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -157,5 +158,60 @@ class DataBrowserLibraryProviderEdgeCasesTest
             assertEquals("databrowser", lib.getType());
             assertNull(lib.getLabel());
         }
+    }
+
+
+    @Test
+    void testGetProviderProperties(@TempDir Path tempDir) throws IOException
+    {
+        String json = "{\"name\":\"L\"}";
+        Path dblibFile = tempDir.resolve("t.dblib");
+        Files.writeString(dblibFile, json);
+
+        List<Property> props = provider.getProviderProperties(dblibFile.toUri(), null);
+        assertEquals(1, props.size(), "library-name property is exposed");
+    }
+
+
+    @Test
+    void testGetProviderPropertiesGracefulOnUnreadable()
+    {
+        // A bogus URI: ObjectMapper read fails → computeBeanDefaultName returns null,
+        // but getProviderProperties still produces the single library-name property
+        URI uri = URI.create("file:///definitely/does/not/exist/x.dblib");
+        List<Property> props = provider.getProviderProperties(uri, null);
+        assertEquals(1, props.size());
+    }
+
+
+    @Test
+    void testProvideWithNamePropertyOverride(@TempDir Path tempDir) throws IOException
+    {
+        String json = "{\"name\":\"StoredName\"}";
+        Path dblibFile = tempDir.resolve("t.dblib");
+        Files.writeString(dblibFile, json);
+
+        Property nameProp = net.cumba.datatable.library.ILibraryProvider
+                .libraryNameProperty(dblibFile.toUri(), null, "StoredName");
+        try (IDataTableLibrary lib = provider.provide(dblibFile.toUri(), null,
+                Map.of(nameProp, "Renamed")))
+        {
+            // The user-specified value wins over the stored name
+            assertEquals("Renamed", lib.getName());
+        }
+    }
+
+
+    @Test
+    void testGetProviderPropertiesOnFileWithBadJson(@TempDir Path tempDir) throws IOException
+    {
+        Path dblibFile = tempDir.resolve("bad.dblib");
+        Files.writeString(dblibFile, "{not even json");
+
+        // computeBeanDefaultName catches and returns null — getProviderProperties still
+        // returns a non-empty list with the default property.
+        List<Property> props = provider.getProviderProperties(dblibFile.toUri(), null);
+        assertNotNull(props);
+        assertEquals(1, props.size());
     }
 }

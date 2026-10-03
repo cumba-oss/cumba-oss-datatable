@@ -3,9 +3,14 @@ package net.cumba.datatable.impl.library;
 import java.io.IOException;
 import java.lang.System.Logger.Level;
 import java.net.URI;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import lombok.CustomLog;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.io.GenericProviderFactory;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryProvider;
 import net.cumba.datatable.library.ILibrarySupplier;
@@ -61,21 +66,39 @@ public class LibraryProviderFactory
 
 
     /**
-     * Provide a library for the given URI and file info.
+     * Retrieve the provider properties for the given URI and file info.
+     *
+     * @param aUri
+     *            the URI to retrieve the properties for.
+     * @param aFileInfo
+     *            the optional FileInfo.
+     * @return the list of provider properties. This might be empty but never null.
+     */
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        Optional<ILibraryProvider> provider = getFirstProviderFor(aUri, aFileInfo);
+        return provider.map(p -> p.getProviderProperties(aUri, aFileInfo))
+                .orElse(Collections.emptyList());
+    }
+
+
+    /**
+     * Provide a library for the given URI and file info with the given properties.
      *
      * @param aUri
      *            the URI to be loaded.
      * @param aFileInfo
      *            the optional FileInfo.
+     * @param aProperties
+     *            the provider properties to be used.
      * @return the loaded library. This might be null.
      * @throws IOException
      *             in case no library can be provided.
      */
-    @Override
-    public @Nullable IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo)
+    public @Nullable IDataTableLibrary provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
         throws IOException
     {
-        @Nullable
         Throwable t = null;
 
         for (ILibrarySupplier ps : getSuppliers())
@@ -87,7 +110,7 @@ public class LibraryProviderFactory
                 {
                     try
                     {
-                        IDataTableLibrary res = provider.provide(aUri, aFileInfo);
+                        IDataTableLibrary res = provider.provide(aUri, aFileInfo, aProperties);
                         if (res != null)
                         {
                             return res;

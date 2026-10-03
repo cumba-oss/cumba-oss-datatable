@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -86,6 +87,24 @@ class AbstractDataTableProviderTest
         {
             debugCalcDataSize(aTable);
         }
+
+
+        private String callStringValue(net.cumba.datatable.io.Property p, String v)
+        {
+            return getStringValue(p, v);
+        }
+
+
+        private boolean callBooleanValue(net.cumba.datatable.io.Property p, String v)
+        {
+            return getBooleanValue(p, v);
+        }
+
+
+        private List<String> callListValue(net.cumba.datatable.io.Property p, String v)
+        {
+            return getListValue(p, v);
+        }
     }
 
     // ==================== Name and Description ====================
@@ -110,6 +129,8 @@ class AbstractDataTableProviderTest
         assertNull(provider.getDescription());
     }
 
+    // ==================== Loading progress listener ====================
+
     // ==================== DefineXml ====================
 
 
@@ -123,6 +144,10 @@ class AbstractDataTableProviderTest
         provider.setMetadata(null);
         assertNull(provider.getMetadata());
     }
+
+    // ==================== fireProgressEvent ====================
+
+    // ==================== fireProgressEventOrAbort ====================
 
     // ==================== provide with ILibraryMember ====================
 
@@ -190,8 +215,7 @@ class AbstractDataTableProviderTest
         // Lombok-generated NullPointerException naming the parameter at the entry point.
         TestDataTableProvider provider = new TestDataTableProvider();
 
-        NullPointerException ex = org.junit.jupiter.api.Assertions.assertThrows(
-                NullPointerException.class,
+        NullPointerException ex = assertThrows(NullPointerException.class,
                 () -> provider.provide((net.cumba.datatable.library.ILibraryMember) null, null));
         assertTrue(ex.getMessage().toLowerCase(java.util.Locale.ROOT).contains("amember"),
                 ex.getMessage());
@@ -206,9 +230,8 @@ class AbstractDataTableProviderTest
         // chain.
         TestDataTableProvider provider = new TestDataTableProvider();
 
-        NullPointerException ex = org.junit.jupiter.api.Assertions
-                .assertThrows(NullPointerException.class, () -> provider
-                        .provideMetaData((net.cumba.datatable.library.ILibraryMember) null, null));
+        NullPointerException ex = assertThrows(NullPointerException.class, () -> provider
+                .provideMetaData((net.cumba.datatable.library.ILibraryMember) null, null));
         assertTrue(ex.getMessage().toLowerCase(java.util.Locale.ROOT).contains("amember"),
                 ex.getMessage());
     }
@@ -278,6 +301,57 @@ class AbstractDataTableProviderTest
     }
 
     // ==================== debugCalcDataSize ====================
+
+    // ==================== Property value helpers ====================
+
+
+    @Test
+    void getStringValue_explicitAndDefault()
+    {
+        TestDataTableProvider p = new TestDataTableProvider();
+        net.cumba.datatable.io.Property prop = net.cumba.datatable.io.Property.forString("k",
+                "desc", "def");
+
+        assertEquals("explicit", p.callStringValue(prop, "explicit"));
+        assertEquals("def", p.callStringValue(prop, null));
+    }
+
+
+    @Test
+    void getBooleanValue_parses()
+    {
+        TestDataTableProvider p = new TestDataTableProvider();
+        net.cumba.datatable.io.Property pTrue = net.cumba.datatable.io.Property.forBoolean("k",
+                "desc", true);
+        net.cumba.datatable.io.Property pFalse = net.cumba.datatable.io.Property.forBoolean("k",
+                "desc", false);
+
+        // explicit values
+        assertTrue(p.callBooleanValue(pTrue, "true"));
+        assertTrue(p.callBooleanValue(pFalse, "TRUE"));
+        org.junit.jupiter.api.Assertions.assertFalse(p.callBooleanValue(pTrue, "false"));
+        org.junit.jupiter.api.Assertions.assertFalse(p.callBooleanValue(pFalse, "False"));
+
+        // null / blank / unparseable → property default
+        assertTrue(p.callBooleanValue(pTrue, null));
+        assertTrue(p.callBooleanValue(pTrue, ""));
+        assertTrue(p.callBooleanValue(pTrue, "  "));
+        org.junit.jupiter.api.Assertions.assertFalse(p.callBooleanValue(pFalse, "neither"));
+    }
+
+
+    @Test
+    void getListValue_splitsAndFallsBack()
+    {
+        TestDataTableProvider p = new TestDataTableProvider();
+        net.cumba.datatable.io.Property prop = net.cumba.datatable.io.Property.forString("k",
+                "desc", "x,y,z");
+
+        assertEquals(List.of("a", "b", "c"), p.callListValue(prop, "a,b,c"));
+        assertEquals(List.of("x", "y", "z"), p.callListValue(prop, null));
+        assertEquals(List.of("x", "y", "z"), p.callListValue(prop, ""));
+        assertEquals(List.of("x", "y", "z"), p.callListValue(prop, "   "));
+    }
 
 
     @Test
