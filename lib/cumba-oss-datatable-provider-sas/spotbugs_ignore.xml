@@ -96,4 +96,30 @@
         <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
     </Match>
 
+    <Match>
+        <!-- putSentinelQuietly: offer() cannot fail here and its result carries no information.
+             The queue has capacity maxInFlight + 1 while at most maxInFlight futures are ever
+             physically queued (a permit is released only after a future has been taken out), so
+             the sentinel is guaranteed a free slot. offer is used rather than put precisely
+             BECAUSE put locks interruptibly: with the interrupt flag already set it threw without
+             enqueueing anything and left the consumer blocked for ever. Acting on a false return
+             would mean either blocking (the deadlock this avoids) or an unreachable branch. -->
+        <Class name="net.cumba.datatable.provider.sas.sas7bdat.BdatParallelLoader" />
+        <Method name="putSentinelQuietly" />
+        <Bug pattern="RV_RETURN_VALUE_IGNORED_BAD_PRACTICE" />
+    </Match>
+
+    <Match>
+        <!-- BdatParallelLoader (and its nested ColumnChunk/PageResult carriers) deliberately
+             shares the read-only dataset/stream/parsers with worker threads and fills the
+             provider's column array in place — zero-copy by design on multi-GB SAS files. -->
+        <Class name="~net\.cumba\.datatable\.provider\.sas\.sas7bdat\.BdatParallelLoader.*" />
+        <Bug pattern="EI_EXPOSE_REP" />
+    </Match>
+
+    <Match>
+        <Class name="~net\.cumba\.datatable\.provider\.sas\.sas7bdat\.BdatParallelLoader.*" />
+        <Bug pattern="EI_EXPOSE_REP2" />
+    </Match>
+
 </FindBugsFilter>

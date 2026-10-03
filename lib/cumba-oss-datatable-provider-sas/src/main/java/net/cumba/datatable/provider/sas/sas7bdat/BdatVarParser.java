@@ -16,11 +16,13 @@ import org.apache.commons.lang3.ArrayUtils;
  * using the configured charset.
  *
  * <p>
- * <b>Immutable, and required to stay that way.</b> A single instance may be shared across threads
- * and {@link #getValue(byte[])} called concurrently, so any per-instance mutable state would be a
- * data race producing silently wrong cell values. Every field is {@code final} and each parse
- * allocates its own scratch; the {@code TODO} on {@link #parseDouble(byte[])} about avoiding the
- * copy must therefore <em>not</em> be resolved with a reusable instance buffer.
+ * <b>Immutable, and required to stay that way.</b> {@code BdatParallelLoader} shares a single
+ * instance of this class across every worker thread and calls {@link #getValue(byte[])}
+ * concurrently, so any per-instance mutable state would be a data race producing silently wrong
+ * cell values. Every field is {@code final} and each parse allocates its own scratch; the
+ * {@code TODO} on {@link #parseDouble(byte[])} about avoiding the copy must therefore <em>not</em>
+ * be resolved with a reusable instance buffer — the obvious optimisation is the one thing that
+ * would break the parallel loader.
  * </p>
  */
 public class BdatVarParser
@@ -94,7 +96,7 @@ public class BdatVarParser
     public double parseDouble(byte[] aBuffer)
     {
         // TODO: unpack without copy — but NOT via a reusable instance field; see the class
-        // javadoc. This method may run concurrently on one shared instance.
+        // javadoc. This method runs concurrently on one shared instance.
 
         byte[] full = new byte[8];
         if (byteOrder == ByteOrder.LITTLE_ENDIAN)

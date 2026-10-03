@@ -6,6 +6,7 @@
 # still be LISTED -- adding a source file with no row here FAILS the build, which is what stops
 # a new derived file slipping in unattributed.
 net/cumba/datatable/provider/sas/sas7bdat/BdatObservation.java	NOT_DERIVED	-
+net/cumba/datatable/provider/sas/sas7bdat/BdatParallelLoader.java	NOT_DERIVED	-
 net/cumba/datatable/provider/sas/sas7bdat/BdatProviderSupplier.java	NOT_DERIVED	-
 net/cumba/datatable/provider/sas/sas7bdat/BdatTableProvider.java	NOT_DERIVED	-
 net/cumba/datatable/provider/sas/sas7bdat/BdatVarParser.java	NOT_DERIVED	-

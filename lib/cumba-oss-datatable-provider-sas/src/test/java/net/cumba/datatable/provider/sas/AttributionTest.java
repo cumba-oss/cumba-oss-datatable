@@ -52,7 +52,7 @@ class AttributionTest
 {
 
     /** Floor on {@code src/main/java} files. Lower only when files are genuinely removed. */
-    private static final int MIN_SOURCES = 13;
+    private static final int MIN_SOURCES = 14;
 
     /** Floor on the {@code licenses.xml} tuples this module must declare. */
     private static final int MIN_TUPLES = 1;

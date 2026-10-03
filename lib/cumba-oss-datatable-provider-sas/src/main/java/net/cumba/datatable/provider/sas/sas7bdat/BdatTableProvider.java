@@ -10,12 +10,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
 import java.net.URI;
 import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +37,7 @@ import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.help.URIHelper;
 import net.cumba.datatable.impl.CachedDataTableColumn;
+import net.cumba.datatable.impl.ColumnCachedDataTable;
 import net.cumba.datatable.impl.databuffer.AbstractDataBuffer;
 import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
@@ -77,133 +83,149 @@ public class BdatTableProvider extends AbstractDataTableProvider
     {
         Map<Byte, String> map = new HashMap<>();
 
-        map.put((byte) 0x14, "UTF-8");
-        map.put((byte) 0x1C, "US-ASCII");
-        map.put((byte) 0x1D, "ISO-8859-1");
-        map.put((byte) 0x1E, "ISO-8859-2");
-        map.put((byte) 0x1F, "ISO-8859-3");
+        put(map, 0x14, "UTF-8");
+        put(map, 0x1C, "US-ASCII");
+        put(map, 0x1D, "ISO-8859-1");
+        put(map, 0x1E, "ISO-8859-2");
+        put(map, 0x1F, "ISO-8859-3");
 
-        map.put((byte) 0x20, "ISO-8859-4");
-        map.put((byte) 0x21, "ISO-8859-5");
-        map.put((byte) 0x22, "ISO-8859-6");
-        map.put((byte) 0x23, "ISO-8859-7");
-        map.put((byte) 0x24, "ISO-8859-8");
-        map.put((byte) 0x25, "ISO-8859-9");
-        map.put((byte) 0x27, "x-iso-8859-11");
-        map.put((byte) 0x28, "ISO-8859-15");
-        map.put((byte) 0x2B, "IBM437");
-        map.put((byte) 0x2C, "IBM850");
-        map.put((byte) 0x2D, "IBM852");
-        map.put((byte) 0x2E, "IBM00858");
-        map.put((byte) 0x2F, "IBM862");
+        put(map, 0x20, "ISO-8859-4");
+        put(map, 0x21, "ISO-8859-5");
+        put(map, 0x22, "ISO-8859-6");
+        put(map, 0x23, "ISO-8859-7");
+        put(map, 0x24, "ISO-8859-8");
+        put(map, 0x25, "ISO-8859-9");
+        put(map, 0x27, "x-iso-8859-11");
+        put(map, 0x28, "ISO-8859-15");
+        put(map, 0x2B, "IBM437");
+        put(map, 0x2C, "IBM850");
+        put(map, 0x2D, "IBM852");
+        put(map, 0x2E, "IBM00858");
+        put(map, 0x2F, "IBM862");
 
-        map.put((byte) 0x33, "IBM866");
-        map.put((byte) 0x3A, "IBM857");
-        map.put((byte) 0x3C, "windows-1250");
-        map.put((byte) 0x3D, "windows-1251");
-        map.put((byte) 0x3E, "windows-1252");
-        map.put((byte) 0x3F, "windows-1253");
+        put(map, 0x33, "IBM866");
+        put(map, 0x3A, "IBM857");
+        put(map, 0x3C, "windows-1250");
+        put(map, 0x3D, "windows-1251");
+        put(map, 0x3E, "windows-1252");
+        put(map, 0x3F, "windows-1253");
 
-        map.put((byte) 0x40, "windows-1254");
-        map.put((byte) 0x41, "windows-1255");
-        map.put((byte) 0x42, "windows-1256");
-        map.put((byte) 0x43, "windows-1257");
-        map.put((byte) 0x44, "windows-1258");
-        map.put((byte) 0x45, "x-MacRoman");
-        map.put((byte) 0x46, "x-MacArabic");
-        map.put((byte) 0x47, "x-MacHebrew");
-        map.put((byte) 0x48, "x-MacGreek");
-        map.put((byte) 0x49, "x-MacThai");
-        map.put((byte) 0x4B, "x-MacTurkish");
-        map.put((byte) 0x4C, "x-MacUkraine");
-        map.put((byte) 0x4E, "IBM037");
+        put(map, 0x40, "windows-1254");
+        put(map, 0x41, "windows-1255");
+        put(map, 0x42, "windows-1256");
+        put(map, 0x43, "windows-1257");
+        put(map, 0x44, "windows-1258");
+        put(map, 0x45, "x-MacRoman");
+        put(map, 0x46, "x-MacArabic");
+        put(map, 0x47, "x-MacHebrew");
+        put(map, 0x48, "x-MacGreek");
+        put(map, 0x49, "x-MacThai");
+        put(map, 0x4B, "x-MacTurkish");
+        put(map, 0x4C, "x-MacUkraine");
+        put(map, 0x4E, "IBM037");
 
-        map.put((byte) 0x57, "IBM424");
-        map.put((byte) 0x58, "IBM500");
-        map.put((byte) 0x59, "IBM-Thai");
-        map.put((byte) 0x5A, "IBM870");
-        map.put((byte) 0x5B, "x-IBM875");
-        map.put((byte) 0x5F, "x-IBM1025");
+        put(map, 0x57, "IBM424");
+        put(map, 0x58, "IBM500");
+        put(map, 0x59, "IBM-Thai");
+        put(map, 0x5A, "IBM870");
+        put(map, 0x5B, "x-IBM875");
+        put(map, 0x5F, "x-IBM1025");
 
-        map.put((byte) 0x62, "x-IBM1112");
-        map.put((byte) 0x63, "x-IBM1122");
-        map.put((byte) 0x66, "IBM424");
-        map.put((byte) 0x67, "IBM-Thai");
-        map.put((byte) 0x68, "IBM870");
-        map.put((byte) 0x69, "x-IBM875");
-        map.put((byte) 0x6C, "x-IBM1025");
-        map.put((byte) 0x6D, "IBM1026");
-        map.put((byte) 0x6E, "IBM1047");
-        map.put((byte) 0x6F, "x-IBM1112");
+        put(map, 0x62, "x-IBM1112");
+        put(map, 0x63, "x-IBM1122");
+        put(map, 0x66, "IBM424");
+        put(map, 0x67, "IBM-Thai");
+        put(map, 0x68, "IBM870");
+        put(map, 0x69, "x-IBM875");
+        put(map, 0x6C, "x-IBM1025");
+        put(map, 0x6D, "IBM1026");
+        put(map, 0x6E, "IBM1047");
+        put(map, 0x6F, "x-IBM1112");
 
-        map.put((byte) 0x70, "x-IBM1122");
-        map.put((byte) 0x75, "x-IBM937");
-        map.put((byte) 0x76, "x-windows-950");
-        map.put((byte) 0x77, "x-EUC-TW");
-        map.put((byte) 0x7B, "Big5");
-        map.put((byte) 0x7C, "x-IBM935");
-        map.put((byte) 0x7D, "GBK");
-        map.put((byte) 0x7E, "x-mswin-936");
+        put(map, 0x70, "x-IBM1122");
+        put(map, 0x75, "x-IBM937");
+        put(map, 0x76, "x-windows-950");
+        put(map, 0x77, "x-EUC-TW");
+        put(map, 0x7B, "Big5");
+        put(map, 0x7C, "x-IBM935");
+        put(map, 0x7D, "GBK");
+        put(map, 0x7E, "x-mswin-936");
 
-        map.put((byte) 0x80, "x-IBM1381");
-        map.put((byte) 0x81, "x-IBM939");
-        map.put((byte) 0x82, "x-IBM930");
-        map.put((byte) 0x86, "EUC-JP");
-        map.put((byte) 0x88, "x-windows-iso2022jp");
-        map.put((byte) 0x89, "x-IBM942");
-        map.put((byte) 0x8A, "Shift_JIS");
-        map.put((byte) 0x8B, "x-IBM933");
-        map.put((byte) 0x8C, "EUC-KR");
-        map.put((byte) 0x8D, "x-windows-949");
-        map.put((byte) 0x8E, "x-IBM949");
+        put(map, 0x80, "x-IBM1381");
+        put(map, 0x81, "x-IBM939");
+        put(map, 0x82, "x-IBM930");
+        put(map, 0x86, "EUC-JP");
+        put(map, 0x88, "x-windows-iso2022jp");
+        put(map, 0x89, "x-IBM942");
+        put(map, 0x8A, "Shift_JIS");
+        put(map, 0x8B, "x-IBM933");
+        put(map, 0x8C, "EUC-KR");
+        put(map, 0x8D, "x-windows-949");
+        put(map, 0x8E, "x-IBM949");
 
-        map.put((byte) 0xA3, "x-MacIceland");
-        map.put((byte) 0xA7, "ISO-2022-JP");
-        map.put((byte) 0xA8, "ISO-2022-KR");
-        map.put((byte) 0xA9, "x-ISO2022-CN-GB");
-        map.put((byte) 0xAC, "x-ISO2022-CN-CNS");
-        map.put((byte) 0xAD, "IBM037");
+        put(map, 0xA3, "x-MacIceland");
+        put(map, 0xA7, "ISO-2022-JP");
+        put(map, 0xA8, "ISO-2022-KR");
+        put(map, 0xA9, "x-ISO2022-CN-GB");
+        put(map, 0xAC, "x-ISO2022-CN-CNS");
+        put(map, 0xAD, "IBM037");
 
-        map.put((byte) 0xB7, "IBM01140");
-        map.put((byte) 0xB8, "IBM01141");
-        map.put((byte) 0xB9, "IBM01142");
-        map.put((byte) 0xBA, "IBM01143");
-        map.put((byte) 0xBB, "IBM01144");
-        map.put((byte) 0xBC, "IBM01145");
-        map.put((byte) 0xBD, "IBM01146");
-        map.put((byte) 0xBE, "IBM01147");
-        map.put((byte) 0xBF, "IBM01148");
+        put(map, 0xB7, "IBM01140");
+        put(map, 0xB8, "IBM01141");
+        put(map, 0xB9, "IBM01142");
+        put(map, 0xBA, "IBM01143");
+        put(map, 0xBB, "IBM01144");
+        put(map, 0xBC, "IBM01145");
+        put(map, 0xBD, "IBM01146");
+        put(map, 0xBE, "IBM01147");
+        put(map, 0xBF, "IBM01148");
 
-        map.put((byte) 0xC0, "IBM01140");
-        map.put((byte) 0xC1, "IBM01141");
-        map.put((byte) 0xC2, "IBM01142");
-        map.put((byte) 0xC3, "IBM01143");
-        map.put((byte) 0xC4, "IBM01144");
-        map.put((byte) 0xC5, "IBM01145");
-        map.put((byte) 0xC6, "IBM01146");
-        map.put((byte) 0xC7, "IBM01147");
-        map.put((byte) 0xC8, "IBM01148");
-        map.put((byte) 0xCD, "GB18030");
-        map.put((byte) 0xCF, "x-IBM1097");
+        put(map, 0xC0, "IBM01140");
+        put(map, 0xC1, "IBM01141");
+        put(map, 0xC2, "IBM01142");
+        put(map, 0xC3, "IBM01143");
+        put(map, 0xC4, "IBM01144");
+        put(map, 0xC5, "IBM01145");
+        put(map, 0xC6, "IBM01146");
+        put(map, 0xC7, "IBM01147");
+        put(map, 0xC8, "IBM01148");
+        put(map, 0xCD, "GB18030");
+        put(map, 0xCF, "x-IBM1097");
 
-        map.put((byte) 0xD0, "x-IBM1097");
-        map.put((byte) 0xD3, "IBM01149");
-        map.put((byte) 0xD4, "IBM01149");
+        put(map, 0xD0, "x-IBM1097");
+        put(map, 0xD3, "IBM01149");
+        put(map, 0xD4, "IBM01149");
 
-        map.put((byte) 0xEA, "x-IBM930");
-        map.put((byte) 0xEB, "x-IBM933");
-        map.put((byte) 0xEC, "x-IBM935");
-        map.put((byte) 0xED, "x-IBM937");
-        map.put((byte) 0xEE, "x-IBM939");
+        put(map, 0xEA, "x-IBM930");
+        put(map, 0xEB, "x-IBM933");
+        put(map, 0xEC, "x-IBM935");
+        put(map, 0xED, "x-IBM937");
+        put(map, 0xEE, "x-IBM939");
 
-        map.put((byte) 0xF2, "ISO-8859-13");
-        map.put((byte) 0xF5, "x-MacCroatian");
-        map.put((byte) 0xF6, "x-MacCyrillic");
-        map.put((byte) 0xF7, "x-MacRomania");
-        map.put((byte) 0xF8, "JIS_X0201");
+        put(map, 0xF2, "ISO-8859-13");
+        put(map, 0xF5, "x-MacCroatian");
+        put(map, 0xF6, "x-MacCyrillic");
+        put(map, 0xF7, "x-MacRomania");
+        put(map, 0xF8, "JIS_X0201");
 
         SAS_CHARACTER_ENCODINGS = Collections.unmodifiableMap(map);
     }
+
+    /**
+     * Adds an encoding-id → charset-name entry to the given map, failing fast with an
+     * {@link IllegalStateException} when the id was already mapped. The current entries contain no
+     * duplicates — the guard protects future edits of the table above.
+     */
+    private static void put(Map<Byte, String> aMap, int aId, String aName)
+    {
+        String previous = aMap.putIfAbsent((byte) aId, aName);
+        if (previous != null)
+        {
+            throw new IllegalStateException("Duplicate SAS encoding id 0x"
+                    + Integer.toHexString(aId) + ": " + previous + " vs " + aName);
+        }
+    }
+
 
     /**
      * Map a SAS encoding byte from the BDAT file header to the corresponding Java charset name.
@@ -241,7 +263,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
             try (PositionAwareInputStream pais = new PositionAwareInputStream(in))
             {
                 DatasetBdat bdat = new ParserBdat().parseDataset(pais);
-                return provide(aUri, pais, bdat);
+                return provide(aUri, pais, bdat, mmapCandidate(aUri));
             }
         }
     }
@@ -347,13 +369,13 @@ public class BdatTableProvider extends AbstractDataTableProvider
         DatasetBdat bdat = new ParserBdat().parseDataset(aFile);
         try (InputStream in = new FileInputStream(aFile))
         {
-            return provide(aUri, in, bdat);
+            return provide(aUri, in, bdat, isMmapEnabled() ? aFile : null);
         }
     }
 
 
     /**
-     * Parse and provide a data table from a pre-parsed BDAT dataset.
+     * Parse and provide a data table from a pre-parsed BDAT dataset (stream path; no mmap).
      *
      * @param aUri
      *            the original URI (used for metadata).
@@ -366,6 +388,31 @@ public class BdatTableProvider extends AbstractDataTableProvider
      *             in case of any I/O error.
      */
     public IDataTable provide(URI aUri, InputStream aStream, DatasetBdat aDataSet)
+        throws IOException
+    {
+        return provide(aUri, aStream, aDataSet, null);
+    }
+
+
+    /**
+     * Parse and provide a data table from a pre-parsed BDAT dataset.
+     *
+     * @param aUri
+     *            the original URI (used for metadata).
+     * @param aStream
+     *            the input stream to read the dataset rows from (used unless mmap is taken).
+     * @param aDataSet
+     *            the pre-parsed BDAT dataset descriptor.
+     * @param aMmapFile
+     *            when non-{@code null} (a local file) and the parallel + mmap fast path is enabled,
+     *            rows are read via a memory-mapped segment with parallel per-page reads instead of
+     *            the stream; otherwise this is ignored.
+     * @return the parsed data table.
+     * @throws IOException
+     *             in case of any I/O error.
+     */
+    public IDataTable provide(URI aUri, InputStream aStream, DatasetBdat aDataSet,
+            @Nullable File aMmapFile)
         throws IOException
     {
         long totalRows = requireRowCount(aDataSet);
@@ -381,7 +428,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri);
         dtms.setFileFormat("SAS7BDAT", null);
-        dtms.setDatasetSize(aUri);
+        dtms.setDatasetSize(aMmapFile, aUri);
 
         List<VariableBdat> vars = aDataSet.getVariables();
 
@@ -401,19 +448,37 @@ public class BdatTableProvider extends AbstractDataTableProvider
             parsers.add(new BdatVarParser(variable, charset, bo));
         }
 
-        BdatTableDataParser tableParser = new BdatTableDataParser(dtms.getTableMeta().build());
+        DataTableMeta builtMeta = dtms.getTableMeta().build();
 
         long identifiedDeletedRecords;
+        IDataTable table;
 
-        ObservationIteratorBdat2 iter = new ObservationIteratorBdat2(aDataSet, aStream);
-        while (iter.hasNext())
+        if (isParallelEnabled())
         {
-            tableParser.addDataRow(new BdatObservation(parsers, iter.next()));
+            long[] deletedOut = new long[1];
+            if (aMmapFile != null)
+            {
+                table = loadMmap(aDataSet, aMmapFile, builtMeta, parsers, deletedOut);
+            }
+            else
+            {
+                table = loadParallel(aDataSet, aStream, builtMeta, parsers, deletedOut);
+            }
+            identifiedDeletedRecords = deletedOut[0];
         }
+        else
+        {
+            BdatTableDataParser tableParser = new BdatTableDataParser(builtMeta);
 
-        identifiedDeletedRecords = iter.getParsedDeletedRowCount();
+            ObservationIteratorBdat2 iter = new ObservationIteratorBdat2(aDataSet, aStream);
+            while (iter.hasNext())
+            {
+                tableParser.addDataRow(new BdatObservation(parsers, iter.next()));
+            }
 
-        IDataTable table = tableParser.completeTable();
+            identifiedDeletedRecords = iter.getParsedDeletedRowCount();
+            table = tableParser.completeTable();
+        }
 
         checkAllRowsRead(aDataSet.getRowCount(), aDataSet.getDeletedObservationCount(),
                 identifiedDeletedRecords, table.getRowCount());
@@ -469,6 +534,192 @@ public class BdatTableProvider extends AbstractDataTableProvider
             throw new IOException("Can't read all rows. Expected=%d, found=%d"
                     .formatted(expectedRows, aActualRows));
         }
+    }
+
+
+    /**
+     * Whether the parallel page-pipeline loader is enabled. Defaults to {@code true}; set the
+     * system property {@code -Dbdat.parallel=false} to fall back to the single-threaded loop
+     * (safety net / A-B benchmarking).
+     *
+     * @return {@code true} unless {@code bdat.parallel} is set to {@code false}.
+     */
+    static boolean isParallelEnabled()
+    {
+        return !"false".equalsIgnoreCase(System.getProperty("bdat.parallel"));
+    }
+
+
+    /**
+     * Load the observation rows with the parallel page pipeline, then run the same finalisation
+     * tail as the sequential {@code AbstractTableDataParser#completeTable()}.
+     *
+     * @param aDataSet
+     *            the parsed dataset metadata.
+     * @param aStream
+     *            the row data stream.
+     * @param aMeta
+     *            the built table metadata.
+     * @param aParsers
+     *            the per-variable value parsers.
+     * @param aDeletedOut
+     *            single-element out-parameter receiving the identified deleted-row count.
+     * @return the assembled data table.
+     * @throws IOException
+     *             on any worker/producer failure or user abort.
+     */
+    private IDataTable loadParallel(DatasetBdat aDataSet, InputStream aStream, DataTableMeta aMeta,
+            List<BdatVarParser> aParsers, long[] aDeletedOut)
+        throws IOException
+    {
+        CachedDataTableColumn[] columns = createCachedColumns(aMeta);
+
+        DataValueType[] columnTypes = new DataValueType[aMeta.getColumnCount()];
+        for (int i = 0; i < columnTypes.length; i++)
+        {
+            columnTypes[i] = aMeta.getColumn(i).getType();
+        }
+
+        PositionAwareInputStream pais = aStream instanceof PositionAwareInputStream existing
+                ? existing
+                : new PositionAwareInputStream(aStream);
+
+        int parallelism = BdatParallelLoader.defaultParallelism();
+        BdatParallelLoader loader = new BdatParallelLoader(aDataSet, pais, aParsers, columns,
+                columnTypes, _ ->
+                {
+                }, parallelism, BdatParallelLoader.defaultMaxInFlight(parallelism));
+
+        BdatParallelLoader.LoadResult result = loader.load();
+        aDeletedOut[0] = result.deletedCount();
+        return finalizeParallelTable(aMeta, columns, result.rowCount());
+    }
+
+
+    /**
+     * Whether the memory-mapped fast path is enabled for local {@code file:} inputs. Defaults to
+     * {@code true}; set {@code -Dbdat.mmap=false} to force the stream pipeline.
+     *
+     * @return {@code true} unless {@code bdat.mmap} is set to {@code false}.
+     */
+    static boolean isMmapEnabled()
+    {
+        return !"false".equalsIgnoreCase(System.getProperty("bdat.mmap"));
+    }
+
+
+    /**
+     * Resolve a URI to a local file eligible for the mmap fast path: only when mmap + parallel are
+     * enabled, the scheme is {@code file}, and the target is a regular readable file. Returns
+     * {@code null} otherwise (the caller then uses the stream pipeline).
+     *
+     * @param aUri
+     *            the source URI.
+     * @return the local {@link File}, or {@code null} when mmap should not be used.
+     */
+    static @Nullable File mmapCandidate(URI aUri)
+    {
+        if (!isMmapEnabled() || !isParallelEnabled() || aUri == null
+                || !"file".equalsIgnoreCase(aUri.getScheme()))
+        {
+            return null;
+        }
+        try
+        {
+            File file = new File(aUri);
+            return file.isFile() && file.canRead() ? file : null;
+        }
+        catch (IllegalArgumentException _)
+        {
+            // Not an absolute hierarchical file: URI — fall back to the stream pipeline.
+            return null;
+        }
+    }
+
+
+    /**
+     * Load rows via a memory-mapped segment with parallel per-page reads: workers self-serve their
+     * page slice from the shared read-only {@link MemorySegment}, removing the single-reader
+     * serialisation of the stream pipeline. Falls through the same finalisation tail and
+     * post-checks as {@link #loadParallel}.
+     *
+     * @param aDataSet
+     *            the parsed dataset metadata.
+     * @param aFile
+     *            the local file to map.
+     * @param aMeta
+     *            the built table metadata.
+     * @param aParsers
+     *            the per-variable value parsers.
+     * @param aDeletedOut
+     *            single-element out-parameter receiving the identified deleted-row count.
+     * @return the assembled data table.
+     * @throws IOException
+     *             on any worker failure, mapping failure, or user abort.
+     */
+    private IDataTable loadMmap(DatasetBdat aDataSet, File aFile, DataTableMeta aMeta,
+            List<BdatVarParser> aParsers, long[] aDeletedOut)
+        throws IOException
+    {
+        CachedDataTableColumn[] columns = createCachedColumns(aMeta);
+
+        DataValueType[] columnTypes = new DataValueType[aMeta.getColumnCount()];
+        for (int i = 0; i < columnTypes.length; i++)
+        {
+            columnTypes[i] = aMeta.getColumn(i).getType();
+        }
+
+        int parallelism = BdatParallelLoader.defaultParallelism();
+        try (Arena arena = Arena.ofShared();
+                FileChannel channel = FileChannel.open(aFile.toPath(), StandardOpenOption.READ))
+        {
+            MemorySegment segment = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size(),
+                    arena);
+            BdatParallelLoader loader = new BdatParallelLoader(aDataSet,
+                    BdatParallelLoader.mmapSource(aDataSet, segment), aParsers, columns,
+                    columnTypes, _ ->
+                    {
+                    }, parallelism, BdatParallelLoader.defaultMaxInFlight(parallelism));
+
+            BdatParallelLoader.LoadResult result = loader.load();
+            aDeletedOut[0] = result.deletedCount();
+            return finalizeParallelTable(aMeta, columns, result.rowCount());
+        }
+    }
+
+
+    /**
+     * Reproduce the sequential {@code completeTable()} tail for the parallel path: complete
+     * columns, reconcile STRING lengths, set the actual row count and build the table.
+     *
+     * @param aMeta
+     *            the table metadata before reconciliation.
+     * @param aColumns
+     *            the filled columns.
+     * @param aRowCount
+     *            the actual appended row count.
+     * @return the assembled table.
+     * @throws IOException
+     *             if column completion fails.
+     */
+    private IDataTable finalizeParallelTable(DataTableMeta aMeta, CachedDataTableColumn[] aColumns,
+            long aRowCount)
+        throws IOException
+    {
+        completeParsedColumns(Arrays.stream(aColumns));
+
+        DataTableColumnMeta[] reconciled = AbstractTableDataParser.reconcileColumnLengths(aMeta,
+                aColumns);
+
+        DataTableMetaBuilder builder = DataTableMeta.builderFrom(aMeta).rowCount(aRowCount)
+                .totalRowCount(aRowCount);
+        if (reconciled != null)
+        {
+            builder.columns(reconciled);
+        }
+        DataTableMeta finalMeta = builder.build();
+
+        return new ColumnCachedDataTable(finalMeta, aColumns);
     }
 
 
@@ -709,20 +960,20 @@ public class BdatTableProvider extends AbstractDataTableProvider
                 switch (val)
                 {
                 // F-RS9: explicit null arm so the pattern switch doesn't throw NPE on a null
-                // cell value. Defensive on both paths -- BdatVarParser.getValue cannot return
+                // cell value. Defensive on both paths — BdatVarParser.getValue cannot return
                 // null today (it yields a boxed Double or a String, or throws), which corrects
                 // the earlier note here claiming sparse SAS rows produce one.
                 //
-                // For STRING columns, SAS character missing is empty string by convention.
                 // Non-STRING columns resolve to MIS_UNKNOWN, not MIS: a null cell is an
                 // unexpected state and should read as one, rather than as an ordinary SAS '.'
-                // missing that the file deliberately contained.
+                // missing that the file deliberately contained. This also aligns the arm with
+                // BdatParallelLoader, which already used MIS_UNKNOWN — the two silently
+                // disagreed here, which would have become a real divergence on a default-on
+                // path the moment the case turned reachable.
                 case null -> aDataColumn
                         .addElement(aMetaColumn.getType() == DataValueType.STRING ? ""
                                 : MissingValue.MIS_UNKNOWN);
-                // CDT.tri is poly-null: a non-null argument yields a non-null result, but NullAway
-                // cannot express that contract, so capture and assert non-null here.
-                case String str -> aDataColumn.addElement(Objects.requireNonNull(tri(str)));
+                case String str -> aDataColumn.addElement(tri(str));
                 case Number num ->
                 {
                     double dbl = num.doubleValue();
