@@ -177,16 +177,20 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
      */
     private DataTableColumnMeta mapColumnMetadata(IColumnMetadata aCol)
     {
-        // IColumnMetadata.getNativeType() is optional (e.g. the .dblib format carries none), but
-        // DataTableColumnMeta.nativeType is required; fall back to the column type's token.
-        String nativeType = aCol.getNativeType();
         DataTableColumnMeta.DataTableColumnMetaBuilder b = DataTableColumnMeta.builder()//
                 .name(aCol.getName())//
                 .label(aCol.getLabel())//
                 .type(aCol.getType())//
                 .displayFormat(aCol.getDisplayFormat())//
-                .nativeType(nativeType != null ? nativeType : aCol.getType().name())//
                 .index(aCol.getIndex());
+        // IColumnMetadata.getNativeType is @Nullable, but the DataTableColumnMeta builder's
+        // nativeType setter is @NonNull (see report: DataTableColumnMeta.nativeType contract gap);
+        // only set it when present.
+        String nativeType = aCol.getNativeType();
+        if (nativeType != null)
+        {
+            b.nativeType(nativeType);
+        }
         if (aCol.getLength() > 0)
         {
             b.length(aCol.getLength());
@@ -418,6 +422,22 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
 
     /**
+     * Loads an external column-metadata table through the registered data-table providers.
+     *
+     * @param aTableUri
+     *            the absolute URI of the metadata table.
+     * @return the loaded table, or {@code null} when no provider can read the URI.
+     * @throws IOException
+     *             if a provider failed to read the table.
+     */
+    @Nullable
+    IDataTable loadMetaTable(URI aTableUri) throws IOException
+    {
+        return DataTableProviderFactory.getFactory().provide(aTableUri, null);
+    }
+
+
+    /**
      * Resolves a URI string from a metadata source against a base URI. If the URI string is already
      * absolute, it is returned as-is. Otherwise it is resolved relative to the base URI.
      */
@@ -446,22 +466,6 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
     private boolean uriMatches(URI aResolvedUri, URI aMemberUri)
     {
         return aResolvedUri.normalize().equals(aMemberUri.normalize());
-    }
-
-
-    /**
-     * Loads an external column-metadata table through the registered data-table providers.
-     *
-     * @param aTableUri
-     *            the absolute URI of the metadata table.
-     * @return the loaded table, or {@code null} when no provider can read the URI.
-     * @throws IOException
-     *             if a provider failed to read the table.
-     */
-    @Nullable
-    IDataTable loadMetaTable(URI aTableUri) throws IOException
-    {
-        return DataTableProviderFactory.getFactory().provide(aTableUri, null);
     }
 
 }
