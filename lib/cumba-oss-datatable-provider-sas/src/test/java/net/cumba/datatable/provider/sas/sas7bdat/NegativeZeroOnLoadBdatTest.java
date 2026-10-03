@@ -16,14 +16,17 @@ import java.util.Arrays;
 import java.util.List;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.values.DataValueType;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * PLAN-negative-zero-on-load, reader row "SAS7BDAT" (NZL O1, owner 2026-09-27: <i>"we drop the sign
- * from any 0.0 so a -0.0 gets read as 0.0"</i>). A SAS7BDAT numeric is its raw IEEE bits;
- * {@code BdatVarParser.unpackFloat64} turns {@code 0x8000..} into a {@code -0.0}. After loading,
- * the cell must be {@code +0.0}.
+ * PLAN-negative-zero-on-load, reader row "SAS7BDAT, own reader" (NZL O1, owner 2026-09-27: <i>"we
+ * drop the sign from any 0.0 so a -0.0 gets read as 0.0"</i>). A SAS7BDAT numeric is its raw IEEE
+ * bits; {@code BdatVarParser.unpackFloat64} turns {@code 0x8000..} into a {@code -0.0}. After
+ * loading, the cell must be {@code +0.0} &mdash; through each of the provider's three load paths:
+ * the default parallel page pipeline over a memory-mapped file, the parallel pipeline over a stream
+ * ({@code -Dbdat.mmap=false}), and the sequential loop ({@code -Dbdat.parallel=false}).
  *
  * <p>
  * This repository has no SAS7BDAT writer (the internal twin writes its fixture with
@@ -138,18 +141,68 @@ class NegativeZeroOnLoadBdatTest
     }
 
 
-    /** (2) The loaded cell is {@code +0.0}; controls untouched. */
+    /** (2) Default path (parallel page pipeline, memory-mapped). */
     @Test
-    void aRawNegativeZeroLoadsAsPositiveZero() throws IOException
+    void aRawNegativeZeroLoadsAsPositiveZeroParallelMmap() throws IOException
     {
-        IDataTable table = new BdatTableProvider().provide(writePatched().toUri(),
-                BdatProviderSupplier.FI_BDAT);
+        assertLoadsPositiveZero(null, null);
+    }
+
+
+    /** (2) Parallel page pipeline over a stream ({@code -Dbdat.mmap=false}). */
+    @Test
+    void aRawNegativeZeroLoadsAsPositiveZeroParallelStream() throws IOException
+    {
+        assertLoadsPositiveZero(null, "false");
+    }
+
+
+    /** (2) Sequential loop ({@code -Dbdat.parallel=false}). */
+    @Test
+    void aRawNegativeZeroLoadsAsPositiveZeroSequential() throws IOException
+    {
+        assertLoadsPositiveZero("false", null);
+    }
+
+
+    /** The loaded cell is {@code +0.0}; controls untouched. */
+    private void assertLoadsPositiveZero(@Nullable String aParallel, @Nullable String aMmap)
+        throws IOException
+    {
+        Path file = writePatched();
+        String oldParallel = System.getProperty("bdat.parallel");
+        String oldMmap = System.getProperty("bdat.mmap");
+        IDataTable table;
+        try
+        {
+            setOrClear("bdat.parallel", aParallel);
+            setOrClear("bdat.mmap", aMmap);
+            table = new BdatTableProvider().provide(file.toUri(), BdatProviderSupplier.FI_BDAT);
+        }
+        finally
+        {
+            setOrClear("bdat.parallel", oldParallel);
+            setOrClear("bdat.mmap", oldMmap);
+        }
         int col = table.getMetaData().getColumnIndex(COLUMN);
         assertSame(DataValueType.DOUBLE, table.getMetaData().getColumn(col).getType(), COLUMN);
         assertCellBits(table, POSITIVE_ROW, col, 0L, "row 0 (+0.0 control)");
         assertCellBits(table, CONTROL_ROW, col, Double.doubleToRawLongBits(CONTROL),
                 "row 3 (54.0 control)");
         assertCellBits(table, NEGATIVE_ROW, col, 0L, "row 2 (raw bits 0x8000..)");
+    }
+
+
+    private static void setOrClear(String aKey, @Nullable String aValue)
+    {
+        if (aValue == null)
+        {
+            System.clearProperty(aKey);
+        }
+        else
+        {
+            System.setProperty(aKey, aValue);
+        }
     }
 
 

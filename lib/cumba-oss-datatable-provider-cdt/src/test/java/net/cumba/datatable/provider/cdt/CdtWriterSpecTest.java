@@ -442,6 +442,94 @@ class CdtWriterSpecTest
         assertEquals("42", dataLineOf(CdtWriter.toString(t)));
     }
 
+    // ---- renderNumber: NaN -----------------------------------------------------------------
+
+
+    /** A DOUBLE column {@code A} beside a STRING column {@code B}, one row. */
+    private static DataTableMeta numberAndCharMeta()
+    {
+        return DataTableMeta.builder().name("N").label("N").rowCount(1).totalRowCount(1).setColumns(
+                DataTableColumnMeta.builder().index(0).name("A").type(DataValueType.DOUBLE).build(),
+                charColumnAt(1, "B")).build();
+    }
+
+
+    /** The single data row line of a one-row, two-column {@code .cdt} block. */
+    private static String twoColumnDataLineOf(String aCdtText)
+    {
+        String[] lines = aCdtText.split("\n", -1);
+        // dataset line, two col lines, opening fence, DATA ROW, closing fence, ...
+        return lines[4];
+    }
+
+
+    private static DataTableColumnMeta charColumnAt(int aIndex, String aColName)
+    {
+        return DataTableColumnMeta.builder().index(aIndex).name(aColName).type(DataValueType.STRING)
+                .build();
+    }
+
+
+    /**
+     * ⭐ A bare NaN stored into a DOUBLE column IS {@code MIS} (owner ruling E5, <i>"NaN should get
+     * mis"</i>, normalised at store time by ruling N2 (b) of PLAN-bare-nan-is-mis), so the writer
+     * renders {@code MIS}'s {@code "."}. Until that ruling the column held the raw NaN and the
+     * field was written empty; both spellings read back as {@code MIS} in a numeric column.
+     */
+    @Test
+    void aBareNaNCellRendersAsMis()
+    {
+        CachedDataTableColumn a = new CachedDataTableColumn(0, DataValueType.DOUBLE);
+        a.addElement(Double.NaN);
+        a.complete();
+        CachedDataTableColumn b = new CachedDataTableColumn(1, DataValueType.STRING);
+        b.addElement("ok");
+        b.complete();
+        IDataTable t = new ColumnCachedDataTable(numberAndCharMeta(), a, b);
+        assertEquals(". | ok", twoColumnDataLineOf(CdtWriter.toString(t)));
+    }
+
+
+    /**
+     * The writer's own NaN arm, reached only by a table that is not buffer-backed and hands a raw
+     * NaN out of {@code getValue}: the field is written empty, which reads back as {@code MIS} in a
+     * numeric column (the same value as the buffer-backed {@code "."} above).
+     */
+    @Test
+    void aRawNaNFromANonBufferTableRendersEmpty()
+    {
+        DataTableMeta meta = numberAndCharMeta();
+        IDataTable t = new IDataTable()
+        {
+
+            @Override
+            public DataTableMeta getMetaData()
+            {
+                return meta;
+            }
+
+
+            @Override
+            public long getRowCount()
+            {
+                return 1;
+            }
+
+
+            @Override
+            public Object getValue(long aRow, int aColumn)
+            {
+                if (aColumn == 0)
+                {
+                    return Double.NaN;
+                }
+                return "ok";
+            }
+        };
+        // First field empty, then " | ok".
+        assertEquals(" | ok", twoColumnDataLineOf(CdtWriter.toString(t)));
+    }
+
     // ---- writeColumns: type / length / format / nativeType / generic metadata -------------
 
 
