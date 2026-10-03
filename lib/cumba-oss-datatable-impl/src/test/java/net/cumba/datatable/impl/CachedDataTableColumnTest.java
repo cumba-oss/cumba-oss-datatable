@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import net.cumba.datatable.values.DataValueMissing;
@@ -534,7 +535,23 @@ class CachedDataTableColumnTest
         {
             assertEquals(col.getDataValue(row).isEmptyOrMissing(), col.isEmptyOrMissing(row),
                     "column vs value level disagree at row " + row);
+            assertTrue(col.isEmptyOrMissing(row), "a MISSING-typed cell is blank at row " + row);
         }
+    }
+
+
+    /**
+     * The MISSING arm answers only after the row check: an out-of-range row on a MISSING-typed
+     * column still throws, on either side of the range.
+     */
+    @Test
+    void isEmptyOrMissing_missingTypedColumn_outOfBounds_throws()
+    {
+        CachedDataTableColumn col = new CachedDataTableColumn(0, DataValueType.MISSING);
+        col.addElement((Object) null);
+        col.complete();
+        assertThrows(IndexOutOfBoundsException.class, () -> col.isEmptyOrMissing(9));
+        assertThrows(IndexOutOfBoundsException.class, () -> col.isEmptyOrMissing(-1));
     }
 
 
