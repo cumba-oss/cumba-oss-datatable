@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 import net.cumba.datatable.DataTableColumnMeta;
@@ -201,6 +202,15 @@ class DataTableLoadSupportTest
         assertTrue(ex.getMessage().contains(uri.toString()), ex.getMessage());
     }
 
+
+    @Test
+    void getProviderProperties_forCsv_isNotEmpty() throws IOException
+    {
+        URI uri = sampleCsv();
+        assertFalse(support.getProviderProperties(uri, null).isEmpty(),
+                "the CSV provider declares its charset / delimiter / quote properties");
+    }
+
     // ------------------------------------------------------------------
     // provideMetaData(URI / member)
     // ------------------------------------------------------------------
@@ -210,7 +220,7 @@ class DataTableLoadSupportTest
     void provideMetaData_fromUri_returnsColumns() throws IOException
     {
         URI uri = sampleCsv();
-        DataTableMeta meta = support.provideMetaData(uri, null);
+        DataTableMeta meta = support.provideMetaData(uri, null, Collections.emptyMap());
         assertNotNull(meta);
         assertEquals(2, meta.getColumnCount());
     }
@@ -220,7 +230,8 @@ class DataTableLoadSupportTest
     void provideMetaData_fromUri_unsupported_throwsIOException() throws IOException
     {
         URI uri = writeCsv("data.unknownext", "x\n1\n");
-        IOException ex = assertThrows(IOException.class, () -> support.provideMetaData(uri, null));
+        IOException ex = assertThrows(IOException.class,
+                () -> support.provideMetaData(uri, null, Collections.emptyMap()));
         assertTrue(ex.getMessage().contains(uri.toString()), ex.getMessage());
     }
 
@@ -230,7 +241,7 @@ class DataTableLoadSupportTest
     {
         URI uri = sampleCsv();
         StubMember member = new StubMember(uri, "DM", null);
-        DataTableMeta meta = support.provideMetaData(member, null);
+        DataTableMeta meta = support.provideMetaData(member, null, Collections.emptyMap());
         assertNotNull(meta);
         assertEquals(2, meta.getColumnCount());
     }
@@ -242,7 +253,7 @@ class DataTableLoadSupportTest
         URI uri = writeCsv("data.unknownext", "x\n1\n");
         StubMember member = new StubMember(uri, "X", null);
         IOException ex = assertThrows(IOException.class,
-                () -> support.provideMetaData(member, null));
+                () -> support.provideMetaData(member, null, Collections.emptyMap()));
         assertTrue(ex.getMessage().contains(uri.toString()), ex.getMessage());
     }
 

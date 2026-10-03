@@ -3,7 +3,9 @@ package net.cumba.datatable.manager.local;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import net.cumba.datatable.DataTableColumnMeta;
@@ -12,6 +14,7 @@ import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.library.LibraryProviderFactory;
 import net.cumba.datatable.impl.provider.DataTableProviderFactory;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.metadata.IMetadataLibrary;
@@ -50,15 +53,29 @@ class DataTableLoadSupport
                 .getFirstProviderFor(aUri, aFileInfo).isPresent();
     }
 
+
+    List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return DataTableProviderFactory.getFactory().getProviderProperties(aUri, aFileInfo);
+    }
+
+
+    List<Property> getProviderProperties(ILibraryMember aMember, @Nullable FileInfo aFileInfo)
+    {
+        return DataTableProviderFactory.getFactory().getProviderProperties(aMember, aFileInfo);
+    }
+
     // ------------------------------------------------------------------
     // Metadata
     // ------------------------------------------------------------------
 
 
-    DataTableMeta provideMetaData(URI aUri, @Nullable FileInfo aFileInfo) throws IOException
+    DataTableMeta provideMetaData(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
     {
         DataTableMeta meta = DataTableProviderFactory.getFactory().provideMetaData(aUri, aFileInfo,
-                null);
+                null, aProperties);
         if (meta == null)
         {
             throw new IOException(CAN_NOT_OPEN_AS_DATA_TABLE.formatted(aUri));
@@ -67,14 +84,15 @@ class DataTableLoadSupport
     }
 
 
-    DataTableMeta provideMetaData(ILibraryMember aMember, @Nullable FileInfo aFileInfo)
+    DataTableMeta provideMetaData(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
         throws IOException
     {
         FileInfo fi = (aFileInfo != null) ? aFileInfo : aMember.getFileInfo();
         @Nullable
         IMetadataLibrary mdl = cache.lookupMetadata(aMember);
-        DataTableMeta meta = DataTableProviderFactory.getFactory().provideMetaData(aMember, fi,
-                mdl);
+        DataTableMeta meta = DataTableProviderFactory.getFactory().provideMetaData(aMember, fi, mdl,
+                aProperties);
         if (meta == null)
         {
             throw new IOException(CAN_NOT_OPEN_AS_DATA_TABLE.formatted(aMember.getUri()));
@@ -179,7 +197,7 @@ class DataTableLoadSupport
         // not enumerate columns (e.g. folder libraries whose member format is discovered only by
         // the data-table factory). Any IOException here is a real read failure and propagates
         // to the caller.
-        DataTableMeta meta = provideMetaData(aMember, null);
+        DataTableMeta meta = provideMetaData(aMember, null, Collections.emptyMap());
         return meta.getAllColumns();
     }
 }

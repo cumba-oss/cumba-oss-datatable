@@ -6,6 +6,7 @@ import java.io.UncheckedIOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.net.URI;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -17,6 +18,7 @@ import net.cumba.datatable.impl.library.AbstractDataTableLibrary;
 import net.cumba.datatable.impl.library.LibraryProviderFactory;
 import net.cumba.datatable.impl.metadata.DataTableLibraryMetadataAdapter;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -75,6 +77,12 @@ class LibraryLoadSupport
                 .getFirstProviderFor(aUri, aFileInfo).isPresent();
     }
 
+
+    List<Property> getLibraryProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return LibraryProviderFactory.getInstance().getProviderProperties(aUri, aFileInfo);
+    }
+
     // ------------------------------------------------------------------
     // URIs
     // ------------------------------------------------------------------
@@ -107,7 +115,7 @@ class LibraryLoadSupport
         }
 
         LibraryProviderFactory lpf = LibraryProviderFactory.getInstance();
-        IDataTableLibrary lib = lpf.provide(aUri, aFileInfo);
+        IDataTableLibrary lib = lpf.provide(aUri, aFileInfo, Collections.emptyMap());
         if (lib == null)
         {
             throw new IOException("Can not open %s as library!".formatted(aUri));
