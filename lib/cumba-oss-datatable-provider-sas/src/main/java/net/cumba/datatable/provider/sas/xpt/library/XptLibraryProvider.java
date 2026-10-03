@@ -62,8 +62,8 @@ public class XptLibraryProvider extends AbstractLibraryProvider
     }
 
 
-    // NullAway: IGenericProvider.provide is declared @NonNull, but this provider returns null for a
-    // non-file: URI (a contract the LibraryProviderFactory already null-tolerates, and which an
+    // NullAway: IGenericProvider.provide is declared @NonNull, but this provider returns null for
+    // a non-file: URI (a contract the library-provider factory already null-tolerates, and which an
     // existing test pins). The interface lives in a sibling module and cannot be relaxed here, so
     // the narrowed @Nullable return is suppressed rather than the behaviour being changed.
     @Override

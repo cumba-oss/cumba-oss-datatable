@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.time.format.DateTimeFormatter;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -38,7 +39,9 @@ import net.cumba.datatable.impl.provider.AbstractTableDataParser;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.io.Property;
+import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.provider.IDataTableProvider;
+import net.cumba.datatable.provider.sas.xpt.library.XptLibraryMember;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
 import net.cumba.sasutils.VariableType;
@@ -87,6 +90,8 @@ public class XptTableProvider extends AbstractDataTableProvider
             "EUC-JP", //
             "EUC-KR");
 
+    private static final List<Property> FILE_PROPERTIES = List.of(PROP_CHARSET);
+
     /**
      * The charset to be used when parsing character values from the XPT file.<br/>
      * The SAS v5 XPORT engine officially supports only latin1 7bit chars, but SAS itself simply
@@ -111,8 +116,7 @@ public class XptTableProvider extends AbstractDataTableProvider
         String requested = aProperties.get(PROP_CHARSET);
         // NullAway does not narrow through CDT.isBlankOrNull (it carries no @Contract), so the
         // non-blank arm is asserted explicitly; Property.defaultValue() is non-null by record
-        // component. Upstream spells this as a reassignment, which only compiles there because
-        // Map.get is untracked -- see the R15 trap: the analyser configs differ between trees.
+        // component.
         String name = CDT.isBlankOrNull(requested) ? PROP_CHARSET.defaultValue()
                 : Objects.requireNonNull(requested);
         // F-D21: pre-check via Charset.isSupported so we can name the unsupported encoding
@@ -147,6 +151,52 @@ public class XptTableProvider extends AbstractDataTableProvider
     public List<FileInfo> getSupportedFileInfos()
     {
         return XptProviderSupplier.FIS;
+    }
+
+
+    @Override
+    public List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
+    {
+        return FILE_PROPERTIES;
+    }
+
+
+    @Override
+    public List<Property> getProviderProperties(ILibraryMember aMember,
+            @Nullable FileInfo aFileInfo)
+    {
+        if (aMember instanceof XptLibraryMember)
+        {
+            return Collections.emptyList();
+        }
+        return FILE_PROPERTIES;
+    }
+
+
+    @Override
+    public IDataTable provide(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        setCharset(resolveCharset(aProperties));
+        return provide(aUri, aFileInfo);
+    }
+
+
+    @Override
+    public @Nullable IDataTable provide(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        if (aMember instanceof XptLibraryMember xptMember && xptMember.getCharset() != null)
+        {
+            setCharset(xptMember.getCharset());
+        }
+        else
+        {
+            setCharset(resolveCharset(aProperties));
+        }
+        return provide(aMember, aFileInfo);
     }
 
 

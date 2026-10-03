@@ -92,7 +92,7 @@ class XptCharsetReachesTheDecoderTest
      * The XPT v5 transport file, crafted byte by byte: one CHAR(8) variable {@code TXT}
      * ({@code ntype = 2}) and one observation, {@link #ROW}.
      */
-    private static byte[] xptBytes()
+    static byte[] xptBytes()
     {
         String stamp = "01OCT26:00:00:00";
         ByteArrayOutputStream out = new ByteArrayOutputStream();
