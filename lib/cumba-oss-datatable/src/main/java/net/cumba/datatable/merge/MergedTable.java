@@ -71,20 +71,6 @@ public interface MergedTable extends IDataTable
 
 
     /**
-     * The W1 name of {@link #isRowMapped()}, which it answers. W1 decided it on the row count; it
-     * now answers the identity-based fact (W1 review H1). Kept only so the engine's W2 instrument
-     * ({@code MergedTableShadowDifferentialTest}, committed against W1) compiles until it moves to
-     * {@link #isRowMapped()}; then it goes.
-     *
-     * @return {@link #isRowMapped()}.
-     */
-    default boolean isExpanded()
-    {
-        return isRowMapped();
-    }
-
-
-    /**
      * The problems the sources carried that were reported through the {@code MERGE_ERROR} channel
      * instead of aborting the merge.
      *
