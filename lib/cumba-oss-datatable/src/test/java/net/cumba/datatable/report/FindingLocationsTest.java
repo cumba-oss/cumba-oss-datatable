@@ -42,6 +42,23 @@ class FindingLocationsTest
         assertTrue(FindingLocations.isNonColumnToken("**DECOD")); // wildcard
     }
 
+
+    @Test
+    void mergedViewNamesAreNotColumnsAndABareSuppQualifierIs()
+    {
+        // PLAN-merged-evaluation-table §3.2 / W3b: the engine reports Output_Variables under the
+        // merged evaluation view's names. Every merged name but a primary SUPP qualifier carries a
+        // '.', so the location keeps the real columns and the bare QNAM tokens, as before.
+        assertTrue(FindingLocations.isNonColumnToken("DM.AGE")); // keyed partner
+        assertTrue(FindingLocations.isNonColumnToken("DM._matched_")); // its matched flag
+        assertTrue(FindingLocations.isNonColumnToken("AE.AESEQ")); // Child parent
+        assertTrue(FindingLocations.isNonColumnToken("LB.EPOCH")); // RELREC related domain
+        assertTrue(FindingLocations.isNonColumnToken("DM.RACEOTH")); // a joined dataset's QNAM
+        assertFalse(FindingLocations.isNonColumnToken("AETRTEM")); // the primary's QNAM
+        assertEquals(List.of("AESEQ", "AETRTEM"), FindingLocations
+                .filterColumns(List.of("AESEQ", "DM.AGE", "DM._matched_", "AETRTEM", "LB.EPOCH")));
+    }
+
     // ==================== filterColumns ====================
 
 

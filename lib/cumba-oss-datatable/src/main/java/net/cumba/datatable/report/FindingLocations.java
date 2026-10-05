@@ -39,6 +39,13 @@ public final class FindingLocations
      * Returns {@code true} when {@code aToken} cannot be a plain column of its own data set —
      * cross-dataset / derived / scalar / wildcard references and blanks.
      *
+     * <p>
+     * The engine's merged evaluation view relies on the {@code '.'} test: every merged column name
+     * but a primary {@code SUPP} qualifier is qualified ({@code DM.AGE}, {@code DM._matched_},
+     * {@code LB.EPOCH}), so a finding's location keeps the real columns and the bare {@code QNAM}
+     * tokens ({@code PLAN-merged-evaluation-table} §3.2).
+     * </p>
+     *
      * @param aToken
      *            the raw report token.
      * @return {@code true} when the token is not a plain column name.
