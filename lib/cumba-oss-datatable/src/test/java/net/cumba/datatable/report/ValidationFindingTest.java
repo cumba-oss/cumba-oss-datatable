@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -176,6 +177,54 @@ class ValidationFindingTest
         ValidationFinding a = ValidationFinding.builder().variableNames(List.of("AGE")).build();
         ValidationFinding b = ValidationFinding.builder().variableNames(List.of("SEX")).build();
         assertNotEquals(a, b);
+    }
+
+
+    @Test
+    void testNamedColumnsArePartOfIdentity()
+    {
+        // PLAN-finding-values-record-level-only V8 (b): the columns a finding lists by name
+        // without a value are part of what the finding says, like its variable schema.
+        ValidationFinding a = ValidationFinding.builder().variableNames(List.of("$count"))
+                .namedColumns(List.of("RANDFL")).build();
+        ValidationFinding b = ValidationFinding.builder().variableNames(List.of("$count"))
+                .namedColumns(List.of("ARMCD")).build();
+        ValidationFinding c = ValidationFinding.builder().variableNames(List.of("$count"))
+                .namedColumns(List.of("RANDFL")).build();
+        assertNotEquals(a, b);
+        assertEquals(a, c);
+        assertEquals(a.hashCode(), c.hashCode());
+    }
+
+
+    @Test
+    void testNamedColumnsNeverNullAndUnmodifiable()
+    {
+        ValidationFinding unset = ValidationFinding.builder().build();
+        assertEquals(List.of(), unset.getNamedColumns(), "unset lists nothing, never null");
+        ValidationFinding set = ValidationFinding.builder()
+                .namedColumns(List.of("AEDTC", "AESTDTC")).build();
+        assertEquals(List.of("AEDTC", "AESTDTC"), set.getNamedColumns(),
+                "the finding's effective order is kept");
+        assertThrows(UnsupportedOperationException.class, () -> set.getNamedColumns().add("X"));
+        // toBuilder carries the list — a rebuilt finding must not silently drop it (§7 M3).
+        assertEquals(List.of("AEDTC", "AESTDTC"),
+                set.toBuilder().message("m").build().getNamedColumns());
+    }
+
+
+    @Test
+    void testNamedColumnsSurviveJsonRoundTrip() throws Exception
+    {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        ValidationFinding f = ValidationFinding.builder().source("cumba.core").ruleId("R")
+                .kind(FindingKind.RULE_VIOLATION).scope(FindingScope.DATASET)
+                .variableNames(List.of("$count")).namedColumns(List.of("RANDFL"))
+                .rows(slab(0, "$count", "3")).build();
+        ValidationFinding back = mapper.readValue(mapper.writeValueAsString(f),
+                ValidationFinding.class);
+        assertEquals(List.of("RANDFL"), back.getNamedColumns());
+        assertEquals(f, back);
     }
 
 

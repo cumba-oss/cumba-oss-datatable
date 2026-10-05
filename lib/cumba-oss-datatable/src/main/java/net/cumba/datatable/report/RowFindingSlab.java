@@ -28,7 +28,13 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>
  * {@code flatValues.length == rowIndices.length * variableCount} is an invariant enforced at
- * construction. Values may be {@code null} (for missing per-cell data).
+ * construction. The storage admits a {@code null} cell, but the engine writes none: a value-less
+ * entry is either omitted from the finding (an absent column), a {@code MissingValue}'s marker (a
+ * present missing cell) or a column the finding {@link ValidationFinding#getNamedColumns() lists by
+ * name} (5b's S7 / S9, {@code PLAN-finding-values-record-level-only}); the report builder refuses
+ * to store a {@code null}. A {@code null} cell can only come from an external report importer
+ * (Pinnacle 21, a CORE JSON) whose source left the cell out, and every reader treats it as "no
+ * cell", never as a value.
  * </p>
  *
  * <p>

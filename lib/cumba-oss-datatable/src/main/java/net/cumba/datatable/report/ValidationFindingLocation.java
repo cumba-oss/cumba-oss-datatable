@@ -52,6 +52,20 @@ public class ValidationFindingLocation
             List.of(), List.of(), null);
 
     /**
+     * The {@link #keySource} of a <b>Group</b>-sensitivity finding: it is located by its grouping
+     * variables, which are its {@link #keyVariableNames} (D29). The one key source that may come
+     * with an <em>empty</em> key list — a group rule whose grouping columns the data set does not
+     * carry treats the whole data set as one group and has no group variable to name — so that a
+     * consumer can still tell such a finding from a record-keyed one. The anchor row's
+     * {@code USUBJID} / {@code SEQ} and EC-40 record key describe the block's first flagged row,
+     * not the group: a surface that keys a group finding by its group variables (the v2 report, the
+     * data browser) drops them unless the column is one of {@link #keyVariableNames}; the frozen v1
+     * report keeps them (owner Q-A, 2026-10-05). Held here, in the model, so the engine and every
+     * consumer share one spelling.
+     */
+    public static final String GROUP_KEY_SOURCE = "GROUP";
+
+    /**
      * Data set / member name the finding is located in. Normally equals the enclosing
      * {@link ValidationReportMember#getDomain() member domain} (the library member name — for the
      * engine this is the member name, never the CDISC domain code).
@@ -88,13 +102,28 @@ public class ValidationFindingLocation
      * key — authoritative), {@code STRUCTURAL} (a structural key for a shape with no sequence
      * variable — authoritative), {@code NATURAL} (a natural key derived from library variable roles
      * — usually right, may collide on genuinely duplicated records) and {@code SPONSOR_ID} (only
-     * sponsor identifiers such as {@code --SPID} resolved — a hint, not a match). When no key
-     * resolved this field is {@code null} and {@link #keyVariableNames} is empty; the two are
-     * always set or unset together. Held as a plain string so this module stays free of any
-     * CDISC-engine dependency.
+     * sponsor identifiers such as {@code --SPID} resolved — a hint, not a match), and
+     * {@link #GROUP_KEY_SOURCE} (a Group finding keyed by its grouping variables). When no key
+     * resolved this field is {@code null} and {@link #keyVariableNames} is empty; the two are set
+     * or unset together, with one exception: {@link #GROUP_KEY_SOURCE} may come with an empty list
+     * (see there). Held as a plain string so this module stays free of any CDISC-engine dependency.
      * </p>
      */
     private final @Nullable String keySource;
+
+    /**
+     * Returns {@code true} when this finding is a Group-sensitivity finding located by its grouping
+     * variables ({@link #GROUP_KEY_SOURCE}) — the signal a surface uses to drop the anchor row's
+     * identity (owner Q-A, 2026-10-05).
+     *
+     * @return {@code true} when the key source is {@link #GROUP_KEY_SOURCE}.
+     */
+    @JsonIgnore
+    public boolean isGroupKeyed()
+    {
+        return GROUP_KEY_SOURCE.equals(keySource);
+    }
+
 
     /**
      * Returns the location's variable names as an unmodifiable list, never null.

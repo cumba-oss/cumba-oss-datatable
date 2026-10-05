@@ -15,8 +15,16 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * A single validation finding that may span multiple rows. The finding identity (source, rule id,
- * severity, kind, scope, rule type, message, variable schema) is stored directly; per-row data (row
- * indices + values) lives in a {@link RowFindingSlab}.
+ * severity, kind, scope, rule type, message, variable schema, name-only columns) is stored
+ * directly; per-row data (row indices + values) lives in a {@link RowFindingSlab}.
+ *
+ * <p>
+ * A finding reports two kinds of column: the {@link #variableNames variables} that carry a value
+ * per row, and the {@link #namedColumns columns it lists by name without a value}. The second kind
+ * is a <em>distinct state</em> — never rendered as {@code ""}, a missing marker or {@code null} —
+ * because a value printed on a finding that is not about a row would be an arbitrary record's
+ * ({@code PLAN-finding-values-record-level-only}, V1 / V6, owner 2026-10-04).
+ * </p>
  */
 @Value
 @Builder(toBuilder = true)
@@ -70,6 +78,34 @@ public class ValidationFinding
     private final List<String> variableNames;
 
     /**
+     * The raw data-set columns this finding <b>lists by name, without a value</b> — constant across
+     * the finding's rows, like {@link #variableNames}, and part of its identity (two findings
+     * listing different columns do not merge).
+     *
+     * <p>
+     * A raw column's value prints only on a <em>record-level</em> finding; on a dataset verdict, a
+     * non-record rule's first firing row, a Study rule or a column-level per-variable finding the
+     * column is the finding's <em>subject</em> and its cell would be an arbitrary row's, so the
+     * engine lists it here instead ({@code PLAN-finding-values-record-level-only}, V1 / V5 / V8
+     * (b), owner 2026-10-04). The report builder's {@code variable_name} collapse puts the variable
+     * a per-variable finding is about here too when the finding carries no partner value (the
+     * previous null slab cell, 5b's S7). Disjoint from {@link #variableNames}; never a {@code $}
+     * reference or a metadata token; empty on every record-level finding and on every Group finding
+     * (whose columns carry their per-group distinct sets, D94c).
+     * </p>
+     *
+     * <p>
+     * ⚠ Every consumer renders this as a state of its own (V6): the v2 JSON report's
+     * {@code columns} field, the XLSX "Columns (name only)" column, the REST {@code FindingRow}'s
+     * {@code columns}, the data browser's tooltips and cell renderers. Only the frozen v1
+     * {@code Issue_Details} appends these names to {@code variables} with its sanctioned
+     * {@code "null"} token (owner Q-B, 2026-10-05). The finding's highlight location
+     * ({@link #getLocation()}) includes them — the column IS what the finding is about.
+     * </p>
+     */
+    private final List<String> namedColumns;
+
+    /**
      * Where this finding is located in the data — the real data-table data set + column name(s) the
      * UI should highlight / scroll to. Separate from {@link #variableNames} (the raw reported
      * pairs). May be {@code null}; use {@link #getLocation()} for a never-null view.
@@ -114,6 +150,22 @@ public class ValidationFinding
             return Collections.emptyList();
         }
         return Collections.unmodifiableList(variableNames);
+    }
+
+
+    /**
+     * Returns the columns this finding lists by name without a value, in the finding's effective
+     * order, as an unmodifiable list — or empty when it lists none (every record-level finding).
+     *
+     * @return the name-only columns; never null.
+     */
+    public List<String> getNamedColumns()
+    {
+        if (namedColumns == null)
+        {
+            return Collections.emptyList();
+        }
+        return Collections.unmodifiableList(namedColumns);
     }
 
 

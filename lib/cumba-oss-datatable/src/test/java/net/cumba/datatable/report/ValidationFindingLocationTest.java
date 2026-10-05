@@ -65,6 +65,28 @@ class ValidationFindingLocationTest
 
 
     @Test
+    void groupKeyedIsTheGroupKeySourceEvenWithAnEmptyKeyList()
+    {
+        // Owner Q-A (2026-10-05): a Group finding is located by its grouping variables; when the
+        // data set carries none the key list is empty but the finding is still a group finding,
+        // so the GROUP source is the one that may come with an empty list.
+        ValidationFindingLocation keyed = ValidationFindingLocation.builder().dataset("AE")
+                .keyVariableNames(List.of("USUBJID"))
+                .keySource(ValidationFindingLocation.GROUP_KEY_SOURCE).build();
+        ValidationFindingLocation oneGroup = ValidationFindingLocation.builder().dataset("AE")
+                .keyVariableNames(List.of()).keySource(ValidationFindingLocation.GROUP_KEY_SOURCE)
+                .build();
+        ValidationFindingLocation record = ValidationFindingLocation.builder().dataset("AE")
+                .keyVariableNames(List.of("USUBJID", "AESEQ")).keySource("NATURAL").build();
+        assertEquals("GROUP", ValidationFindingLocation.GROUP_KEY_SOURCE);
+        assertTrue(keyed.isGroupKeyed());
+        assertTrue(oneGroup.isGroupKeyed());
+        assertFalse(record.isGroupKeyed());
+        assertFalse(ValidationFindingLocation.EMPTY.isGroupKeyed());
+    }
+
+
+    @Test
     void jsonRoundTrip() throws Exception
     {
         ObjectMapper mapper = new ObjectMapper();
