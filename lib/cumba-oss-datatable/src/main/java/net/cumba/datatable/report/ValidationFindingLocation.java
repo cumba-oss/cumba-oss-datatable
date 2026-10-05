@@ -65,6 +65,12 @@ public class ValidationFindingLocation
      */
     public static final String GROUP_KEY_SOURCE = "GROUP";
 
+    /** The anchor row's subject column, see {@link #isHiddenAnchorIdentity(String)}. */
+    private static final String ANCHOR_USUBJID = "USUBJID";
+
+    /** The report's canonical sequence name, see {@link #isHiddenAnchorIdentity(String)}. */
+    private static final String ANCHOR_SEQ = "SEQ";
+
     /**
      * Data set / member name the finding is located in. Normally equals the enclosing
      * {@link ValidationReportMember#getDomain() member domain} (the library member name — for the
@@ -122,6 +128,59 @@ public class ValidationFindingLocation
     public boolean isGroupKeyed()
     {
         return GROUP_KEY_SOURCE.equals(keySource);
+    }
+
+
+    /**
+     * Returns {@code true} when a column a surface shows for this finding is the anchor row's
+     * identity on a Group finding, and so is not shown (owner Q-A, 2026-10-05): a group finding is
+     * located by its group variables, while the {@code USUBJID} / {@code SEQ} the engine injects
+     * describe the block's first flagged row, not the group.
+     *
+     * <ul>
+     * <li>Only a {@link #isGroupKeyed() group-keyed} location hides anything.</li>
+     * <li>{@code USUBJID} is hidden unless it is one of {@link #keyVariableNames}.</li>
+     * <li>{@code SEQ} — the report's canonical name, not a column — is hidden unless {@code SEQ} or
+     * the {@link #dataset}'s {@code <DATASET>SEQ} is one of {@link #keyVariableNames}.</li>
+     * <li>Every other column is shown.</li>
+     * </ul>
+     * Names compare ignoring case. The one test the v2 report, the report table and the data
+     * browser share.
+     *
+     * @param aColumn
+     *            a column name the surface shows for this finding
+     * @return {@code true} when the column is not to be shown
+     */
+    public boolean isHiddenAnchorIdentity(String aColumn)
+    {
+        if (!isGroupKeyed())
+        {
+            return false;
+        }
+        List<String> keys = getKeyVariableNames();
+        if (ANCHOR_USUBJID.equalsIgnoreCase(aColumn))
+        {
+            return !containsIgnoreCase(keys, ANCHOR_USUBJID);
+        }
+        if (ANCHOR_SEQ.equalsIgnoreCase(aColumn))
+        {
+            return !containsIgnoreCase(keys, ANCHOR_SEQ)
+                    && (dataset == null || !containsIgnoreCase(keys, dataset + ANCHOR_SEQ));
+        }
+        return false;
+    }
+
+
+    private static boolean containsIgnoreCase(List<String> aNames, String aName)
+    {
+        for (String n : aNames)
+        {
+            if (aName.equalsIgnoreCase(n))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
 

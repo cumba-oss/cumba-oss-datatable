@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class ValidationFindingLocationTest
@@ -83,6 +84,68 @@ class ValidationFindingLocationTest
         assertTrue(oneGroup.isGroupKeyed());
         assertFalse(record.isGroupKeyed());
         assertFalse(ValidationFindingLocation.EMPTY.isGroupKeyed());
+    }
+
+
+    private static ValidationFindingLocation group(@Nullable String aDataset, String... aKeys)
+    {
+        return ValidationFindingLocation.builder().dataset(aDataset)
+                .keyVariableNames(List.of(aKeys))
+                .keySource(ValidationFindingLocation.GROUP_KEY_SOURCE).build();
+    }
+
+
+    @Test
+    void hiddenAnchorIdentityIsNeverHiddenOnANonGroupFinding()
+    {
+        ValidationFindingLocation record = ValidationFindingLocation.builder().dataset("AE")
+                .keyVariableNames(List.of("STUDYID")).keySource("NATURAL").build();
+        assertFalse(record.isHiddenAnchorIdentity("USUBJID"));
+        assertFalse(record.isHiddenAnchorIdentity("SEQ"));
+        assertFalse(ValidationFindingLocation.EMPTY.isHiddenAnchorIdentity("USUBJID"));
+        assertFalse(ValidationFindingLocation.EMPTY.isHiddenAnchorIdentity("SEQ"));
+    }
+
+
+    @Test
+    void hiddenAnchorIdentityHidesUsubjidUnlessItIsAGroupKey()
+    {
+        assertTrue(group("AE", "AETERM").isHiddenAnchorIdentity("USUBJID"));
+        assertTrue(group("AE").isHiddenAnchorIdentity("USUBJID"));
+        assertFalse(group("AE", "USUBJID", "AETERM").isHiddenAnchorIdentity("USUBJID"));
+        // names compare ignoring case, on both sides
+        assertFalse(group("AE", "usubjid").isHiddenAnchorIdentity("USUBJID"));
+        assertFalse(group("AE", "USUBJID").isHiddenAnchorIdentity("UsubjId"));
+        assertTrue(group("AE", "AETERM").isHiddenAnchorIdentity("usubjid"));
+    }
+
+
+    @Test
+    void hiddenAnchorIdentityHidesSeqUnlessSeqOrTheDatasetSeqIsAGroupKey()
+    {
+        assertTrue(group("AE", "USUBJID").isHiddenAnchorIdentity("SEQ"));
+        // the data set's <DATASET>SEQ, case-insensitively on key, data set and name
+        assertFalse(group("AE", "USUBJID", "AESEQ").isHiddenAnchorIdentity("SEQ"));
+        assertFalse(group("ae", "aeseq").isHiddenAnchorIdentity("seq"));
+        // a bare SEQ key
+        assertFalse(group("AE", "SEQ").isHiddenAnchorIdentity("SEQ"));
+        assertFalse(group("AE", "seq").isHiddenAnchorIdentity("Seq"));
+        // another data set's sequence variable is not this one's
+        assertTrue(group("AE", "CMSEQ").isHiddenAnchorIdentity("SEQ"));
+        // a group location without a data set: only a bare SEQ key shows it
+        assertTrue(group(null, "AESEQ").isHiddenAnchorIdentity("SEQ"));
+        assertFalse(group(null, "SEQ").isHiddenAnchorIdentity("SEQ"));
+    }
+
+
+    @Test
+    void hiddenAnchorIdentityNeverHidesAnyOtherColumn()
+    {
+        ValidationFindingLocation loc = group("AE", "AETERM");
+        assertFalse(loc.isHiddenAnchorIdentity("AETERM"));
+        assertFalse(loc.isHiddenAnchorIdentity("AESEQ"));
+        assertFalse(loc.isHiddenAnchorIdentity("STUDYID"));
+        assertFalse(loc.isHiddenAnchorIdentity("$count"));
     }
 
 
