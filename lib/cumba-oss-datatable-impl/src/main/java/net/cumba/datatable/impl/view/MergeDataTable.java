@@ -36,6 +36,16 @@ public class MergeDataTable extends AbstractDataTable
     private final IDataTable[] tables;
 
     /**
+     * Per merged column, the index of the part that holds it — the O(1) dispatch that replaced the
+     * linear scan over the parts (a merged evaluation table with a part per joined dataset put the
+     * last column 3–6× behind a primary read, {@code PLAN-merged-evaluation-table} M3).
+     */
+    private final int[] partOfColumn;
+
+    /** Per merged column, its index within its part. */
+    private final int[] columnInPart;
+
+    /**
      * Determine if column names are case-sensitive across all given tables.
      *
      * @param aTables
@@ -193,6 +203,96 @@ public class MergeDataTable extends AbstractDataTable
         // throws IllegalArgumentException (the documented contract) before any aTables[0]
         // dereference would NPE.
         setMetaData(createMetaData(aBaseMeta, tables));
+        int total = 0;
+        for (IDataTable t : tables)
+        {
+            total += t.getColumnCount();
+        }
+        partOfColumn = new int[total];
+        columnInPart = new int[total];
+        int c = 0;
+        for (int t = 0; t < tables.length; t++)
+        {
+            int colCount = tables[t].getColumnCount();
+            for (int i = 0; i < colCount; i++, c++)
+            {
+                partOfColumn[c] = t;
+                columnInPart[c] = i;
+            }
+        }
+    }
+
+
+    /**
+     * The number of tables merged side by side.
+     *
+     * @return the part count.
+     */
+    public int partCount()
+    {
+        return tables.length;
+    }
+
+
+    /**
+     * The table holding the given merged column.
+     *
+     * @param aColumn
+     *            a merged column index.
+     * @return the index of its part, {@code 0} for the first table.
+     * @throws IndexOutOfBoundsException
+     *             for an invalid column.
+     */
+    public int partOfColumn(int aColumn) throws IndexOutOfBoundsException
+    {
+        ensureValidColumn(aColumn);
+        return partOfColumn[aColumn];
+    }
+
+
+    /**
+     * The table at the given part index.
+     *
+     * @param aPart
+     *            a part index, {@code 0 <= aPart < partCount()}.
+     * @return the part's table.
+     * @throws IndexOutOfBoundsException
+     *             for an invalid part.
+     */
+    public IDataTable part(int aPart) throws IndexOutOfBoundsException
+    {
+        if (aPart < 0 || aPart >= tables.length)
+        {
+            throw new IndexOutOfBoundsException(
+                    ExMsgs.indexOutOfBounds("part", aPart, 0, tables.length));
+        }
+        return tables[aPart];
+    }
+
+
+    private void ensureValidColumn(int aColumn) throws IndexOutOfBoundsException
+    {
+        int totalColCount = partOfColumn.length;
+        if (aColumn < 0 || aColumn >= totalColCount)
+        {
+            throw new IndexOutOfBoundsException(
+                    ExMsgs.indexOutOfBounds("column", aColumn, 0, totalColCount));
+        }
+    }
+
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * Delegates to the part holding the column, so a part's not-supplied marker survives the merge.
+     * </p>
+     */
+    @Override
+    public boolean isSupplied(long aRow, int aColumn) throws IndexOutOfBoundsException
+    {
+        ensureValidColumn(aColumn);
+        return tables[partOfColumn[aColumn]].isSupplied(aRow, columnInPart[aColumn]);
     }
 
 
@@ -213,49 +313,16 @@ public class MergeDataTable extends AbstractDataTable
     @Override
     public @Nullable Object getValue(long aRow, int aColumn) throws IndexOutOfBoundsException
     {
-        int totalColCount = getColumnCount();
-        if (aColumn < 0 || aColumn >= totalColCount)
-        {
-            throw new IndexOutOfBoundsException(
-                    ExMsgs.indexOutOfBounds("column", aColumn, 0, totalColCount));
-        }
-
-        int col = aColumn;
-        for (IDataTable t : tables)
-        {
-            int colCount = t.getColumnCount();
-            if (col < colCount)
-            {
-                return t.getValue(aRow, col);
-            }
-            col -= colCount;
-        }
-        throw new IndexOutOfBoundsException("This should never ever occur!");
+        ensureValidColumn(aColumn);
+        return tables[partOfColumn[aColumn]].getValue(aRow, columnInPart[aColumn]);
     }
 
 
     @Override
     public IDataValue getDataValue(long aRow, int aColumn)
     {
-        int totalColCount = getColumnCount();
-        if (aColumn < 0 || aColumn >= totalColCount)
-        {
-            throw new IndexOutOfBoundsException(
-                    ExMsgs.indexOutOfBounds("column", aColumn, 0, totalColCount));
-        }
-
-        int col = aColumn;
-        for (IDataTable t : tables)
-        {
-            int colCount = t.getColumnCount();
-            if (col < colCount)
-            {
-                return t.getDataValue(aRow, col);
-            }
-            col -= colCount;
-        }
-
-        throw new IndexOutOfBoundsException("This should never ever occur!");
+        ensureValidColumn(aColumn);
+        return tables[partOfColumn[aColumn]].getDataValue(aRow, columnInPart[aColumn]);
     }
 
 }

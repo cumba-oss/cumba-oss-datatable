@@ -346,6 +346,50 @@ public interface IDataTable
 
 
     /**
+     * Whether the cell at the given (row, column) is <b>supplied</b> — backed by a real cell of a
+     * real row — as opposed to being the <em>not-supplied marker</em> of a merged view: a merged
+     * column on a row whose partner record does not exist (an unmatched left join, a declared
+     * dataset the study lacks, a qualifier no supplemental row serves), or a view column with no
+     * backing column at all.
+     *
+     * <p>
+     * The <b>value</b> read at such a cell is unchanged — the type default, {@code ""} for a
+     * character column and a missing value for a numeric one — so every display and export surface
+     * behaves as before; this marker exists beside the value so a consumer that must tell "absent
+     * partner" from "a partner whose cell is blank" can ({@code PLAN-merged-evaluation-table} §3.1,
+     * MET #4: the read-position default, the {@code _matched_} flag). A plain table answers
+     * {@code true} for every valid cell; a wrapper over another table <b>must</b> delegate, since a
+     * wrapper that does not answers {@code true} for a marker without any error.
+     * </p>
+     *
+     * @param aRow
+     *            the 0-based index of the row.<br/>
+     *            Valid range is <code>0 &lt;= aRow &lt; rowCount</code>.
+     * @param aColumn
+     *            the 0-based index of the column.<br/>
+     *            Valid range is <code>0 &lt;= aColumn &lt; columnCount</code>.
+     * @return {@code true} when the cell is backed by a real cell, {@code false} for the
+     *         not-supplied marker.
+     * @throws IndexOutOfBoundsException
+     *             if either aRow or aColumn is outside of the valid bounds.
+     */
+    default boolean isSupplied(long aRow, int aColumn) throws IndexOutOfBoundsException
+    {
+        long rc = getRowCount();
+        if (aRow < 0 || aRow >= rc)
+        {
+            throw new IndexOutOfBoundsException(ExMsgs.indexOutOfBounds("row", aRow, 0, rc));
+        }
+        int cc = getColumnCount();
+        if (aColumn < 0 || aColumn >= cc)
+        {
+            throw new IndexOutOfBoundsException(ExMsgs.indexOutOfBounds("column", aColumn, 0, cc));
+        }
+        return true;
+    }
+
+
+    /**
      * Compute a non-boxing hash for the value at the given row and column. The default
      * implementation falls back to {@link #getValue(long, int)} and hashes the boxed result;
      * buffer-backed tables override this to route directly into the typed hash path of the

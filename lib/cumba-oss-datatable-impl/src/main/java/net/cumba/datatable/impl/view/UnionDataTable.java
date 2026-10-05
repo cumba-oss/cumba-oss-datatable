@@ -447,6 +447,24 @@ public final class UnionDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * A column the owning member lacks is a stored missing value, not a merge marker: it is
+     * <b>supplied</b>. Every other cell delegates to the member, so a member's marker survives.
+     * </p>
+     */
+    @Override
+    public boolean isSupplied(long aRow, int aColumn) throws IndexOutOfBoundsException
+    {
+        int m = memberOf(aRow); // bounds-checks the row
+        checkColumn(aColumn);
+        int mc = memberColOfUnionCol[m][aColumn];
+        return mc < 0 || members[m].isSupplied(aRow - rowOffsets[m], mc);
+    }
+
+
     private void checkColumn(int aColumn)
     {
         int colCount = getColumnCount();
