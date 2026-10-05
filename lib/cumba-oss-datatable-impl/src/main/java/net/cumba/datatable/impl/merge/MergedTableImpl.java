@@ -8,12 +8,14 @@ import net.cumba.datatable.impl.view.MergeDataTable;
 import net.cumba.datatable.merge.MergeIssue;
 import net.cumba.datatable.merge.MergedPart;
 import net.cumba.datatable.merge.MergedTable;
+import net.cumba.datatable.merge.UnresolvedDataset;
 
 /**
  * The merged evaluation table: a {@link MergeDataTable} over the parts {@link MergeBuilder} built,
  * carrying the part descriptions, the issues and the unresolved datasets. Row provenance and the
  * supplied marker are the {@code MergeDataTable}'s: {@code getRealRowIndex} delegates to part 0
- * (the primary, row-mapped when expanded), {@code isSupplied} to the part holding the column.
+ * (the primary, row-mapped when some merge dropped or expanded a row), {@code isSupplied} to the
+ * part holding the column.
  */
 final class MergedTableImpl extends MergeDataTable implements MergedTable
 {
@@ -24,15 +26,15 @@ final class MergedTableImpl extends MergeDataTable implements MergedTable
 
     private final List<MergeIssue> issues;
 
-    private final List<String> unresolved;
+    private final List<UnresolvedDataset> unresolved;
 
     private final Set<String> suppQnams;
 
-    private final boolean expanded;
+    private final boolean rowMapped;
 
     MergedTableImpl(IDataTable aPrimary, IDataTable[] aTables, List<MergedPart> aParts,
-            List<MergeIssue> aIssues, List<String> aUnresolved, Set<String> aSuppQnams,
-            boolean aExpanded)
+            List<MergeIssue> aIssues, List<UnresolvedDataset> aUnresolved, Set<String> aSuppQnams,
+            boolean aRowMapped)
     {
         super(null, aTables);
         primary = aPrimary;
@@ -40,7 +42,7 @@ final class MergedTableImpl extends MergeDataTable implements MergedTable
         issues = List.copyOf(aIssues);
         unresolved = List.copyOf(aUnresolved);
         suppQnams = new java.util.LinkedHashSet<>(aSuppQnams);
-        expanded = aExpanded;
+        rowMapped = aRowMapped;
     }
 
 
@@ -74,9 +76,9 @@ final class MergedTableImpl extends MergeDataTable implements MergedTable
 
 
     @Override
-    public boolean isExpanded()
+    public boolean isRowMapped()
     {
-        return expanded;
+        return rowMapped;
     }
 
 
@@ -88,7 +90,7 @@ final class MergedTableImpl extends MergeDataTable implements MergedTable
 
 
     @Override
-    public List<String> unresolvedDatasets()
+    public List<UnresolvedDataset> unresolvedDatasets()
     {
         return unresolved;
     }

@@ -27,6 +27,7 @@ import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.MergedTables;
 import net.cumba.datatable.merge.RelrecLinks;
 import net.cumba.datatable.merge.RelrecPartSpec;
+import net.cumba.datatable.merge.UnresolvedDataset;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -94,7 +95,7 @@ class MergedTableRelrecTest
         {
             assertEquals(0, t.getRealRowIndex(r));
         }
-        assertTrue(t.isExpanded());
+        assertTrue(t.isRowMapped());
         assertTrue(t.issues().isEmpty());
         assertEquals(MergeKind.RELREC, t.partOf(t.getMetaData().getColumnIndex("CM.CMTRT")).kind());
         assertEquals("CM",
@@ -225,11 +226,13 @@ class MergedTableRelrecTest
                 "S1,LB,01-001,LBSEQ,1,R1");
         MergedTable t = merge(RelrecPartSpec.builder().joinType(JoinType.LEFT).build(), ae(), rr,
                 cm());
-        assertEquals(List.of("LB"), t.unresolvedDatasets());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.RELREC, "LB")),
+                t.unresolvedDatasets());
         assertEquals(List.of("ASPIRIN", UNSUPPLIED), column(t, "CM.CMTRT"));
         assertFalse(columnNames(t).contains("LB.LBTESTCD"), "no columns for an unknown schema");
         MergedTable none = merge(all(), ae());
-        assertEquals(List.of("RELREC"), none.unresolvedDatasets());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.RELREC, "RELREC")),
+                none.unresolvedDatasets());
         assertEquals(2, none.getRowCount(), "no RELREC: nothing merged, nothing dropped");
     }
 
@@ -278,8 +281,13 @@ class MergedTableRelrecTest
     }
 
 
+    /**
+     * L4 (W1 review, re-pinned): a related domain whose links mix record- and dataset-level joins
+     * still pairs nothing, but is no longer a silent INFO skip — its columns are present, not
+     * supplied, and flagged.
+     */
     @Test
-    void mixedRecordAndDatasetLevelLinks_skipTheDomain()
+    void mixedRecordAndDatasetLevelLinks_pairNothing_andFlagTheDomain()
     {
         IDataTable ae = table("AE", "STUDYID,DOMAIN,USUBJID,AESEQ:N,AELNKID", "S1,AE,01-001,1,L1");
         IDataTable fa = table("FA", "STUDYID,DOMAIN,USUBJID,FASEQ:N,FALNKID,FAOBJ",
@@ -290,8 +298,56 @@ class MergedTableRelrecTest
         assertEquals(List.of("FA"), scan.mixedSkipped());
         assertTrue(scan.selectable().isEmpty());
         MergedTable t = merge(RelrecPartSpec.builder().joinType(JoinType.LEFT).build(), ae, rr, fa);
-        assertFalse(columnNames(t).contains("FA.FAOBJ"));
         assertEquals(1, t.getRowCount());
+        assertEquals(List.of(UNSUPPLIED), column(t, "FA.FAOBJ"));
+        MergeIssue issue = t.issues().get(0);
+        assertEquals(1, t.issues().size());
+        assertEquals("FA", issue.column());
+        assertTrue(issue.message().contains("both record-level and dataset-level"),
+                issue.message());
+        assertEquals(List.of(1L, 3L), issue.sourceRows());
+        assertEquals(issue.message(),
+                t.getMetaData().getColumn("FA.FAOBJ").getMetaData(MergeMeta.MERGE_ERROR));
+        // the browser's setting keeps the flagged part too (M2)
+        MergedTable browser = merge(RelrecPartSpec.builder().joinType(JoinType.LEFT)
+                .includeUnmatchedDomains(false).build(), ae, rr, fa);
+        assertEquals(List.of(UNSUPPLIED), column(browser, "FA.FAOBJ"));
+    }
+
+
+    /**
+     * OD-5 (W1 review M4): unauthored, a dataset-level relationship's RELTYPE is its cardinality,
+     * checked within that relationship — TU ONE to TR ONE, but one tumour links two results.
+     */
+    @Test
+    void m4_reltypeIsTheIgDefault_perRelationship()
+    {
+        IDataTable tu = table("TU", "STUDYID,DOMAIN,USUBJID,TUSEQ:N,TULNKID", "S1,TU,01-001,1,T01",
+                "S1,TU,01-001,2,T02");
+        IDataTable tr = table("TR", "STUDYID,DOMAIN,USUBJID,TRSEQ:N,TRLNKID", "S1,TR,01-001,1,T01",
+                "S1,TR,01-001,2,T01", "S1,TR,01-001,3,T02");
+        IDataTable one = table("RELREC", "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID",
+                "S1,TU,,TULNKID,,ONE,R1", "S1,TR,,TRLNKID,,ONE,R1");
+        CardinalityViolationException ex = assertThrows(CardinalityViolationException.class,
+                () -> merge(all(), tu, one, tr));
+        assertEquals("TR", ex.dataset());
+        assertTrue(ex.getMessage().contains("in relationship R1"), ex.getMessage());
+        assertTrue(ex.getMessage().startsWith("Cardinality 1:1"), ex.getMessage());
+        IDataTable many = table("RELREC", "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID",
+                "S1,TU,,TULNKID,,ONE,R1", "S1,TR,,TRLNKID,,MANY,R1");
+        MergedTable t = merge(all(), tu, many, tr);
+        assertEquals(List.of("1", "2", "3"), column(t, "TR.TRSEQ"), "1:n holds");
+        // the browser passes n:m (P-12): RELTYPE is not checked, the WARNING names the relationship
+        try (var logs = LogCapture.of(MergeBuilder.class))
+        {
+            MergedTable browser = merge(
+                    RelrecPartSpec.builder().cardinality(Cardinality.MANY_TO_MANY).build(), tu, one,
+                    tr);
+            assertEquals(3, browser.getRowCount());
+            assertTrue(logs.anyMessageContains(
+                    "disagrees with the 1:1 that RELTYPE states for" + " relationship R1 with TR"),
+                    logs.records().toString());
+        }
     }
 
 
@@ -378,5 +434,55 @@ class MergedTableRelrecTest
                 RelrecLinks.scan(table("RELREC", "RDOMAIN,USUBJID", "AE,01-001"), "AE"));
         assertEquals(RelrecLinks.Links.empty(),
                 RelrecLinks.collect(table("RELREC", "RDOMAIN,RELID", "AE,R1"), "AE", null));
+    }
+
+
+    /**
+     * H1 (W1 review), the RELREC shape: inner (the default) — AE seq 1 pairs with two CM records,
+     * AE seq 2 with none, so the row count stays 2 while row 1 is AE seq 1's second pair. Before
+     * the fix part 0 read AE seq 2 on row 1 beside CM seq 2.
+     */
+    @Test
+    void h1_inner_oneRecordDoubled_oneDropped_everyPartReadsOneRecord()
+    {
+        IDataTable rr = relrec("S1,AE,01-001,AESEQ,1,R1", "S1,CM,01-001,CMSEQ,1,R1",
+                "S1,CM,01-001,CMSEQ,2,R1");
+        MergedTable t = merge(all(), ae(), rr, cm());
+        assertEquals(2, t.getRowCount());
+        assertEquals(List.of("1", "1"), column(t, "AESEQ"));
+        assertEquals(List.of("HEADACHE", "HEADACHE"), column(t, "AETERM"));
+        assertEquals(List.of("ASPIRIN", "PARACETAMOL"), column(t, "CM.CMTRT"));
+        assertEquals(List.of(0L, 0L), List.of(t.getRealRowIndex(0), t.getRealRowIndex(1)));
+        assertTrue(t.isRowMapped());
+    }
+
+
+    /**
+     * M2 (W1 review): under the browser's setting ({@code includeUnmatchedDomains(false)}) a
+     * related domain whose only link names a column it lacks has no pairs — its issue was dropped
+     * with the part. It must still be published, and the domain's columns carry it so the browser
+     * (which reads {@code MERGE_ERROR} from the column metadata) warns.
+     */
+    @Test
+    void m2_aDomainWithAnIssueButNoPairs_surfacesItUnderTheBrowserSetting()
+    {
+        IDataTable rr = relrec("S1,AE,01-001,AESEQ,1,R1", "S1,CM,01-001,CMGRPID,1,R1");
+        for (boolean includeUnmatched : new boolean[]
+        {
+                true, false
+        })
+        {
+            MergedTable t = MergedTables
+                    .build(request(ae(), rr, cm()).primaryDomain("AE").naming(MergeNaming.BROWSER)
+                            .relrec(RelrecPartSpec.builder().joinType(JoinType.LEFT)
+                                    .includeUnmatchedDomains(includeUnmatched).build())
+                            .build());
+            assertEquals(1, t.issues().size(), "includeUnmatched=" + includeUnmatched);
+            assertTrue(t.issues().get(0).message().contains("CMGRPID"),
+                    t.issues().get(0).message());
+            assertEquals(List.of(UNSUPPLIED, UNSUPPLIED), column(t, "CMTRT"));
+            assertEquals(t.issues().get(0).message(),
+                    t.getMetaData().getColumn("CMTRT").getMetaData(MergeMeta.MERGE_ERROR));
+        }
     }
 }

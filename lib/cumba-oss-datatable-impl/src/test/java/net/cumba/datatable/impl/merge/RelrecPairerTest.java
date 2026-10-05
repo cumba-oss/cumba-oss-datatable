@@ -340,7 +340,16 @@ class RelrecPairerTest
         });
         RelrecPairing p = RelrecPairerCompat.resolve(relrec, ae, "AE", resolver(fa), null);
         assertTrue(p.pairs().isEmpty(), "mixed-mode domain is skipped");
-        assertTrue(p.relatedTables().isEmpty());
+        // W1 review L4: the domain is resolved so its columns can carry the issue (was: skipped
+        // before resolution, relatedTables empty)
+        assertEquals(List.of(fa), p.relatedTables());
+        RelrecPairer.Pairing pairing = RelrecPairer.resolve(
+                net.cumba.datatable.merge.RelrecLinks.collect(relrec, "AE", null), ae,
+                resolver(fa)::apply);
+        assertEquals(1, pairing.issues().size());
+        assertTrue(
+                pairing.issues().get(0).message().contains("both record-level and dataset-level"),
+                pairing.issues().toString());
     }
 
 

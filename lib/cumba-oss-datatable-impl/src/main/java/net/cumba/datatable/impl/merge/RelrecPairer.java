@@ -51,8 +51,10 @@ import org.jspecify.annotations.Nullable;
  * <li>A related domain lacking the column RELREC names (or the primary lacking the column the
  * RELREC row names for it) is reported as a {@link DomainIssue} — the merge flags that domain's
  * columns (OD-7) — and those links pair nothing. Before W1 this was a silent "no pairs".</li>
- * <li>A related domain whose links mix record- and dataset-level joins is skipped (logged) — only
- * one join shape is supported per {@code (primaryDomain, RDOMAIN)} pair.</li>
+ * <li>A related domain whose links mix record- and dataset-level joins pairs nothing — only one
+ * join shape is supported per {@code (primaryDomain, RDOMAIN)} pair — and is reported as a
+ * {@link DomainIssue} (the merge flags its columns, OD-7; W1 review L4: before, an INFO log was the
+ * only trace).</li>
  * </ul>
  */
 final class RelrecPairer
@@ -107,8 +109,8 @@ final class RelrecPairer
      * The pairing result.
      *
      * @param rdomains
-     *            the related domains, by ordinal (first-appearance order; mixed and unresolved
-     *            domains excluded).
+     *            the related domains, by ordinal (first-appearance order; unresolved domains
+     *            excluded, a mixed domain included with no pairs and an issue).
      * @param relatedTables
      *            their tables, by ordinal.
      * @param pairs
@@ -158,13 +160,6 @@ final class RelrecPairer
         for (RelrecLinks.DomainLinks e : aLinks.domains())
         {
             String rdomain = e.rdomain();
-            if (aLinks.mixedDomains().contains(rdomain))
-            {
-                LOGGER.log(Level.INFO,
-                        "RELREC relationship for {0} mixes record- and dataset-level links; skipped.",
-                        rdomain);
-                continue;
-            }
             IDataTable target = aResolver.resolve(rdomain);
             if (target == null)
             {
@@ -174,6 +169,23 @@ final class RelrecPairer
             int ordinal = relatedTables.size();
             rdomains.add(rdomain);
             relatedTables.add(target);
+            if (aLinks.mixedDomains().contains(rdomain))
+            {
+                LOGGER.log(Level.INFO,
+                        "RELREC relationship for {0} mixes record- and dataset-level links; skipped.",
+                        rdomain);
+                Set<Long> distinct = new LinkedHashSet<>();
+                for (Link link : e.links())
+                {
+                    distinct.add(link.rightRow());
+                }
+                List<Long> rows = new ArrayList<>(distinct);
+                issues.add(new DomainIssue(rdomain, "RELREC links " + rdomain
+                        + " both record-level and dataset-level; only one join shape is supported"
+                        + " per related domain, so nothing of " + rdomain
+                        + " is merged (RELREC rows " + rowList(rows) + ")", rows));
+                continue;
+            }
             joinDomain(rdomain, e.links(), aPrimary, primaryIndex, target, ordinal, pairs, issues);
         }
         pairs.sort(Comparator.comparingInt(Pair::primaryRow).thenComparingInt(Pair::ordinal)

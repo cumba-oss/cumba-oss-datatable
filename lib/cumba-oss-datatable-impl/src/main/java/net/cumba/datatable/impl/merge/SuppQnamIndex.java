@@ -25,8 +25,11 @@ import org.jspecify.annotations.Nullable;
  * 8.4); naming no subject it qualifies nothing (JKM R6) and is dropped.</li>
  * <li>A row with an {@code IDVAR} and an {@code IDVARVAL} is <b>record-level</b>; one with an
  * {@code IDVAR} but no {@code IDVARVAL} qualifies nothing and is dropped.</li>
- * <li>A record-level row naming no subject at all is <b>study-wide</b> (OD-2, SENDIG 8.3: it
- * applies to every record with that {@code IDVAR} = {@code IDVARVAL}).</li>
+ * <li>A record-level row naming no subject at all is <b>study-wide</b> under SEND (OD-2, SENDIG
+ * 8.3: it applies to every record with that {@code IDVAR} = {@code IDVARVAL}); under SDTM it
+ * qualifies nothing and is dropped (JKM R6 — SDTM has no study-wide supplemental row, W1 review
+ * M1). A key that names no subject component at all is the author's choice, and its record-level
+ * rows are study-wide under either standard.</li>
  * </ul>
  *
  * <p>
@@ -138,9 +141,12 @@ final class SuppQnamIndex
      *            the supplemental dataset; must carry {@code QNAM}.
      * @param aShape
      *            the key shape.
+     * @param aSend
+     *            whether the dataset is read under SEND (a subject-less record-level row is then
+     *            study-wide, OD-2) or SDTM (it qualifies nothing).
      * @return the index.
      */
-    static SuppQnamIndex of(IDataTable aSupp, SuppKeyShape aShape)
+    static SuppQnamIndex of(IDataTable aSupp, SuppKeyShape aShape, boolean aSend)
     {
         DataTableMeta meta = aSupp.getMetaData();
         int qnamIdx = meta.getColumnIndex("QNAM");
@@ -182,7 +188,15 @@ final class SuppQnamIndex
             {
                 continue; // a record-level row without a record value qualifies nothing
             }
-            Level level = aShape.subjectBlank(key) ? Level.STUDY_WIDE : Level.RECORD;
+            Level level = Level.RECORD;
+            if (aShape.subjectBlank(key))
+            {
+                if (aShape.hasSubjectComponents() && !aSend)
+                {
+                    continue; // SDTM: a record-level row naming no subject qualifies nothing
+                }
+                level = Level.STUDY_WIDE;
+            }
             entries.add(new Entry(r, key, level, idvar, idvarval));
         }
         return new SuppQnamIndex(byQnam, labels);

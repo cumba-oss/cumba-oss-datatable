@@ -21,8 +21,12 @@ import org.jspecify.annotations.Nullable;
  * <li>{@code idvarColumn} / {@code idvarvalColumn} / {@code rdomainColumn} — the pointer columns on
  * the primary.</li>
  * <li>{@code joinType} — {@code inner} by default.</li>
- * <li>{@code cardinality} — {@code n:m} by default (P-13: {@code IDVAR} may be a grouping variable
- * addressing many parent records, so a row may expand).</li>
+ * <li>{@code cardinality} — {@code null} (the default) is the IG's {@code n:m} (P-13: {@code IDVAR}
+ * may be a grouping variable addressing many parent records, so a row may expand) and checks
+ * nothing. An authored value wins, with a log WARNING that it disagrees with the IG (MET #12 (c)),
+ * and is checked like a keyed partner's (P-16): a side declared {@code 1} on the parent is a
+ * pointer posting holding more than one parent record, on the primary two primary rows carrying one
+ * pointer.</li>
  * </ul>
  */
 @Value
@@ -53,7 +57,6 @@ public class ChildMergeSpec
     @Builder.Default
     JoinType joinType = JoinType.INNER;
 
-    @NonNull
-    @Builder.Default
-    Cardinality cardinality = Cardinality.MANY_TO_MANY;
+    @Nullable
+    Cardinality cardinality;
 }

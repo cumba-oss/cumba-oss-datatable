@@ -188,4 +188,60 @@ class RelrecLinksTest
         assertThrows(UnsupportedOperationException.class, () -> scan.selectable().clear());
         assertThrows(UnsupportedOperationException.class, () -> scan.mixedSkipped().clear());
     }
+
+
+    /**
+     * M1 / L3 (W1 review): an explicit standard decides the grouping, not the presence of a
+     * {@code POOLID} column. SDTM with a (permissible, empty) POOLID groups by subject; SEND
+     * without one still groups by (STUDYID, RELID).
+     */
+    @Test
+    void anExplicitStandard_overridesThePoolidInference()
+    {
+        IDataTable withPool = new ListTable("RELREC",
+                "STUDYID,RDOMAIN,USUBJID,POOLID,IDVAR,IDVARVAL,RELID", "S1,AE,01-001,,AESEQ,1,R1",
+                "S1,CM,01-002,,CMSEQ,1,R1");
+        assertTrue(RelrecLinks.collect(withPool, "AE", null).send(), "UNKNOWN: inferred");
+        Links sdtm = RelrecLinks.collect(withPool, "AE", null, MergeStandard.SDTM);
+        assertFalse(sdtm.send());
+        assertTrue(sdtm.domains().isEmpty(), "SDTM: two subjects, two relationships, no link");
+        IDataTable noPool = relrec("S1,AE,01-001,AESEQ,1,R1", "S1,CM,01-002,CMSEQ,1,R1");
+        assertFalse(RelrecLinks.collect(noPool, "AE", null).send());
+        Links send = RelrecLinks.collect(noPool, "AE", null, MergeStandard.SEND);
+        assertTrue(send.send());
+        assertEquals(List.of("CM"), send.selectableDomains(), "SEND: one relationship by RELID");
+        assertEquals(List.of("CM"),
+                RelrecLinks.scan(noPool, "AE", MergeStandard.SEND).selectable());
+        assertTrue(RelrecLinks.scan(noPool, "AE", MergeStandard.SDTM).selectable().isEmpty());
+    }
+
+
+    /** OD-5: a dataset-level link states the IG's cardinality of each side through RELTYPE. */
+    @Test
+    void reltype_statesTheIgCardinalityOfADatasetLevelLink()
+    {
+        IDataTable rr = new ListTable("RELREC",
+                "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELTYPE,RELID", "S1,TU,,TULNKID,,one ,R1",
+                "S1,TR,,TRLNKID,,MANY,R1", "S1,TU,,TULNKID,,ONE,R2", "S1,RS,,RSLNKID,,ONE,R2",
+                "S1,TU,,TULNKID,,,R3", "S1,PR,,PRLNKID,,ONE,R3", "S1,TU,01-001,TUSEQ,1,,R4",
+                "S1,TR,01-001,TRSEQ,1,,R4");
+        Links links = RelrecLinks.collect(rr, "TU", null);
+        Link tr = links.domains().get(0).links().get(0);
+        assertEquals("ONE", tr.srcReltype(), "stripped, upper case");
+        assertEquals("MANY", tr.tgtReltype());
+        assertEquals(Cardinality.ONE_TO_MANY, tr.igCardinality());
+        assertEquals(Cardinality.ONE_TO_ONE, links.domains().get(1).links().get(0).igCardinality());
+        Link pr = links.domains().get(2).links().get(0);
+        assertNull(pr.srcReltype());
+        assertEquals(Cardinality.MANY_TO_ONE, pr.igCardinality());
+        Link recordLevel = links.domains().get(0).links().get(1);
+        assertTrue(recordLevel.recordLevel());
+        assertEquals(Cardinality.MANY_TO_MANY, recordLevel.igCardinality());
+        Link plain = RelrecLinks
+                .collect(relrec("S1,AE,01-001,AESEQ,,R1", "S1,CM,01-001,CMSEQ,,R1"), "AE", null)
+                .domains().get(0).links().get(0);
+        assertNull(plain.tgtReltype(), "no RELTYPE column");
+        assertFalse(plain.recordLevel());
+        assertEquals(Cardinality.MANY_TO_MANY, plain.igCardinality());
+    }
 }

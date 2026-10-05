@@ -158,7 +158,7 @@ class MergeApiTypesTest
         assertEquals("IDVARVAL", c.getIdvarvalColumn());
         assertEquals("RDOMAIN", c.getRdomainColumn());
         assertEquals(JoinType.INNER, c.getJoinType());
-        assertEquals(Cardinality.MANY_TO_MANY, c.getCardinality());
+        assertNull(c.getCardinality(), "unauthored: the IG's n:m, nothing checked (P-13)");
         ChildMergeSpec c2 = ChildMergeSpec.builder().parentDataset("AE").subjectKeys(List.of("X"))
                 .idvarColumn("I").idvarvalColumn("V").rdomainColumn("R").joinType(JoinType.LEFT)
                 .cardinality(Cardinality.ONE_TO_ONE).build();
@@ -168,10 +168,23 @@ class MergeApiTypesTest
         assertTrue(c2.toString().contains("AE"));
 
         SuppMergeSpec s = SuppMergeSpec.builder().build();
-        assertNull(s.getSuppDataset());
+        assertTrue(s.getSuppDatasets().isEmpty());
         assertNull(s.getKeys());
         assertEquals(SuppMergeSpec.DEFAULT_KEYS, s.effectiveKeys());
-        assertEquals(6, SuppMergeSpec.DEFAULT_KEYS.size());
+        assertEquals(
+                List.of(KeyColumn.of("STUDYID"), KeyColumn.sided("DOMAIN", "RDOMAIN"),
+                        KeyColumn.of("USUBJID"), KeyColumn.of("POOLID"), KeyColumn.of("APID"),
+                        KeyColumn.of("SPDEVID"), KeyColumn.of("IDVAR"), KeyColumn.of("IDVARVAL")),
+                SuppMergeSpec.DEFAULT_KEYS);
+        assertEquals(List.of("SUPPQS36", "SUPPQS"), SuppMergeSpec.defaultSuppNames("qs36", "QS"));
+        assertEquals(List.of("SUPPAE"), SuppMergeSpec.defaultSuppNames("AE", "ae"));
+        assertEquals(List.of("SUPPAE"), SuppMergeSpec.defaultSuppNames("AE", " "));
+        assertEquals(List.of("SQAPDM"), SuppMergeSpec.defaultSuppNames("APDM", "APDM"),
+                "SDTMIG-AP: an associated-persons dataset's supplemental dataset is SQAP--");
+        assertEquals(List.of("SQAPMH1", "SQAPMH"), SuppMergeSpec.defaultSuppNames("APMH1", "APMH"));
+        assertEquals("SUPPAP", SuppMergeSpec.suppNameOf("AP"), "AP alone is no AP-- dataset");
+        assertEquals(List.of("SUPPQS36", "SUPPQS"), SuppMergeSpec.builder().suppDataset("SUPPQS36")
+                .suppDataset("SUPPQS").build().getSuppDatasets());
         SuppMergeSpec s2 = SuppMergeSpec.builder().suppDataset("SUPPDM")
                 .keys(List.of(KeyColumn.of("USUBJID"))).build();
         assertEquals(List.of(KeyColumn.of("USUBJID")), s2.effectiveKeys());
@@ -184,7 +197,7 @@ class MergeApiTypesTest
         assertEquals("RELREC", r.getRelrecDataset());
         assertNull(r.getSelection());
         assertEquals(JoinType.INNER, r.getJoinType());
-        assertEquals(Cardinality.MANY_TO_MANY, r.getCardinality());
+        assertNull(r.getCardinality(), "unauthored: RELTYPE's default per relationship (OD-5)");
         assertTrue(r.isIncludeUnmatchedDomains());
         RelrecPartSpec r2 = RelrecPartSpec.builder().relrecDataset("RR")
                 .selection(RelrecMergeSpec.builder().build()).joinType(JoinType.LEFT)
@@ -206,9 +219,11 @@ class MergeApiTypesTest
         assertNull(q.getSupp());
         assertSame(MergeNaming.QUALIFIED, q.getNaming());
         assertFalse(q.isMatchedFlags());
+        assertSame(MergeStandard.UNKNOWN, q.getStandard());
         MergeRequest q2 = MergeRequest.builder().primary(primary).resolver(resolver)
                 .primaryDomain("AE").keyed(k).child(c).relrec(r).supp(s).naming(MergeNaming.BROWSER)
-                .matchedFlags(true).build();
+                .matchedFlags(true).standard(MergeStandard.SEND).build();
+        assertSame(MergeStandard.SEND, q2.getStandard());
         assertEquals(List.of(k), q2.getKeyed());
         assertNotEquals(q, q2);
         assertEquals(q, MergeRequest.builder().primary(primary).resolver(resolver).build());
@@ -216,6 +231,29 @@ class MergeApiTypesTest
                 MergeRequest.builder().primary(primary).resolver(resolver).build().hashCode());
         assertTrue(q2.toString().contains("AE"));
         assertThrows(NullPointerException.class, () -> MergeRequest.builder().build());
+    }
+
+
+    @Test
+    void mergeStandard_unknownInfersSendFromPoolid()
+    {
+        assertTrue(MergeStandard.SEND.isSend(false));
+        assertTrue(MergeStandard.SEND.isSend(true));
+        assertFalse(MergeStandard.SDTM.isSend(true), "SDTM never reads a POOLID column as SEND");
+        assertFalse(MergeStandard.SDTM.isSend(false));
+        assertTrue(MergeStandard.UNKNOWN.isSend(true));
+        assertFalse(MergeStandard.UNKNOWN.isSend(false));
+    }
+
+
+    @Test
+    void unresolvedDataset_record()
+    {
+        UnresolvedDataset u = new UnresolvedDataset(MergeKind.SUPP, "SUPPAE");
+        assertEquals(MergeKind.SUPP, u.kind());
+        assertEquals("SUPPAE", u.name());
+        assertEquals(u, new UnresolvedDataset(MergeKind.SUPP, "SUPPAE"));
+        assertNotEquals(u, new UnresolvedDataset(MergeKind.KEYED, "SUPPAE"));
     }
 
 
@@ -259,6 +297,8 @@ class MergeApiTypesTest
         assertEquals(8, cv.secondRow());
         assertTrue(new MergeColumnClashException("AGE", "DM").getMessage().contains("AGE from DM"));
         assertEquals("m", new MergeException("m").getMessage());
+        IllegalStateException cause = new IllegalStateException("c");
+        assertSame(cause, new MergeException("m", cause).getCause());
     }
 
 

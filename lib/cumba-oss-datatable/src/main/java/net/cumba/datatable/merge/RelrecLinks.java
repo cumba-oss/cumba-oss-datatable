@@ -24,14 +24,17 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li><b>SDTM:</b> a relationship is the RELREC rows sharing {@code (STUDYID, USUBJID, RELID)}
  * (SDTMIG 3.4 §8.2).</li>
- * <li><b>SEND (OD-3):</b> a RELREC carrying a {@code POOLID} column is read as SENDIG 3.1.1 §8.2
+ * <li><b>SEND (OD-3):</b> a RELREC read under SEND ({@link MergeStandard}; under
+ * {@link MergeStandard#UNKNOWN} one carrying a {@code POOLID} column) is read as SENDIG 3.1.1 §8.2
  * defines it: a relationship is the rows sharing {@code (STUDYID, RELID)}, and each row identifies
  * its record by {@code USUBJID} <em>or</em> {@code POOLID}.</li>
  * <li>A link is <b>record-level</b> when both of its rows carry an {@code IDVARVAL} (it joins the
  * records whose {@code IDVAR} column equals it), else <b>dataset-level</b> (it joins within the
  * subject on equal {@code IDVAR} values).</li>
  * <li>A related domain whose links <b>mix</b> the two shapes is not merged (today's rule, kept); it
- * is reported as {@link RelrecScan#mixedSkipped()}.</li>
+ * is reported as {@link RelrecScan#mixedSkipped()}, and the merge flags it (W1 review L4).</li>
+ * <li>Each link carries the {@code RELTYPE} of its two rows: a dataset-level relationship states
+ * the IG's cardinality of each side ({@code ONE} / {@code MANY}, OD-5).</li>
  * <li>Every key component is classified by {@code cumba-datatable}'s
  * {@link GroupKeyPolicy#textKeyIdentity(IDataValue)} (JKM R5): a missing {@code STUDYID} or
  * {@code USUBJID} is its own identity, never the empty string; an absent column reads {@code ""}
@@ -54,6 +57,8 @@ public final class RelrecLinks
     private static final String IDVARVAL = "IDVARVAL";
 
     private static final String RELID = "RELID";
+
+    private static final String RELTYPE = "RELTYPE";
 
     /**
      * One link from a primary-domain RELREC row (left) to a related-domain row (right) of the same
@@ -99,14 +104,43 @@ public final class RelrecLinks
      *            the left RELREC row.
      * @param rightRow
      *            the right RELREC row.
+     * @param srcReltype
+     *            the left row's {@code RELTYPE}, stripped and upper case, {@code null} when blank
+     *            or the column is absent.
+     * @param tgtReltype
+     *            the right row's {@code RELTYPE}, likewise.
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
     public record Link(String rdomain, String relid, int relationship, boolean recordLevel,
             @Nullable String study, Object studyKey, @Nullable String srcSubject,
             Object srcSubjectKey, boolean srcPooled, @Nullable String tgtSubject,
             Object tgtSubjectKey, boolean tgtPooled, String srcIdvar, @Nullable String srcIdvarval,
-            String tgtIdvar, @Nullable String tgtIdvarval, long leftRow, long rightRow)
+            String tgtIdvar, @Nullable String tgtIdvarval, long leftRow, long rightRow,
+            @Nullable String srcReltype, @Nullable String tgtReltype)
     {
+
+        /**
+         * The IG's cardinality of this link's relationship from the primary's side (OD-5): a
+         * dataset-level link whose rows say {@code RELTYPE} {@code ONE} on a side makes that side
+         * unique; a record-level link, or a side whose {@code RELTYPE} is not {@code ONE}, is
+         * {@code n} on that side.
+         *
+         * @return the IG default.
+         */
+        public Cardinality igCardinality()
+        {
+            if (recordLevel)
+            {
+                return Cardinality.MANY_TO_MANY;
+            }
+            boolean left = "ONE".equals(srcReltype);
+            boolean right = "ONE".equals(tgtReltype);
+            if (left)
+            {
+                return right ? Cardinality.ONE_TO_ONE : Cardinality.ONE_TO_MANY;
+            }
+            return right ? Cardinality.MANY_TO_ONE : Cardinality.MANY_TO_MANY;
+        }
     }
 
 
@@ -231,12 +265,31 @@ public final class RelrecLinks
      */
     public static RelrecScan scan(IDataTable aRelrec, @Nullable String aPrimaryDomain)
     {
+        return scan(aRelrec, aPrimaryDomain, MergeStandard.UNKNOWN);
+    }
+
+
+    /**
+     * {@link #scan(IDataTable, String)} under a known standard: SEND groups a relationship by
+     * {@code (STUDYID, RELID)} (OD-3), SDTM by {@code (STUDYID, USUBJID, RELID)}.
+     *
+     * @param aRelrec
+     *            the RELREC dataset.
+     * @param aPrimaryDomain
+     *            the primary table's domain.
+     * @param aStandard
+     *            the standard RELREC is read under.
+     * @return the scan.
+     */
+    public static RelrecScan scan(IDataTable aRelrec, @Nullable String aPrimaryDomain,
+            MergeStandard aStandard)
+    {
         DataTableMeta m = aRelrec.getMetaData();
         if (aPrimaryDomain == null || m.getColumnIndex(RDOMAIN) < 0 || m.getColumnIndex(RELID) < 0)
         {
             return RelrecScan.empty();
         }
-        Links links = collect(aRelrec, aPrimaryDomain, null);
+        Links links = collect(aRelrec, aPrimaryDomain, null, aStandard);
         return new RelrecScan(links.selectableDomains(), links.mixedDomains());
     }
 
@@ -257,6 +310,29 @@ public final class RelrecLinks
     public static Links collect(IDataTable aRelrec, String aPrimaryDomain,
             @Nullable Set<String> aSelectedRdomains)
     {
+        return collect(aRelrec, aPrimaryDomain, aSelectedRdomains, MergeStandard.UNKNOWN);
+    }
+
+
+    /**
+     * {@link #collect(IDataTable, String, Set)} under a known standard ({@link MergeStandard}):
+     * SEND groups a relationship by {@code (STUDYID, RELID)} and names each record by
+     * {@code USUBJID} or {@code POOLID} (OD-3); SDTM groups by {@code (STUDYID, USUBJID, RELID)};
+     * {@link MergeStandard#UNKNOWN} reads a RELREC carrying {@code POOLID} as SEND.
+     *
+     * @param aRelrec
+     *            the RELREC dataset.
+     * @param aPrimaryDomain
+     *            the primary table's domain.
+     * @param aSelectedRdomains
+     *            upper-cased related domains to restrict to, or {@code null} for all.
+     * @param aStandard
+     *            the standard RELREC is read under.
+     * @return the links.
+     */
+    public static Links collect(IDataTable aRelrec, String aPrimaryDomain,
+            @Nullable Set<String> aSelectedRdomains, MergeStandard aStandard)
+    {
         DataTableMeta rm = aRelrec.getMetaData();
         int cStudy = rm.getColumnIndex(STUDYID);
         int cUsubj = rm.getColumnIndex(USUBJID);
@@ -265,11 +341,12 @@ public final class RelrecLinks
         int cIdvar = rm.getColumnIndex(IDVAR);
         int cIdvarval = rm.getColumnIndex(IDVARVAL);
         int cRelid = rm.getColumnIndex(RELID);
+        int cReltype = rm.getColumnIndex(RELTYPE);
         if (cRdom < 0 || cIdvar < 0 || cIdvarval < 0 || cRelid < 0)
         {
             return Links.empty();
         }
-        boolean send = cPool >= 0;
+        boolean send = aStandard.isSend(cPool >= 0);
 
         // Group RELREC rows into relationships, each component its key identity (JKM R5).
         Map<GroupKey, List<Long>> groups = new LinkedHashMap<>();
@@ -321,12 +398,13 @@ public final class RelrecLinks
                     String srcIdvarval = cell(aRelrec, cIdvarval, lrr);
                     String tgtIdvarval = cell(aRelrec, cIdvarval, rrr);
                     boolean recordLevel = isNonBlank(srcIdvarval) && isNonBlank(tgtIdvarval);
-                    Subject src = subjectOf(aRelrec, cUsubj, cPool, lrr);
-                    Subject tgt = subjectOf(aRelrec, cUsubj, cPool, rrr);
+                    Subject src = subjectOf(aRelrec, cUsubj, send ? cPool : -1, lrr);
+                    Subject tgt = subjectOf(aRelrec, cUsubj, send ? cPool : -1, rrr);
                     Link link = new Link(rdom, cellOrEmpty(aRelrec, cRelid, lrr), ordinal,
                             recordLevel, cell(aRelrec, cStudy, lrr), keyCell(aRelrec, cStudy, lrr),
                             src.text(), src.key(), src.pooled(), tgt.text(), tgt.key(),
-                            tgt.pooled(), srcIdvar, srcIdvarval, tgtIdvar, tgtIdvarval, lrr, rrr);
+                            tgt.pooled(), srcIdvar, srcIdvarval, tgtIdvar, tgtIdvarval, lrr, rrr,
+                            reltype(aRelrec, cReltype, lrr), reltype(aRelrec, cReltype, rrr));
                     byDomain.computeIfAbsent(rdom, _ -> new ArrayList<>()).add(link);
                     boolean[] hasMode = modes.computeIfAbsent(rdom, _ -> new boolean[2]);
                     hasMode[recordLevel ? 0 : 1] = true;
@@ -365,6 +443,13 @@ public final class RelrecLinks
             }
         }
         return new Subject(usubj, keyCell(aRelrec, aCUsubj, aRow), false);
+    }
+
+
+    private static @Nullable String reltype(IDataTable aRelrec, int aCol, long aRow)
+    {
+        String s = cell(aRelrec, aCol, aRow);
+        return s == null || s.isBlank() ? null : s.strip().toUpperCase(Locale.ROOT);
     }
 
 

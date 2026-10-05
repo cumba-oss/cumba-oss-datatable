@@ -34,7 +34,9 @@ import org.jspecify.annotations.Nullable;
  * side it contributes the other side's type default (the empty string for a character column, a
  * present value by D34 #1; {@code MIS} for a numeric one, since a numeric cell cannot hold
  * {@code ""}); absent everywhere the merge is refused. A qualified left name ({@code DM.RPATHCD})
- * is a chained key the caller composes (§4) and is refused here.
+ * the primary does not carry is a chained key the caller composes (§4) and is refused here; one the
+ * primary carries — a nested merged primary that already holds {@code DM.RPATHCD} — is an ordinary
+ * column and keys like any other (W1 review M3).
  * </p>
  */
 public final class KeyedMatcher
@@ -114,7 +116,7 @@ public final class KeyedMatcher
      * @throws MalformedSidedKeyException
      *             for an empty key.
      * @throws UnresolvedQualifiedKeyException
-     *             for a qualified left name.
+     *             for a qualified left name the primary does not carry.
      * @throws JoinKeyTypeMismatchException
      *             when a component is numeric on one side and character on the other (D4) and the
      *             spec neither declares {@code joinAsString} nor excludes the type check.
@@ -140,12 +142,12 @@ public final class KeyedMatcher
         for (int i = 0; i < n; i++)
         {
             KeyColumn key = keys.get(i);
-            if (key.leftQualifier() != null)
+            recordColIds[i] = pm.getColumnIndex(key.left());
+            if (key.leftQualifier() != null && recordColIds[i] < 0)
             {
                 throw new UnresolvedQualifiedKeyException(dataset, key.left(),
                         "a chained key reads an earlier merged part; the caller composes it");
             }
-            recordColIds[i] = pm.getColumnIndex(key.left());
             partnerColIds[i] = cm.getColumnIndex(key.right());
             boolean inPrimary = recordColIds[i] >= 0;
             boolean inPartner = partnerColIds[i] >= 0;
@@ -268,7 +270,7 @@ public final class KeyedMatcher
      * @param aOut
      *            the list to fill (cleared first).
      */
-    public void matchesOf(int aRow, List<Integer> aOut)
+    void matchesOf(int aRow, IntList aOut)
     {
         aOut.clear();
         int id = keyIdOf(aRow);

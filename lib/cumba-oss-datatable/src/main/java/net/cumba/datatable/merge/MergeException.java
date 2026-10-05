@@ -22,4 +22,16 @@ public class MergeException extends RuntimeException
     {
         super(aMessage);
     }
+
+
+    /**
+     * @param aMessage
+     *            the message.
+     * @param aCause
+     *            what made the merge impossible.
+     */
+    public MergeException(String aMessage, Throwable aCause)
+    {
+        super(aMessage, aCause);
+    }
 }

@@ -1,7 +1,10 @@
 package net.cumba.datatable.impl.merge;
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -16,6 +19,7 @@ import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.databuffer.DataBufferFactory;
 import net.cumba.datatable.impl.databuffer.IDataBufferNumeric;
 import net.cumba.datatable.impl.view.DataTableViewBuffer;
+import net.cumba.datatable.impl.view.UnionDataTable;
 import net.cumba.datatable.impl.view.ViewDataTable;
 import net.cumba.datatable.manager.RelrecMergeSpec;
 import net.cumba.datatable.merge.Cardinality;
@@ -23,6 +27,7 @@ import net.cumba.datatable.merge.CardinalityViolationException;
 import net.cumba.datatable.merge.ChildMergeSpec;
 import net.cumba.datatable.merge.JoinType;
 import net.cumba.datatable.merge.KeyedMergeSpec;
+import net.cumba.datatable.merge.MergeException;
 import net.cumba.datatable.merge.MergeIssue;
 import net.cumba.datatable.merge.MergeKind;
 import net.cumba.datatable.merge.MergeMeta;
@@ -32,6 +37,7 @@ import net.cumba.datatable.merge.MergedPart;
 import net.cumba.datatable.merge.RelrecLinks;
 import net.cumba.datatable.merge.RelrecPartSpec;
 import net.cumba.datatable.merge.SuppMergeSpec;
+import net.cumba.datatable.merge.UnresolvedDataset;
 import net.cumba.datatable.values.IDataValue;
 import org.jspecify.annotations.Nullable;
 
@@ -46,12 +52,14 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * Nothing is copied: a part is a {@link ViewDataTable} over its source through a compact
  * {@link DataTableViewBuffer} row map (a supplemental part its own {@link SuppPart}), the primary
- * is itself unless some merge expanded rows, in which case it is row-mapped too and
+ * is itself unless some merge dropped or expanded a row, in which case it is row-mapped too and
  * {@code getRealRowIndex} still answers its native row.
  * </p>
  */
 final class MergeBuilder
 {
+
+    private static final Logger LOGGER = System.getLogger(MergeBuilder.class.getName());
 
     private final MergeRequest request;
 
@@ -67,7 +75,7 @@ final class MergeBuilder
 
     private final List<MergeIssue> issues = new ArrayList<>();
 
-    private final List<String> unresolved = new ArrayList<>();
+    private final List<UnresolvedDataset> unresolved = new ArrayList<>();
 
     private final Set<String> usedNames = new HashSet<>();
 
@@ -82,10 +90,65 @@ final class MergeBuilder
     }
 
 
-    /** The RELREC factor: the domains in part order and, per primary row, its tuples. */
-    private record RelrecUnit(RelrecPartSpec spec, RelrecPairer.Pairing pairing,
-            List<Integer> ordinals, Map<Integer, List<int[]>> tuplesByPrimary)
+    /**
+     * The RELREC factor: the domains in part order and, per primary row, its tuples — compact (L7):
+     * primary row {@code p}'s tuples are {@code tupleStart[p] .. tupleStart[p + 1] - 1}, tuple
+     * {@code t} holding one related row (or {@code -1}) per domain at
+     * {@code tuples[t * domains .. (t + 1) * domains - 1]}.
+     */
+    private static final class RelrecUnit
     {
+
+        private final RelrecPartSpec spec;
+
+        private final RelrecPairer.Pairing pairing;
+
+        private final List<Integer> ordinals;
+
+        private final int[] tupleStart;
+
+        private final IntList tuples;
+
+        RelrecUnit(RelrecPartSpec aSpec, RelrecPairer.Pairing aPairing, List<Integer> aOrdinals,
+                int[] aTupleStart, IntList aTuples)
+        {
+            spec = aSpec;
+            pairing = aPairing;
+            ordinals = aOrdinals;
+            tupleStart = aTupleStart;
+            tuples = aTuples;
+        }
+
+
+        RelrecPartSpec spec()
+        {
+            return spec;
+        }
+
+
+        RelrecPairer.Pairing pairing()
+        {
+            return pairing;
+        }
+
+
+        List<Integer> ordinals()
+        {
+            return ordinals;
+        }
+
+
+        /** The first tuple of primary row {@code aRow}; {@code aRow + 1} gives its end. */
+        int tupleStart(int aRow)
+        {
+            return tupleStart[aRow];
+        }
+
+
+        IntList tuples()
+        {
+            return tuples;
+        }
     }
 
     MergeBuilder(MergeRequest aRequest, @Nullable Consumer<SuppQnamIndex> aSuppIndexObserver)
@@ -138,7 +201,11 @@ final class MergeBuilder
         List<String> childNames = child == null ? List.of() : child.parentNames();
         if (child != null)
         {
-            unresolved.addAll(child.unresolved());
+            for (String name : child.unresolved())
+            {
+                unresolved.add(new UnresolvedDataset(MergeKind.CHILD, name));
+            }
+            child.checkCardinality();
         }
         RelrecUnit relrec = resolveRelrec();
 
@@ -167,24 +234,27 @@ final class MergeBuilder
             relrecMaps[d] = DataBufferFactory.get().createForRange(-1,
                     Math.max(0, related.getRowCount() - 1));
         }
-        List<List<Integer>> keyedMatches = new ArrayList<>();
+        // Reused across the primary rows: nothing below allocates or boxes per row (L7).
+        IntList[] keyedMatches = new IntList[nKeyed];
         for (int k = 0; k < nKeyed; k++)
         {
-            keyedMatches.add(new ArrayList<>());
+            keyedMatches[k] = new IntList();
         }
-        List<Integer> childMatches = new ArrayList<>();
-        List<int[]> noRelrec = List.of(unsuppliedTuple(nRelrec));
-        List<int[]> relrecTuples = noRelrec;
+        IntList childMatches = new IntList();
+        int[] counters = new int[nKeyed + 1];
         int size = 0;
+        // H1 (W1 review): row-mapped is decided on IDENTITY — every primary row kept, each giving
+        // exactly one row — never on the count, which an inner merge's dropped and expanded rows
+        // can leave unchanged while every part but the primary follows the real sequence.
+        boolean identity = true;
         for (int p = 0; p < primaryRows; p++)
         {
             boolean dropped = false;
             for (int k = 0; k < nKeyed && !dropped; k++)
             {
                 KeyedUnit u = keyedUnits.get(k);
-                List<Integer> m = keyedMatches.get(k);
-                u.matcher().matchesOf(p, m);
-                dropped = unmatchedHandling(m, u.spec().getJoinType());
+                u.matcher().matchesOf(p, keyedMatches[k]);
+                dropped = unmatchedHandling(keyedMatches[k], u.spec().getJoinType());
             }
             int childOrdinal = -1;
             if (!dropped && child != null && childSpec != null)
@@ -193,32 +263,38 @@ final class MergeBuilder
                 childOrdinal = child.ordinalOf(p);
                 dropped = unmatchedHandling(childMatches, childSpec.getJoinType());
             }
+            int tupleFrom = 0;
+            int tupleCount = 1; // one row with every related domain not supplied
+            boolean noTuple = true;
             if (!dropped && relrec != null)
             {
-                List<int[]> t = relrec.tuplesByPrimary().get(p);
-                if (t == null)
+                tupleFrom = relrec.tupleStart(p);
+                int to = relrec.tupleStart(p + 1);
+                if (to == tupleFrom)
                 {
                     dropped = relrec.spec().getJoinType() == JoinType.INNER;
-                    relrecTuples = noRelrec;
                 }
                 else
                 {
-                    relrecTuples = t;
+                    noTuple = false;
+                    tupleCount = to - tupleFrom;
                 }
             }
             if (dropped)
             {
+                identity = false;
                 continue;
             }
             // The odometer over the factors: keyed lists, the child list, the RELREC tuples.
-            int[] counters = new int[nKeyed + 1];
+            java.util.Arrays.fill(counters, 0);
             int relrecCounter = 0;
+            int emitted = 0;
             while (true)
             {
                 primaryMap.addValue(p);
                 for (int k = 0; k < nKeyed; k++)
                 {
-                    keyedMaps[k].addValue(keyedMatches.get(k).get(counters[k]));
+                    keyedMaps[k].addValue(keyedMatches[k].get(counters[k]));
                 }
                 if (child != null)
                 {
@@ -228,14 +304,15 @@ final class MergeBuilder
                         childMaps[c].addValue(c == childOrdinal ? match : -1);
                     }
                 }
-                int[] tuple = relrecTuples.get(relrecCounter);
-                for (int d = 0; d < nRelrec; d++)
+                for (int d = 0; d < nRelrec && relrec != null; d++)
                 {
-                    relrecMaps[d].addValue(tuple[d]);
+                    relrecMaps[d].addValue(noTuple ? -1
+                            : relrec.tuples().get((tupleFrom + relrecCounter) * nRelrec + d));
                 }
                 size++;
+                emitted++;
                 // advance the odometer, RELREC fastest, then the child, then the keyed lists
-                if (++relrecCounter < relrecTuples.size())
+                if (++relrecCounter < tupleCount)
                 {
                     continue;
                 }
@@ -244,7 +321,7 @@ final class MergeBuilder
                 while (i >= 0)
                 {
                     int limit = i == nKeyed ? (child == null ? 1 : childMatches.size())
-                            : keyedMatches.get(i).size();
+                            : keyedMatches[i].size();
                     if (++counters[i] < limit)
                     {
                         break;
@@ -257,13 +334,14 @@ final class MergeBuilder
                     break;
                 }
             }
+            identity &= emitted == 1;
         }
-        boolean expanded = size != primaryRows;
+        boolean rowMapped = !identity;
 
         // ---- the parts, named
         List<IDataTable> tables = new ArrayList<>();
         List<MergedPart> parts = new ArrayList<>();
-        IDataTable primaryPart = expanded
+        IDataTable primaryPart = rowMapped
                 ? new ViewDataTable(primary, new DataTableViewBuffer(primaryMap), null)
                 : primary;
         tables.add(primaryPart);
@@ -290,51 +368,13 @@ final class MergeBuilder
         }
         if (relrec != null)
         {
-            Map<String, RelrecPairer.DomainIssue> issueByDomain = new LinkedHashMap<>();
-            for (RelrecPairer.DomainIssue di : relrec.pairing().issues())
-            {
-                issueByDomain.merge(di.rdomain(), di,
-                        (a, b) -> new RelrecPairer.DomainIssue(a.rdomain(),
-                                a.message() + "; " + b.message(),
-                                concat(a.relrecRows(), b.relrecRows())));
-            }
-            for (int d = 0; d < nRelrec; d++)
-            {
-                int ordinal = relrec.ordinals().get(d);
-                String rdomain = relrec.pairing().rdomains().get(ordinal);
-                RelrecPairer.DomainIssue di = issueByDomain.get(rdomain);
-                addMappedPart(tables, parts, MergeKind.RELREC, rdomain,
-                        relrec.pairing().relatedTables().get(ordinal), relrecMaps[d], size,
-                        di == null ? null
-                                : new MergeIssue(MergeKind.RELREC, relrec.spec().getRelrecDataset(),
-                                        rdomain, di.message(), di.relrecRows()));
-            }
-            if (request.isMatchedFlags() && nRelrec > 0)
-            {
-                IDataBufferNumeric any = DataBufferFactory.get().createForRange(-1, 0);
-                any.setExpectedSize(size);
-                for (int i = 0; i < size; i++)
-                {
-                    boolean matched = false;
-                    for (int d = 0; d < nRelrec && !matched; d++)
-                    {
-                        matched = relrecMaps[d].getValueAsLong(i) >= 0;
-                    }
-                    any.addValue(matched ? 0 : -1);
-                }
-                String name = claim(MergeKind.RELREC, "RELREC", naming.matchedFlagName("RELREC"));
-                tables.add(new MatchedFlagTable(relrec.spec().getRelrecDataset(), name, "RELREC",
-                        MergeKind.RELREC, size, any));
-                parts.add(
-                        new MergedPart(MergeKind.RELREC, "RELREC", relrec.spec().getRelrecDataset(),
-                                columnsSoFar(tables) - 1, 1, columnsSoFar(tables) - 1));
-            }
+            addRelrecParts(tables, parts, relrec, relrecMaps, size);
         }
         Set<String> suppQnams = new LinkedHashSet<>();
         if (request.getSupp() != null)
         {
             supps.add(0, new SuppPending(primary, primaryName, true, request.getSupp(),
-                    expanded ? primaryMap : null));
+                    rowMapped ? primaryMap : null));
         }
         for (SuppPending sp : supps)
         {
@@ -345,7 +385,63 @@ final class MergeBuilder
             }
         }
         return new MergedTableImpl(primary, tables.toArray(IDataTable[]::new), parts, issues,
-                unresolved, suppQnams, expanded);
+                unresolved, suppQnams, rowMapped);
+    }
+
+
+    /**
+     * Adds the RELREC parts — one per related domain in part order, each carrying its domain's
+     * issue — and the {@code RELREC._matched_} flag. An issue whose domain has no part is still
+     * published (M2: the browser's setting used to drop it with the part).
+     */
+    private void addRelrecParts(List<IDataTable> aTables, List<MergedPart> aParts,
+            RelrecUnit aRelrec, IDataBufferNumeric[] aRelrecMaps, int aSize)
+    {
+        int nRelrec = aRelrec.ordinals().size();
+        Map<String, RelrecPairer.DomainIssue> issueByDomain = new LinkedHashMap<>();
+        for (RelrecPairer.DomainIssue di : aRelrec.pairing().issues())
+        {
+            issueByDomain.merge(di.rdomain(), di,
+                    (a, b) -> new RelrecPairer.DomainIssue(a.rdomain(),
+                            a.message() + "; " + b.message(),
+                            concat(a.relrecRows(), b.relrecRows())));
+        }
+        String relrecName = aRelrec.spec().getRelrecDataset();
+        for (int d = 0; d < nRelrec; d++)
+        {
+            int ordinal = aRelrec.ordinals().get(d);
+            String rdomain = aRelrec.pairing().rdomains().get(ordinal);
+            RelrecPairer.DomainIssue di = issueByDomain.remove(rdomain);
+            addMappedPart(aTables, aParts, MergeKind.RELREC, rdomain,
+                    aRelrec.pairing().relatedTables().get(ordinal), aRelrecMaps[d], aSize,
+                    di == null ? null
+                            : new MergeIssue(MergeKind.RELREC, relrecName, rdomain, di.message(),
+                                    di.relrecRows()));
+        }
+        for (RelrecPairer.DomainIssue di : issueByDomain.values())
+        {
+            issues.add(new MergeIssue(MergeKind.RELREC, relrecName, di.rdomain(), di.message(),
+                    di.relrecRows()));
+        }
+        if (request.isMatchedFlags() && nRelrec > 0)
+        {
+            IDataBufferNumeric any = DataBufferFactory.get().createForRange(-1, 0);
+            any.setExpectedSize(aSize);
+            for (int i = 0; i < aSize; i++)
+            {
+                boolean matched = false;
+                for (int d = 0; d < nRelrec && !matched; d++)
+                {
+                    matched = aRelrecMaps[d].getValueAsLong(i) >= 0;
+                }
+                any.addValue(matched ? 0 : -1);
+            }
+            String name = claim(MergeKind.RELREC, "RELREC", naming.matchedFlagName("RELREC"));
+            aTables.add(
+                    new MatchedFlagTable(relrecName, name, "RELREC", MergeKind.RELREC, aSize, any));
+            aParts.add(new MergedPart(MergeKind.RELREC, "RELREC", relrecName,
+                    columnsSoFar(aTables) - 1, 1, columnsSoFar(aTables) - 1));
+        }
     }
 
     /** A supplemental merge still to be added, over its base and the base's row map. */
@@ -360,7 +456,7 @@ final class MergeBuilder
      *
      * @return whether the primary row is dropped.
      */
-    private static boolean unmatchedHandling(List<Integer> aMatches, JoinType aJoinType)
+    private static boolean unmatchedHandling(IntList aMatches, JoinType aJoinType)
     {
         if (aMatches.isEmpty())
         {
@@ -371,14 +467,6 @@ final class MergeBuilder
             aMatches.add(-1);
         }
         return false;
-    }
-
-
-    private static int[] unsuppliedTuple(int aSize)
-    {
-        int[] t = new int[aSize];
-        java.util.Arrays.fill(t, -1);
-        return t;
     }
 
 
@@ -425,7 +513,7 @@ final class MergeBuilder
             IDataTable partner = request.getResolver().resolve(spec.datasetName());
             if (partner == null)
             {
-                unresolved.add(spec.datasetName());
+                unresolved.add(new UnresolvedDataset(MergeKind.KEYED, spec.datasetName()));
                 continue;
             }
             KeyedMatcher matcher = KeyedMatcher.of(primary, partner, spec);
@@ -448,16 +536,19 @@ final class MergeBuilder
         IDataTable relrecTable = request.getResolver().resolve(spec.getRelrecDataset());
         if (relrecTable == null)
         {
-            unresolved.add(spec.getRelrecDataset());
+            unresolved.add(new UnresolvedDataset(MergeKind.RELREC, spec.getRelrecDataset()));
             return null;
         }
         RelrecMergeSpec selection = spec.getSelection();
         RelrecLinks.Links links = RelrecLinks.collect(relrecTable, domain,
-                selectedRdomains(selection));
+                selectedRdomains(selection), request.getStandard());
         RelrecPairer.Pairing pairing = RelrecPairer.resolve(links, primary, request.getResolver());
-        unresolved.addAll(pairing.unresolvedDomains());
+        for (String rdomain : pairing.unresolvedDomains())
+        {
+            unresolved.add(new UnresolvedDataset(MergeKind.RELREC, rdomain));
+        }
         List<RelrecPairer.Pair> pairs = filterToSelection(pairing.pairs(), selection);
-        checkRelrecCardinality(spec.getCardinality(), pairing, pairs);
+        checkRelrecCardinality(spec.getCardinality(), links, pairing, pairs);
         List<Integer> ordinals;
         if (spec.isIncludeUnmatchedDomains())
         {
@@ -472,6 +563,20 @@ final class MergeBuilder
             ordinals = RelrecPairer.usedOrdinalsInPairOrder(
                     new RelrecPairer.Pairing(pairing.rdomains(), pairing.relatedTables(), pairs,
                             pairing.unresolvedDomains(), pairing.issues(), pairing.mixedSkipped()));
+            // M2 (W1 review): a domain with an issue keeps its part even when nothing pairs, so
+            // its MERGE_ERROR reaches a consumer that reads the column metadata (the browser)
+            Set<String> withIssue = new HashSet<>();
+            for (RelrecPairer.DomainIssue di : pairing.issues())
+            {
+                withIssue.add(di.rdomain());
+            }
+            for (int i = 0; i < pairing.rdomains().size(); i++)
+            {
+                if (withIssue.contains(pairing.rdomains().get(i)) && !ordinals.contains(i))
+                {
+                    ordinals.add(i);
+                }
+            }
         }
         int[] positionOfOrdinal = new int[pairing.relatedTables().size()];
         java.util.Arrays.fill(positionOfOrdinal, -1);
@@ -479,10 +584,30 @@ final class MergeBuilder
         {
             positionOfOrdinal[ordinals.get(d)] = d;
         }
-        return new RelrecUnit(spec, pairing, ordinals,
-                crossProductPerRelationship(pairs, positionOfOrdinal, ordinals.size()));
+        int[] tupleStart = new int[primaryRows + 1];
+        IntList tuples = crossProductPerRelationship(pairs, positionOfOrdinal, ordinals.size(),
+                tupleStart);
+        return new RelrecUnit(spec, pairing, ordinals, tupleStart, tuples);
     }
 
+    /** One tuple of the flat tuple list, hashed and compared by value (the de-duplication). */
+    private record TupleKey(IntList list, int offset, int width, int hash)
+    {
+
+        @Override
+        public boolean equals(Object aOther)
+        {
+            return aOther instanceof TupleKey o && o.width == width
+                    && list.sliceEquals(offset, o.offset, width);
+        }
+
+
+        @Override
+        public int hashCode()
+        {
+            return hash;
+        }
+    }
 
     /**
      * The merged rows of every primary record with at least one pair: per relationship (in the
@@ -491,17 +616,31 @@ final class MergeBuilder
      * gives one row with that domain not supplied (P-17); the rows of a record's relationships are
      * summed (OD-4); a row identical in every domain to one already produced for the same record is
      * produced once (a pair shared by two relationships is one row).
+     *
+     * @param aTupleStart
+     *            filled: per primary row the index of its first tuple, plus the end.
+     * @return the tuples, {@code aDomains} values each.
      */
-    private static Map<Integer, List<int[]>> crossProductPerRelationship(
-            List<RelrecPairer.Pair> aPairs, int[] aPositionOfOrdinal, int aDomains)
+    private static IntList crossProductPerRelationship(List<RelrecPairer.Pair> aPairs,
+            int[] aPositionOfOrdinal, int aDomains, int[] aTupleStart)
     {
-        Map<Integer, List<int[]>> out = new LinkedHashMap<>();
+        IntList tuples = new IntList(Math.max(1, aPairs.size() * Math.max(1, aDomains)));
+        IntList none = new IntList(1);
+        none.add(-1);
+        IntList[] factors = new IntList[aDomains];
+        int[] counters = new int[aDomains];
+        int count = 0;
+        int nextRow = 0;
         int i = 0;
         while (i < aPairs.size())
         {
             int p = aPairs.get(i).primaryRow();
+            for (; nextRow <= p; nextRow++)
+            {
+                aTupleStart[nextRow] = count;
+            }
             // relationship -> position -> related rows (ascending, as the pairs are sorted)
-            Map<Integer, Map<Integer, List<Integer>>> byRelationship = new java.util.TreeMap<>();
+            Map<Integer, Map<Integer, IntList>> byRelationship = new java.util.TreeMap<>();
             while (i < aPairs.size() && aPairs.get(i).primaryRow() == p)
             {
                 RelrecPairer.Pair pair = aPairs.get(i);
@@ -510,36 +649,39 @@ final class MergeBuilder
                 {
                     byRelationship
                             .computeIfAbsent(pair.relationship(), _ -> new java.util.TreeMap<>())
-                            .computeIfAbsent(pos, _ -> new ArrayList<>()).add(pair.relatedRow());
+                            .computeIfAbsent(pos, _ -> new IntList(2)).add(pair.relatedRow());
                 }
                 i++;
             }
-            List<int[]> tuples = new ArrayList<>();
-            Set<List<Integer>> seen = new HashSet<>();
-            for (Map<Integer, List<Integer>> perDomain : byRelationship.values())
+            // one relationship cannot repeat a tuple (its pairs are distinct); only a record in
+            // several relationships needs the de-duplication
+            Set<TupleKey> seen = byRelationship.size() > 1 ? new HashSet<>() : null;
+            for (Map<Integer, IntList> perDomain : byRelationship.values())
             {
-                List<List<Integer>> factors = new ArrayList<>(aDomains);
                 for (int d = 0; d < aDomains; d++)
                 {
-                    List<Integer> f = perDomain.get(d);
-                    factors.add(f == null ? List.of(-1) : f);
+                    IntList f = perDomain.get(d);
+                    factors[d] = f == null ? none : f;
                 }
-                int[] counters = new int[aDomains];
+                java.util.Arrays.fill(counters, 0);
                 while (true)
                 {
-                    int[] tuple = new int[aDomains];
-                    List<Integer> key = new ArrayList<>(aDomains);
+                    int offset = count * aDomains;
                     for (int d = 0; d < aDomains; d++)
                     {
-                        tuple[d] = factors.get(d).get(counters[d]);
-                        key.add(tuple[d]);
+                        tuples.add(factors[d].get(counters[d]));
                     }
-                    if (seen.add(key))
+                    if (seen == null || seen.add(new TupleKey(tuples, offset, aDomains,
+                            tuples.sliceHash(offset, aDomains))))
                     {
-                        tuples.add(tuple);
+                        count++;
+                    }
+                    else
+                    {
+                        tuples.truncate(offset);
                     }
                     int d = aDomains - 1;
-                    while (d >= 0 && ++counters[d] == factors.get(d).size())
+                    while (d >= 0 && ++counters[d] == factors[d].size())
                     {
                         counters[d] = 0;
                         d--;
@@ -550,53 +692,122 @@ final class MergeBuilder
                     }
                 }
             }
-            if (!tuples.isEmpty())
+        }
+        for (; nextRow < aTupleStart.length; nextRow++)
+        {
+            aTupleStart[nextRow] = count;
+        }
+        return tuples;
+    }
+
+    /** A side of a RELREC pair for the cardinality check: (relationship or -1, domain, row). */
+    private record PairSide(int relationship, int ordinal, int row)
+    {
+    }
+
+
+    /** A dataset-level relationship's link to one related domain, for the IG default (OD-5). */
+    private record RelationshipDomain(int relationship, String rdomain)
+    {
+    }
+
+    /**
+     * The RELREC cardinality check. Authored ({@code aAuthored} non-null): over the distinct
+     * (primary record, related record) pairs of each related domain across every relationship (W1),
+     * overriding each relationship's IG default (OD-9) with a log WARNING per relationship whose
+     * {@code RELTYPE} states a different one (MET #12 (c)). Unauthored: each dataset-level
+     * relationship's {@code RELTYPE} default (OD-5), checked within that relationship; a
+     * record-level relationship is {@code n:m}.
+     */
+    private void checkRelrecCardinality(@Nullable Cardinality aAuthored, RelrecLinks.Links aLinks,
+            RelrecPairer.Pairing aPairing, List<RelrecPairer.Pair> aPairs)
+    {
+        Map<RelationshipDomain, Cardinality> stated = new LinkedHashMap<>();
+        Map<RelationshipDomain, String> relidOf = new HashMap<>();
+        for (RelrecLinks.DomainLinks dl : aLinks.domains())
+        {
+            for (RelrecLinks.Link link : dl.links())
             {
-                out.put(p, tuples);
+                if (!link.recordLevel() && (link.srcReltype() != null || link.tgtReltype() != null))
+                {
+                    RelationshipDomain key = new RelationshipDomain(link.relationship(),
+                            upper(link.rdomain()));
+                    stated.putIfAbsent(key, link.igCardinality());
+                    relidOf.putIfAbsent(key, link.relid());
+                }
             }
         }
-        return out;
+        if (aAuthored != null)
+        {
+            for (Map.Entry<RelationshipDomain, Cardinality> e : stated.entrySet())
+            {
+                if (e.getValue() != aAuthored)
+                {
+                    LOGGER.log(Level.WARNING,
+                            "{0}: the authored RELREC Cardinality {1} disagrees with the {2} that"
+                                    + " RELTYPE states for relationship {3} with {4}; the authored"
+                                    + " value is checked",
+                            primaryName, aAuthored.text(), e.getValue().text(),
+                            relidOf.get(e.getKey()), e.getKey().rdomain());
+                }
+            }
+            checkPairs(aPairing, aPairs, _ -> aAuthored, false);
+            return;
+        }
+        if (stated.isEmpty())
+        {
+            return;
+        }
+        checkPairs(aPairing, aPairs,
+                pair -> stated.getOrDefault(
+                        new RelationshipDomain(pair.relationship(), upper(pair.rdomain())),
+                        Cardinality.MANY_TO_MANY),
+                true);
     }
 
 
     /**
-     * The declared cardinality over the distinct (primary record, related record) pairs of each
-     * related domain: a side declared {@code 1} pairs each of its records with at most one record
-     * of the other side.
+     * A side declared {@code 1} pairs each of its records with at most one record of the other side
+     * — over the distinct pairs of each related domain, within each relationship when
+     * {@code aPerRelationship}.
      */
-    private static void checkRelrecCardinality(Cardinality aCardinality,
-            RelrecPairer.Pairing aPairing, List<RelrecPairer.Pair> aPairs)
+    private static void checkPairs(RelrecPairer.Pairing aPairing, List<RelrecPairer.Pair> aPairs,
+            java.util.function.Function<RelrecPairer.Pair, Cardinality> aCardinalityOf,
+            boolean aPerRelationship)
     {
-        if (!aCardinality.leftUnique() && !aCardinality.rightUnique())
-        {
-            return;
-        }
-        Map<Long, Integer> firstRelated = new java.util.HashMap<>();
-        Map<Long, Integer> firstPrimary = new java.util.HashMap<>();
+        Map<PairSide, Integer> firstRelated = new HashMap<>();
+        Map<PairSide, Integer> firstPrimary = new HashMap<>();
         for (RelrecPairer.Pair pair : aPairs)
         {
-            long primaryKey = ((long) pair.ordinal() << 32) | pair.primaryRow();
-            long relatedKey = ((long) pair.ordinal() << 32) | pair.relatedRow();
-            String related = KeyedMatcher.nameOf(aPairing.relatedTables().get(pair.ordinal()));
-            if (aCardinality.rightUnique())
+            Cardinality c = aCardinalityOf.apply(pair);
+            if (!c.leftUnique() && !c.rightUnique())
             {
-                Integer first = firstRelated.putIfAbsent(primaryKey, pair.relatedRow());
+                continue;
+            }
+            int rel = aPerRelationship ? pair.relationship() : -1;
+            String within = aPerRelationship ? " in relationship " + pair.relid() : "";
+            String related = KeyedMatcher.nameOf(aPairing.relatedTables().get(pair.ordinal()));
+            if (c.rightUnique())
+            {
+                Integer first = firstRelated.putIfAbsent(
+                        new PairSide(rel, pair.ordinal(), pair.primaryRow()), pair.relatedRow());
                 if (first != null && first != pair.relatedRow())
                 {
-                    throw new CardinalityViolationException(aCardinality, related,
+                    throw new CardinalityViolationException(c, related,
                             "(" + pair.rdomain() + " records related to primary record "
-                                    + (pair.primaryRow() + 1) + ")",
+                                    + (pair.primaryRow() + 1) + within + ")",
                             first, pair.relatedRow());
                 }
             }
-            if (aCardinality.leftUnique())
+            if (c.leftUnique())
             {
-                Integer first = firstPrimary.putIfAbsent(relatedKey, pair.primaryRow());
+                Integer first = firstPrimary.putIfAbsent(
+                        new PairSide(rel, pair.ordinal(), pair.relatedRow()), pair.primaryRow());
                 if (first != null && first != pair.primaryRow())
                 {
-                    throw new CardinalityViolationException(
-                            aCardinality, "the primary dataset", "(primary records related to "
-                                    + related + " record " + (pair.relatedRow() + 1) + ")",
+                    throw new CardinalityViolationException(c, "the primary dataset",
+                            "(primary records related to " + related + " record "
+                                    + (pair.relatedRow() + 1) + within + ")",
                             first, pair.primaryRow());
                 }
             }
@@ -717,35 +928,78 @@ final class MergeBuilder
     }
 
 
-    /** Adds a supplemental part; returns the base's {@code QNAM} set. */
+    /**
+     * Adds a supplemental part; returns the base's {@code QNAM} set. Every source that resolves is
+     * fed (P-7: a split dataset's own {@code SUPP} and its domain's, both); several are stacked
+     * into one table, so a record two of them qualify for one {@code QNAM} is a duplicate.
+     */
     private Set<String> addSuppPart(List<IDataTable> aTables, List<MergedPart> aParts,
             SuppPending aPending, int aRows)
     {
         IDataTable base = aPending.base();
         String baseDomain = domainOf(base);
-        String suppName = aPending.spec().getSuppDataset();
-        IDataTable supp;
-        if (suppName != null)
+        List<String> authored = aPending.spec().getSuppDatasets();
+        List<String> names = authored.isEmpty()
+                ? SuppMergeSpec.defaultSuppNames(KeyedMatcher.nameOf(base), baseDomain)
+                : authored;
+        List<IDataTable> sources = new ArrayList<>();
+        List<String> sourceNames = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (String name : names)
         {
-            supp = request.getResolver().resolve(suppName);
+            IDataTable t = request.getResolver().resolve(name);
+            if (t == null)
+            {
+                missing.add(name);
+            }
+            else
+            {
+                sources.add(t);
+                sourceNames.add(name);
+            }
+        }
+        if (sources.isEmpty() || !authored.isEmpty())
+        {
+            // an authored source is declared; of the IG's names only the most specific is listed
+            // when none exists — a split dataset without its own SUPP is the ordinary case
+            for (String name : authored.isEmpty() ? missing.subList(0, 1) : missing)
+            {
+                unresolved.add(new UnresolvedDataset(MergeKind.SUPP, name));
+            }
+        }
+        if (sources.isEmpty())
+        {
+            return Collections.emptySet();
+        }
+        String suppName = String.join("+", sourceNames);
+        // the part's name is what MergeDataTable publishes as MERGED_FROM: the dataset's own name
+        StringBuilder partName = new StringBuilder();
+        for (IDataTable source : sources)
+        {
+            partName.append(partName.length() > 0 ? "+" : "").append(KeyedMatcher.nameOf(source));
+        }
+        IDataTable supp;
+        if (sources.size() == 1)
+        {
+            supp = sources.get(0);
         }
         else
         {
-            suppName = "SUPP" + KeyedMatcher.nameOf(base);
-            supp = request.getResolver().resolve(suppName);
-            if (supp == null && !baseDomain.equalsIgnoreCase(KeyedMatcher.nameOf(base)))
+            try
             {
-                supp = request.getResolver().resolve("SUPP" + baseDomain);
-                suppName = supp == null ? suppName : "SUPP" + baseDomain;
+                supp = new UnionDataTable(suppName, sources.toArray(IDataTable[]::new));
+            }
+            catch (IllegalArgumentException e)
+            {
+                throw new MergeException(suppName
+                        + ": the supplemental datasets cannot be read as one: " + e.getMessage(),
+                        e);
             }
         }
-        if (supp == null)
-        {
-            unresolved.add(suppName);
-            return Collections.emptySet();
-        }
+        boolean send = request.getStandard()
+                .isSend(supp.getMetaData().getColumnIndex("POOLID") >= 0);
         SuppMatcher.Result result = SuppMatcher.match(base, baseDomain, supp, suppName,
-                aPending.spec().effectiveKeys(), suppIndexObserver);
+                aPending.spec().effectiveKeys(), send, suppIndexObserver);
         DataTableColumnMeta qval = result.qvalIdx() < 0 ? null
                 : supp.getMetaData().getColumn(result.qvalIdx());
         List<DataTableColumnMeta> columns = new ArrayList<>();
@@ -774,10 +1028,10 @@ final class MergeBuilder
             i++;
         }
         int first = columnsSoFar(aTables);
-        aTables.add(new SuppPart(KeyedMatcher.nameOf(supp), aRows, supp, result.qvalIdx(),
+        aTables.add(new SuppPart(partName.toString(), aRows, supp, result.qvalIdx(),
                 aPending.baseMap(), columns, maps));
-        aParts.add(new MergedPart(MergeKind.SUPP, aPending.qualifier(), KeyedMatcher.nameOf(supp),
-                first, columns.size(), -1));
+        aParts.add(new MergedPart(MergeKind.SUPP, aPending.qualifier(), partName.toString(), first,
+                columns.size(), -1));
         return result.qnams();
     }
 }

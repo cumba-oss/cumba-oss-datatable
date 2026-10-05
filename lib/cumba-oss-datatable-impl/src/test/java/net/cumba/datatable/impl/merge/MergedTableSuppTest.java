@@ -21,14 +21,17 @@ import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.merge.KeyColumn;
 import net.cumba.datatable.merge.KeyedMergeSpec;
 import net.cumba.datatable.merge.MalformedSidedKeyException;
+import net.cumba.datatable.merge.MergeException;
 import net.cumba.datatable.merge.MergeIssue;
 import net.cumba.datatable.merge.MergeKind;
 import net.cumba.datatable.merge.MergeMeta;
 import net.cumba.datatable.merge.MergeNaming;
 import net.cumba.datatable.merge.MergeRequest;
+import net.cumba.datatable.merge.MergeStandard;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.MergedTables;
 import net.cumba.datatable.merge.SuppMergeSpec;
+import net.cumba.datatable.merge.UnresolvedDataset;
 import net.cumba.datatable.values.DataValueType;
 import org.junit.jupiter.api.Test;
 
@@ -285,26 +288,141 @@ class MergedTableSuppTest
     }
 
 
+    /**
+     * P-7 in full (W1 review M5, re-pinned from "the split's SUPP first, then the domain's"): a
+     * split dataset is qualified by its own SUPP <b>and</b> its domain's — both are fed; a record
+     * both qualify for one QNAM is a duplicate (case 2), each row named by its own dataset.
+     */
     @Test
-    void splitDomain_suppOfTheSplitFirst_thenOfTheDomain()
+    void splitDomain_bothSuppsAreFed_aRecordBothQualifyIsADuplicate()
     {
-        IDataTable qs36 = table("QS36", "STUDYID,DOMAIN,USUBJID,QSSEQ:N", "S1,QS,01-001,1");
-        IDataTable suppqs36 = table("SUPPQS36", SUPP_HEADER, "S1,QS,01-001,QSSEQ,1,QX,x,split");
-        IDataTable suppqs = table("SUPPQS", SUPP_HEADER, "S1,QS,01-001,QSSEQ,1,QX,x,domain");
-        MergedTable both = merge(qs36, suppqs36);
-        assertEquals(List.of("split"), column(both, "QX"));
+        IDataTable qs36 = table("QS36", "STUDYID,DOMAIN,USUBJID,QSSEQ:N", "S1,QS,01-001,1",
+                "S1,QS,01-001,2");
+        IDataTable suppqs36 = table("SUPPQS36", SUPP_HEADER, "S1,QS,01-001,QSSEQ,2,QX,x,split");
+        IDataTable suppqs = table("SUPPQS", SUPP_HEADER, "S1,QS,01-001,QSSEQ,1,QX,x,domain",
+                "S1,QS,01-001,QSSEQ,1,QY,y,only domain");
+        MergedTable own = merge(qs36, suppqs36);
+        assertEquals(List.of(UNSUPPLIED, "split"), column(own, "QX"));
         MergedTable t = MergedTables.build(
                 request(qs36, suppqs36, suppqs).supp(SuppMergeSpec.builder().build()).build());
-        assertEquals(List.of("split"), column(t, "QX"), "SUPP<split> pairs with <split>");
+        assertEquals(List.of("domain", "split"), column(t, "QX"), "each qualifies its record");
+        assertEquals(List.of("only domain", UNSUPPLIED), column(t, "QY"));
+        assertTrue(t.issues().isEmpty(), t.issues().toString());
+        assertTrue(t.unresolvedDatasets().isEmpty());
+        assertEquals("SUPPQS36+SUPPQS",
+                t.getMetaData().getColumn("QX").getMetaData(MergeMeta.MERGED_FROM));
+        IDataTable clash = table("SUPPQS36", SUPP_HEADER, "S1,QS,01-001,QSSEQ,1,QX,x,split");
+        MergedTable dup = MergedTables
+                .build(request(qs36, clash, suppqs).supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of(UNSUPPLIED, UNSUPPLIED), column(dup, "QX"));
+        MergeIssue issue = onlyIssue(dup);
+        assertEquals("SUPPQS36+SUPPQS: qualifier QX: more than one row qualifies one record (rows"
+                + " SUPPQS36 row 1, SUPPQS row 1)", issue.message());
+        assertEquals(List.of(0L, 1L), issue.sourceRows(), "rows of the stacked sources");
         MergedTable fallback = MergedTables
                 .build(request(qs36, suppqs).supp(SuppMergeSpec.builder().build()).build());
-        assertEquals(List.of("domain"), column(fallback, "QX"), "then SUPP<domain>");
-        assertTrue(fallback.unresolvedDatasets().isEmpty());
+        assertEquals(List.of("domain", UNSUPPLIED), column(fallback, "QX"), "SUPP<domain> alone");
+        assertTrue(fallback.unresolvedDatasets().isEmpty(),
+                "a split without its own SUPP is normal");
         MergedTable none = MergedTables
                 .build(request(qs36).supp(SuppMergeSpec.builder().build()).build());
-        assertEquals(List.of("SUPPQS36"), none.unresolvedDatasets());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.SUPP, "SUPPQS36")),
+                none.unresolvedDatasets());
         assertTrue(none.suppQnams().isEmpty());
         assertEquals(1, none.parts().size());
+    }
+
+
+    /** M5: an explicitly named source the resolver lacks is listed; the others are fed. */
+    @Test
+    void explicitSources_eachMissingOneIsListed_theOthersFed()
+    {
+        IDataTable qs36 = table("QS36", "STUDYID,DOMAIN,USUBJID,QSSEQ:N", "S1,QS,01-001,1");
+        IDataTable suppqs = table("SUPPQS", SUPP_HEADER, "S1,QS,01-001,QSSEQ,1,QX,x,domain");
+        MergedTable t = MergedTables.build(request(qs36, suppqs)
+                .supp(SuppMergeSpec.builder().suppDataset("SUPPQS36").suppDataset("SUPPQS").build())
+                .build());
+        assertEquals(List.of("domain"), column(t, "QX"));
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.SUPP, "SUPPQS36")),
+                t.unresolvedDatasets());
+    }
+
+
+    /** M5: two sources whose columns disagree in type cannot be stacked — a merge error. */
+    @Test
+    void twoSourcesOfDifferentShape_areRefused()
+    {
+        IDataTable qs36 = table("QS36", "STUDYID,DOMAIN,USUBJID,QSSEQ:N", "S1,QS,01-001,1");
+        IDataTable suppqs36 = table("SUPPQS36",
+                "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL:N,QNAM,QLABEL,QVAL",
+                "S1,QS,01-001,QSSEQ,1,QX,x,split");
+        IDataTable suppqs = table("SUPPQS", SUPP_HEADER, "S1,QS,01-001,QSSEQ,1,QY,y,domain");
+        MergeException ex = assertThrows(MergeException.class, () -> MergedTables.build(
+                request(qs36, suppqs36, suppqs).supp(SuppMergeSpec.builder().build()).build()));
+        assertTrue(ex.getMessage().startsWith("SUPPQS36+SUPPQS: the supplemental datasets"),
+                ex.getMessage());
+        assertTrue(ex.getCause() instanceof IllegalArgumentException,
+                String.valueOf(ex.getCause()));
+    }
+
+
+    /**
+     * M1 (W1 review): the standard is explicit. Under SEND a record-level row naming no subject is
+     * study-wide (OD-2) even without a POOLID column; under SDTM it qualifies nothing even with
+     * one. UNKNOWN infers from the POOLID column (the {@code m1_sdtm} test and case 9).
+     */
+    @Test
+    void m1_theExplicitStandardDecidesTheStudyWideRow()
+    {
+        IDataTable ae = table("AE", "STUDYID,DOMAIN,USUBJID,AESEQ:N", "S1,AE,01-001,1",
+                "S1,AE,01-002,1");
+        IDataTable supp = suppae("S1,AE,,AESEQ,1,X,x,Y");
+        MergedTable send = MergedTables.build(request(ae, supp).standard(MergeStandard.SEND)
+                .supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of("Y", "Y"), column(send, "X"));
+        IDataTable cl = table("CL", "STUDYID,DOMAIN,USUBJID,POOLID,CLSEQ:N", "S1,CL,A1,,1",
+                "S1,CL,,P1,1");
+        IDataTable suppcl = table("SUPPCL",
+                "STUDYID,RDOMAIN,USUBJID,POOLID,IDVAR,IDVARVAL,QNAM,QLABEL,QVAL",
+                "S1,CL,,,CLSEQ,1,X,x,Y");
+        MergedTable sdtm = MergedTables.build(request(cl, suppcl).standard(MergeStandard.SDTM)
+                .supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of(UNSUPPLIED, UNSUPPLIED), column(sdtm, "X"));
+        MergedTable inferred = MergedTables
+                .build(request(cl, suppcl).supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of("Y", "Y"), column(inferred, "X"), "UNKNOWN + POOLID ⇒ SEND");
+        // a key naming no subject component is the author's: study-wide under SDTM too
+        MergedTable authored = MergedTables
+                .build(request(ae, supp)
+                        .standard(MergeStandard.SDTM).supp(
+                                SuppMergeSpec.builder()
+                                        .keys(List.of(KeyColumn.of("STUDYID"),
+                                                KeyColumn.of("IDVAR"), KeyColumn.of("IDVARVAL")))
+                                        .build())
+                        .build());
+        assertEquals(List.of("Y", "Y"), column(authored, "X"));
+    }
+
+
+    /**
+     * L2 (W1 review): an associated-persons dataset is qualified by {@code SQAP--} (SDTMIG-AP), and
+     * {@code APID} is a subject key of the IG default.
+     */
+    @Test
+    void l2_associatedPersons_sqapAndApid()
+    {
+        IDataTable apdm = table("APDM", "STUDYID,DOMAIN,APID,RSUBJID,SREL", "S1,APDM,AP1,01-001,M",
+                "S1,APDM,AP2,01-001,F");
+        IDataTable sqapdm = table("SQAPDM", "STUDYID,RDOMAIN,APID,IDVAR,IDVARVAL,QNAM,QLABEL,QVAL",
+                "S1,APDM,AP2,,,APX,x,yes");
+        MergedTable t = MergedTables
+                .build(request(apdm, sqapdm).supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of(UNSUPPLIED, "yes"), column(t, "APX"), "keyed on APID");
+        assertEquals("SQAPDM", t.getMetaData().getColumn("APX").getMetaData(MergeMeta.MERGED_FROM));
+        MergedTable none = MergedTables.build(request(apdm, table("SUPPAPDM", SUPP_HEADER))
+                .supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.SUPP, "SQAPDM")),
+                none.unresolvedDatasets());
     }
 
 
@@ -495,5 +613,23 @@ class MergedTableSuppTest
         MergedTable swapped = merge(ae(),
                 suppae("S1,AE,01-001,AESEQ,2,Q,L,ONE", "S1,AE,01-001,AESEQ,1,Q,L,TWO"));
         assertEquals(List.of("TWO", "ONE"), column(swapped, "Q"));
+    }
+
+
+    /**
+     * M1 (W1 review): a record-level row naming no subject is study-wide only under SEND (OD-2,
+     * SENDIG 3.1.1 sec. 8.3). An SDTM SUPP-- row with a blank USUBJID qualifies nothing (JKM R6);
+     * W1 served it to every subject's AESEQ 1. Here the standard is inferred (no POOLID column ⇒
+     * SDTM).
+     */
+    @Test
+    void m1_sdtm_aBlankSubjectRecordLevelRow_qualifiesNothing()
+    {
+        IDataTable ae = table("AE", "STUDYID,DOMAIN,USUBJID,AESEQ:N", "S1,AE,01-001,1",
+                "S1,AE,01-002,1", "S1,AE,01-003,2");
+        MergedTable t = merge(ae, suppae("S1,AE,,AESEQ,1,AETRTEM,TE,Y"));
+        assertEquals(List.of(UNSUPPLIED, UNSUPPLIED, UNSUPPLIED), column(t, "AETRTEM"));
+        assertTrue(t.issues().isEmpty(), t.issues().toString());
+        assertEquals(Set.of("AETRTEM"), t.suppQnams(), "the QNAM still exists");
     }
 }

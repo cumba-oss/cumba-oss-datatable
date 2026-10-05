@@ -476,6 +476,26 @@ public class OverlayDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * The not-supplied marker passes through the overlay ({@code IDataTable#isSupplied}: a wrapper
+     * must delegate, W1 review L1): an overridden cell and an added column are stored values; any
+     * other cell is the delegate's, through the column mapping.
+     */
+    @Override
+    public boolean isSupplied(long aRow, int aColumn) throws IndexOutOfBoundsException
+    {
+        ensureValidRow(aRow);
+        ensureValidColumn(aColumn);
+        long key = cellKey(aRow, aColumn);
+        if (valueOverrides.containsKey(key) || dataValueOverrides.containsKey(key))
+        {
+            return true;
+        }
+        int delegateCol = columnMapping.get(aColumn);
+        return delegateCol < 0 || delegate.isSupplied(aRow, delegateCol);
+    }
+
+
     @Override
     public IDataValue getDataValue(long aRow, int aColumn)
     {

@@ -13,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.merge.Cardinality;
+import net.cumba.datatable.merge.CardinalityViolationException;
 import net.cumba.datatable.merge.ChildMergeSpec;
 import net.cumba.datatable.merge.JoinType;
 import net.cumba.datatable.merge.MergeColumnClashException;
@@ -20,6 +22,7 @@ import net.cumba.datatable.merge.MergeKind;
 import net.cumba.datatable.merge.MergeMeta;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.MergedTables;
+import net.cumba.datatable.merge.UnresolvedDataset;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -62,7 +65,7 @@ class MergedTableChildTest
         assertEquals(List.of("N", UNSUPPLIED), column(t, "AE.AESMIE"));
         assertEquals(List.of("true", "false"), column(t, "AE._matched_"));
         assertEquals(List.of("false", "true"), column(t, "CM._matched_"));
-        assertFalse(t.isExpanded());
+        assertFalse(t.isRowMapped());
         assertEquals(MergeKind.CHILD, t.partOf(t.getMetaData().getColumnIndex("AE.AESEQ")).kind());
         assertEquals("AE", t.partOf(t.getMetaData().getColumnIndex("AE.AESEQ")).qualifier());
         assertEquals("CHILD",
@@ -93,7 +96,7 @@ class MergedTableChildTest
         MergedTable t = MergedTables
                 .build(request(co, ae).child(ChildMergeSpec.builder().build()).build());
         assertEquals(2, t.getRowCount());
-        assertTrue(t.isExpanded());
+        assertTrue(t.isRowMapped());
         assertEquals(List.of("1", "2"), column(t, "AE.AESEQ"));
         assertEquals(List.of(0L, 0L), List.of(t.getRealRowIndex(0), t.getRealRowIndex(1)));
         assertEquals(List.of("comment", "1"), row(t, 0, "COVAL", "AE.AESEQ"));
@@ -125,7 +128,7 @@ class MergedTableChildTest
                 .child(ChildMergeSpec.builder().joinType(JoinType.LEFT).build()).build());
         assertEquals(3, t.getRowCount());
         assertEquals(List.of(UNSUPPLIED, UNSUPPLIED, UNSUPPLIED), column(t, "AE.AESEQ"));
-        assertEquals(List.of("LB"), t.unresolvedDatasets());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.CHILD, "LB")), t.unresolvedDatasets());
         assertEquals(1, t.issues().size());
         assertEquals("pointer column AEGRPID is not a column of parent AE",
                 t.issues().get(0).message());
@@ -158,5 +161,72 @@ class MergedTableChildTest
                         .keyed(net.cumba.datatable.merge.KeyedMergeSpec.builder().qualifier("AE")
                                 .key(net.cumba.datatable.merge.KeyColumn.of("USUBJID")).build())
                         .build()));
+    }
+
+
+    /**
+     * M4 (W1 review): an authored {@code Cardinality} on a {@code Child} entry was a silent no-op.
+     * {@code n:1} (each primary row has at most one parent record) is checked over the parent
+     * postings, like a keyed partner (P-16): {@code AEGRPID G1} addresses two AE records.
+     */
+    @Test
+    void m4_authoredNto1_aPostingWithTwoParents_errors()
+    {
+        IDataTable co = table("CO", "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,COVAL",
+                "S1,AE,01-001,AESEQ,3,single");
+        IDataTable ae = table("AE", "STUDYID,DOMAIN,USUBJID,AESEQ:N,AEGRPID", "S1,AE,01-001,1,G1",
+                "S1,AE,01-001,2,G1", "S1,AE,01-001,3,G2");
+        // the AESEQ pointer addresses one record each: n:1 holds
+        MergedTable ok = MergedTables.build(request(co, ae)
+                .child(ChildMergeSpec.builder().cardinality(Cardinality.MANY_TO_ONE).build())
+                .build());
+        assertEquals(List.of("3"), column(ok, "AE.AESEQ"));
+        IDataTable grouped = table("CO", "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,COVAL",
+                "S1,AE,01-001,AEGRPID,G1,comment");
+        CardinalityViolationException ex = assertThrows(CardinalityViolationException.class,
+                () -> MergedTables.build(request(grouped, ae).child(
+                        ChildMergeSpec.builder().cardinality(Cardinality.MANY_TO_ONE).build())
+                        .build()));
+        assertEquals("AE", ex.dataset());
+        assertEquals(List.of(0L, 1L), List.of(ex.firstRow(), ex.secondRow()));
+        assertEquals("Cardinality n:1: AE has duplicate key (AEGRPID=G1) at rows 1 and 2",
+                ex.getMessage());
+        // n:m authored is the IG's own value: checked as nothing, and no WARNING
+        try (var logs = LogCapture.of(ChildMatcher.class))
+        {
+            MergedTable nm = MergedTables.build(request(grouped, ae)
+                    .child(ChildMergeSpec.builder().cardinality(Cardinality.MANY_TO_MANY).build())
+                    .build());
+            assertEquals(2, nm.getRowCount());
+            assertEquals(0, logs.count(java.util.logging.Level.WARNING));
+        }
+        try (var logs = LogCapture.of(ChildMatcher.class))
+        {
+            MergedTables.build(request(co, ae)
+                    .child(ChildMergeSpec.builder().cardinality(Cardinality.MANY_TO_ONE).build())
+                    .build());
+            assertTrue(logs.anyMessageContains("disagrees with the IG's n:m"),
+                    logs.records().toString());
+        }
+    }
+
+
+    /**
+     * M4: {@code 1:n} on a {@code Child} entry — two primary rows carrying one pointer are a
+     * duplicate on the primary side.
+     */
+    @Test
+    void m4_authored1toN_twoPrimaryRowsWithOnePointer_error()
+    {
+        IDataTable co = table("CO", "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,COVAL",
+                "S1,AE,01-001,AESEQ,1,a", "S1,AE,01-001,AESEQ,01,b", "S1,AE,01-001,AESEQ,2,c");
+        IDataTable ae = table("AE", "STUDYID,DOMAIN,USUBJID,AESEQ:N", "S1,AE,01-001,1",
+                "S1,AE,01-001,2");
+        CardinalityViolationException ex = assertThrows(CardinalityViolationException.class,
+                () -> MergedTables.build(request(co, ae).child(
+                        ChildMergeSpec.builder().cardinality(Cardinality.ONE_TO_MANY).build())
+                        .build()));
+        assertEquals("CO", ex.dataset());
+        assertEquals(List.of(0L, 1L), List.of(ex.firstRow(), ex.secondRow()));
     }
 }

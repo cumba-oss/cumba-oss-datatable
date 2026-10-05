@@ -207,6 +207,13 @@ final class SuppKeyShape
     }
 
 
+    /** Whether some active component is a subject component. */
+    boolean hasSubjectComponents()
+    {
+        return plainCount() < components.size();
+    }
+
+
     /** The number of plain components that are not subject components. */
     int plainCount()
     {

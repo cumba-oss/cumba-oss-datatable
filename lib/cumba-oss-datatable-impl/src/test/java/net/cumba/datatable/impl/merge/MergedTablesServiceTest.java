@@ -11,9 +11,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.ServiceLoader;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.merge.MergeKind;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.MergedTableFactory;
 import net.cumba.datatable.merge.MergedTables;
+import net.cumba.datatable.merge.UnresolvedDataset;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -42,7 +44,7 @@ class MergedTablesServiceTest
         assertSame(ae, t.primary());
         assertEquals(2, t.getColumnCount());
         assertEquals("HEADACHE", t.getValue(0, 1));
-        assertFalse(t.isExpanded());
+        assertFalse(t.isRowMapped());
         assertTrue(t.issues().isEmpty());
         assertTrue(t.unresolvedDatasets().isEmpty());
         assertTrue(t.suppQnams().isEmpty());
@@ -63,6 +65,7 @@ class MergedTablesServiceTest
                 .supp(net.cumba.datatable.merge.SuppMergeSpec.builder().build()).build());
         assertEquals(0, t.getRowCount());
         assertEquals(4, t.getColumnCount());
-        assertEquals(List.of("SUPPAE"), t.unresolvedDatasets());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.SUPP, "SUPPAE")),
+                t.unresolvedDatasets());
     }
 }

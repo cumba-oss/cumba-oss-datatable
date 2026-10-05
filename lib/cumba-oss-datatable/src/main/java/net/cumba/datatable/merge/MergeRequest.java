@@ -21,6 +21,9 @@ import org.jspecify.annotations.Nullable;
  * name.</li>
  * <li>{@code matchedFlags} — whether every keyed, child and RELREC part publishes a
  * {@code <qualifier>._matched_} column (the engine), or none does (the browser).</li>
+ * <li>{@code standard} — the standard the {@code SUPP--} and {@code RELREC} datasets are read under
+ * ({@link MergeStandard}); {@link MergeStandard#UNKNOWN} by default, which infers SEND from a
+ * {@code POOLID} column.</li>
  * </ul>
  */
 @Value
@@ -55,4 +58,8 @@ public class MergeRequest
     MergeNaming naming = MergeNaming.QUALIFIED;
 
     boolean matchedFlags;
+
+    @NonNull
+    @Builder.Default
+    MergeStandard standard = MergeStandard.UNKNOWN;
 }

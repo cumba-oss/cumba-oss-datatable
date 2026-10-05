@@ -32,6 +32,7 @@ import net.cumba.datatable.merge.MergeNaming;
 import net.cumba.datatable.merge.MergedPart;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.MergedTables;
+import net.cumba.datatable.merge.UnresolvedDataset;
 import net.cumba.datatable.merge.UnresolvedQualifiedKeyException;
 import net.cumba.datatable.values.DataValueType;
 import org.junit.jupiter.api.Test;
@@ -75,7 +76,7 @@ class MergedTableKeyedTest
         assertEquals(3, t.getRowCount());
         assertEquals(List.of("54", "54", "61"), column(t, "DM.AGE"));
         assertEquals(List.of("M", "M", "F"), column(t, "DM.SEX"));
-        assertFalse(t.isExpanded());
+        assertFalse(t.isRowMapped());
         assertEquals(List.of(0L, 1L, 2L),
                 List.of(t.getRealRowIndex(0), t.getRealRowIndex(1), t.getRealRowIndex(2)));
         assertEquals(List.of("STUDYID", "DOMAIN", "USUBJID", "AESEQ", "AETERM", "DM.STUDYID",
@@ -130,7 +131,7 @@ class MergedTableKeyedTest
                 KeyedMergeSpec.builder().qualifier("TM").key(KeyColumn.of("MIDSTYPE")).build())
                 .build());
         assertEquals(5, t.getRowCount());
-        assertTrue(t.isExpanded());
+        assertTrue(t.isRowMapped());
         assertEquals(List.of("Echo 1", "Echo 2", "Mri", "Echo 1", "Echo 2"), column(t, "TM.TMDEF"));
         assertEquals(List.of("1", "1", "2", "1", "1"), column(t, "SMSEQ"));
         assertEquals(List.of(0L, 0L, 1L, 2L, 2L),
@@ -419,7 +420,7 @@ class MergedTableKeyedTest
         IDataTable ae = ae("S1,AE,01-001,1,HEADACHE");
         MergedTable t = MergedTables
                 .build(request(ae).keyed(dmJoin().dataset("DM").build()).build());
-        assertEquals(List.of("DM"), t.unresolvedDatasets());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.KEYED, "DM")), t.unresolvedDatasets());
         assertEquals(1, t.parts().size());
         assertEquals(1, t.getRowCount());
     }
@@ -485,5 +486,82 @@ class MergedTableKeyedTest
         assertEquals(n, t.getRowCount());
         assertEquals(String.valueOf(20 + (n - 1) % 60), text(t, 0, "DM.AGE"));
         assertEquals("20", text(t, n - 1, "DM.AGE"));
+    }
+
+
+    /**
+     * H1 (W1 review): an inner {@code n:m} merge whose dropped row (01-002, no DM row) and expanded
+     * row (01-001, two DM rows) cancel out keeps the primary's row COUNT — and was taken for an
+     * unexpanded table, so part 0 read the raw primary (row 1 = RASH) while the DM part followed
+     * the real sequence (row 1 = 01-001's second DM row). Row-mapped is decided on identity.
+     */
+    @Test
+    void h1_innerNtoM_droppedAndExpandedRowsCancelOut_everyPartReadsOneRecord()
+    {
+        IDataTable ae = table("AE", "STUDYID,USUBJID,AETERM", "S1,01-001,HEADACHE",
+                "S1,01-002,RASH");
+        IDataTable dm = table("DM", "STUDYID,USUBJID,AGE:N", "S1,01-001,54", "S1,01-001,99");
+        MergedTable t = MergedTables
+                .build(request(ae, dm)
+                        .keyed(KeyedMergeSpec.builder().qualifier("DM").key(KeyColumn.of("STUDYID"))
+                                .key(KeyColumn.of("USUBJID")).joinType(JoinType.INNER).build())
+                        .build());
+        assertEquals(2, t.getRowCount());
+        assertEquals(List.of(0L, 0L), List.of(t.getRealRowIndex(0), t.getRealRowIndex(1)));
+        assertEquals(List.of("HEADACHE", "01-001", "01-001", "54"),
+                row(t, 0, "AETERM", "USUBJID", "DM.USUBJID", "DM.AGE"));
+        assertEquals(List.of("HEADACHE", "01-001", "01-001", "99"),
+                row(t, 1, "AETERM", "USUBJID", "DM.USUBJID", "DM.AGE"));
+        assertTrue(t.isRowMapped(), "row-mapped: part 0 is not the identity");
+    }
+
+
+    /**
+     * H1, the other identity breach of equal count: an inner merge dropping row 0 and doubling row
+     * 1 of a two-row primary — the maps are {@code [1, 1]}, not the identity.
+     */
+    @Test
+    void h1_innerDropFirst_doubleSecond_isRowMapped()
+    {
+        IDataTable ae = table("AE", "USUBJID,AETERM", "01-002,RASH", "01-001,HEADACHE");
+        IDataTable dm = table("DM", "USUBJID,AGE:N", "01-001,54", "01-001,99");
+        MergedTable t = MergedTables.build(request(ae, dm).keyed(
+                KeyedMergeSpec.builder().qualifier("DM").key(KeyColumn.of("USUBJID")).build())
+                .build());
+        assertEquals(List.of("HEADACHE", "HEADACHE"), column(t, "AETERM"));
+        assertEquals(List.of("54", "99"), column(t, "DM.AGE"));
+        assertEquals(List.of(1L, 1L), List.of(t.getRealRowIndex(0), t.getRealRowIndex(1)));
+        assertTrue(t.isRowMapped());
+    }
+
+
+    /**
+     * M3 (W1 review): a dotted left key is refused only when the primary does not carry it — a
+     * nested merged primary that already holds {@code DM.ARMCD} may key a further partner on it
+     * (the engine composes chained keys by building on the earlier merge).
+     */
+    @Test
+    void m3_aDottedLeftKeyTheNestedPrimaryCarries_isAllowed()
+    {
+        IDataTable ae = table("AE", "STUDYID,USUBJID,AETERM", "S1,01-001,HEADACHE",
+                "S1,01-002,RASH");
+        IDataTable dm = table("DM", "STUDYID,USUBJID,ARMCD", "S1,01-001,A", "S1,01-002,B");
+        IDataTable ta = table("TA", "STUDYID,ARMCD,ARM", "S1,A,Arm A", "S1,B,Arm B");
+        MergedTable aeDm = MergedTables.build(request(ae, dm).keyed(KeyedMergeSpec.builder()
+                .qualifier("DM").key(KeyColumn.of("STUDYID")).key(KeyColumn.of("USUBJID")).build())
+                .build());
+        MergedTable t = MergedTables.build(request(aeDm, ta)
+                .keyed(KeyedMergeSpec.builder().qualifier("TA").key(KeyColumn.of("STUDYID"))
+                        .key(KeyColumn.sided("DM.ARMCD", "ARMCD")).build())
+                .build());
+        assertEquals(List.of("Arm A", "Arm B"), column(t, "TA.ARM"));
+        assertEquals(List.of("HEADACHE", "RASH"), column(t, "AETERM"));
+        // a dotted key the primary does NOT carry is still the caller's to compose
+        assertThrows(UnresolvedQualifiedKeyException.class,
+                () -> MergedTables
+                        .build(request(ae, ta)
+                                .keyed(KeyedMergeSpec.builder().qualifier("TA")
+                                        .key(KeyColumn.sided("DM.ARMCD", "ARMCD")).build())
+                                .build()));
     }
 }

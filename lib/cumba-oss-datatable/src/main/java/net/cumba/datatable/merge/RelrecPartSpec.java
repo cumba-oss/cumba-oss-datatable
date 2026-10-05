@@ -18,8 +18,14 @@ import org.jspecify.annotations.Nullable;
  * {@code null} / empty for all.</li>
  * <li>{@code joinType} — {@code inner} by default (MET #21, S2); the data browser passes
  * {@code left}.</li>
- * <li>{@code cardinality} — {@code n:m} by default (no RELTYPE check); a side declared {@code 1} is
- * checked per related domain over the distinct (primary record, related record) pairs.</li>
+ * <li>{@code cardinality} — {@code null} (the default) takes the IG's cardinality <b>per
+ * relationship</b> (OD-5): a dataset-level relationship whose RELREC rows carry {@code RELTYPE}
+ * declares each side {@code ONE} or {@code MANY}, and a side {@code ONE} is checked within that
+ * relationship; a record-level relationship (no {@code RELTYPE}) is {@code n:m}. An authored value
+ * overrides every relationship's default (OD-9) — a log WARNING names each relationship it
+ * disagrees with (MET #12 (c)) — and a side declared {@code 1} is checked per related domain over
+ * the distinct (primary record, related record) pairs of all relationships. The data browser passes
+ * {@code n:m} (P-12: no RELTYPE check).</li>
  * <li>{@code includeUnmatchedDomains} — whether a related domain the relationships name but no
  * record of the primary pairs with still contributes its (not-supplied) columns; {@code true} for a
  * declared-qualifier consumer (P-14), {@code false} to keep the browser's "nothing to merge"
@@ -42,9 +48,8 @@ public class RelrecPartSpec
     @Builder.Default
     JoinType joinType = JoinType.INNER;
 
-    @NonNull
-    @Builder.Default
-    Cardinality cardinality = Cardinality.MANY_TO_MANY;
+    @Nullable
+    Cardinality cardinality;
 
     @Builder.Default
     boolean includeUnmatchedDomains = true;

@@ -9,10 +9,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.LongFunction;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.databuffer.DataBufferFactory;
 import net.cumba.datatable.impl.databuffer.IDataBufferNumeric;
+import net.cumba.datatable.impl.view.UnionDataTable;
 import net.cumba.datatable.merge.JoinToken;
 import net.cumba.datatable.merge.KeyColumn;
 import net.cumba.datatable.merge.RelrecLinks;
@@ -59,6 +61,12 @@ import org.jspecify.annotations.Nullable;
  * column wins (P-10); two {@code QNAM}s differing only in case collide and the column is flagged.
  * The parse structure ({@link SuppQnamIndex}) is released when this method returns (owner ruling
  * 2026-10-05); only the {@code QNAM} set and the row maps survive.
+ * </p>
+ *
+ * <p>
+ * Several supplemental datasets (a split dataset's {@code SUPP<split>} and its domain's, P-7)
+ * arrive stacked as one {@link UnionDataTable}: a record two of them qualify for one {@code QNAM}
+ * is a duplicate like two rows of one, and a message names each row by its own dataset.
  * </p>
  */
 final class SuppMatcher
@@ -145,12 +153,15 @@ final class SuppMatcher
      *            its name, for messages.
      * @param aKeys
      *            the key in sided form.
+     * @param aSend
+     *            whether the supplemental dataset is read under SEND (OD-2) rather than SDTM.
      * @param aIndexObserver
      *            a test seam handed the parse structure before it is released, or {@code null}.
      * @return the result.
      */
+    @SuppressWarnings("checkstyle:ParameterNumber")
     static Result match(IDataTable aBase, String aBaseDomain, IDataTable aSupp, String aSuppName,
-            List<KeyColumn> aKeys, @Nullable Consumer<SuppQnamIndex> aIndexObserver)
+            List<KeyColumn> aKeys, boolean aSend, @Nullable Consumer<SuppQnamIndex> aIndexObserver)
     {
         DataTableMeta sm = aSupp.getMetaData();
         int qvalIdx = sm.getColumnIndex("QVAL");
@@ -159,7 +170,7 @@ final class SuppMatcher
             return new Result(aSupp, qvalIdx, Set.of(), List.of());
         }
         SuppKeyShape shape = SuppKeyShape.resolve(aBase, aBaseDomain, aSupp, aSuppName, aKeys);
-        SuppQnamIndex index = SuppQnamIndex.of(aSupp, shape);
+        SuppQnamIndex index = SuppQnamIndex.of(aSupp, shape, aSend);
         if (aIndexObserver != null)
         {
             aIndexObserver.accept(index);
@@ -196,6 +207,15 @@ final class SuppMatcher
 
         private final int[] plainIdOfRow;
 
+        /**
+         * Per base {@code IDVAR} column, every base row's normalised token ({@code null} for a
+         * missing cell) — computed once and shared by every {@code QNAM} (W1 review L7: each
+         * qualifier re-read and re-normalised the column per row).
+         */
+        private final Map<Integer, @Nullable String[]> tokensByColumn = new HashMap<>();
+
+        private final LongFunction<String> rowLabel;
+
         Matching(IDataTable aBase, IDataTable aSupp, String aSuppName, SuppKeyShape aShape,
                 SuppQnamIndex aIndex, int aQvalIdx)
         {
@@ -206,6 +226,7 @@ final class SuppMatcher
             index = aIndex;
             qvalIdx = aQvalIdx;
             baseRows = Math.toIntExact(aBase.getRowCount());
+            rowLabel = rowLabelOf(aSupp);
             fullIdOfRow = new int[baseRows];
             plainIdOfRow = new int[baseRows];
             for (int r = 0; r < baseRows; r++)
@@ -376,7 +397,7 @@ final class SuppMatcher
                     }
                 }
             }
-            String error = problems.message(suppName, aQnam, KeyedMatcher.nameOf(base));
+            String error = problems.message(suppName, aQnam, KeyedMatcher.nameOf(base), rowLabel);
             return new QnamColumn(aQnam, label, map, error, problems.rows());
         }
 
@@ -413,21 +434,57 @@ final class SuppMatcher
                 {
                     continue;
                 }
-                String cell = RelrecLinks.cell(base, g.baseColumn(), aRow);
-                if (cell == null)
+                String token = tokens(g.baseColumn(), g.numeric())[aRow];
+                if (token == null)
                 {
                     continue;
                 }
-                List<Keyed> candidates = g.byKey().get(new ProbeKey(aId,
-                        java.util.Objects.requireNonNull(JoinToken.normalize(cell, g.numeric()))));
+                List<Keyed> candidates = g.byKey().get(new ProbeKey(aId, token));
                 if (candidates != null)
                 {
                     aHits.addAll(candidates);
                 }
             }
         }
+
+
+        /** The base column's tokens, computed on first use. */
+        private @Nullable String[] tokens(int aColumn, boolean aNumeric)
+        {
+            return tokensByColumn.computeIfAbsent(aColumn, _ ->
+            {
+                @Nullable
+                String[] out = new String[baseRows];
+                // tokens repeat heavily (--SEQ restarts per subject): one instance per distinct
+                // token keeps the array the only per-row cost
+                Map<String, String> canonical = new HashMap<>();
+                for (int r = 0; r < baseRows; r++)
+                {
+                    String cell = RelrecLinks.cell(base, aColumn, r);
+                    String token = cell == null ? null : JoinToken.normalize(cell, aNumeric);
+                    out[r] = token == null ? null : canonical.computeIfAbsent(token, t -> t);
+                }
+                return out;
+            });
+        }
     }
 
+    /**
+     * How a message names a supplemental row: its 1-based number, prefixed with its dataset's name
+     * when several datasets are stacked.
+     */
+    private static LongFunction<String> rowLabelOf(IDataTable aSupp)
+    {
+        if (aSupp instanceof UnionDataTable u && u.memberCount() > 1)
+        {
+            return row ->
+            {
+                int m = u.memberOf(row);
+                return KeyedMatcher.nameOf(u.member(m)) + " row " + (row - u.memberRowStart(m) + 1);
+            };
+        }
+        return row -> Long.toString(row + 1);
+    }
 
     /** The problems of one qualifier, by category, each naming the offending rows. */
     private static final class Problems
@@ -440,7 +497,8 @@ final class SuppMatcher
         private final Map<String, List<Long>> unknownIdvar = new LinkedHashMap<>();
 
         @Nullable
-        String message(String aSuppName, String aQnam, String aBaseName)
+        String message(String aSuppName, String aQnam, String aBaseName,
+                LongFunction<String> aRowLabel)
         {
             if (duplicates.isEmpty() && conflicts.isEmpty() && unknownIdvar.isEmpty())
             {
@@ -450,18 +508,18 @@ final class SuppMatcher
             if (!duplicates.isEmpty())
             {
                 sb.append(": more than one row qualifies one record (rows ")
-                        .append(rowList(duplicates)).append(')');
+                        .append(rowList(duplicates, aRowLabel)).append(')');
             }
             if (!conflicts.isEmpty())
             {
                 sb.append(": a subject-level and a record-level row qualify one subject (rows ")
-                        .append(rowList(conflicts)).append(')');
+                        .append(rowList(conflicts, aRowLabel)).append(')');
             }
             for (Map.Entry<String, List<Long>> e : unknownIdvar.entrySet())
             {
                 sb.append(": IDVAR ").append(e.getKey()).append(" is not a column of ")
-                        .append(aBaseName).append(" (rows ").append(rowList(e.getValue()))
-                        .append(')');
+                        .append(aBaseName).append(" (rows ")
+                        .append(rowList(e.getValue(), aRowLabel)).append(')');
             }
             return sb.toString();
         }
@@ -480,7 +538,7 @@ final class SuppMatcher
 
 
         /** 1-based, at most {@link #MAX_LISTED_ROWS}, then {@code ...}. */
-        private static String rowList(Iterable<Long> aRows)
+        private static String rowList(Iterable<Long> aRows, LongFunction<String> aRowLabel)
         {
             StringBuilder sb = new StringBuilder();
             int n = 0;
@@ -495,7 +553,7 @@ final class SuppMatcher
                 {
                     sb.append(", ");
                 }
-                sb.append(r + 1);
+                sb.append(aRowLabel.apply(r));
                 n++;
             }
             return sb.toString();

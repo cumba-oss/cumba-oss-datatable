@@ -12,6 +12,7 @@ import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.databuffer.DataBufferFactory;
 import net.cumba.datatable.impl.databuffer.IDataBufferNumeric;
+import net.cumba.datatable.impl.support.OverlayDataTable;
 import net.cumba.datatable.impl.view.DataTableViewBuffer;
 import net.cumba.datatable.impl.view.MergeDataTable;
 import net.cumba.datatable.impl.view.UnionDataTable;
@@ -27,7 +28,9 @@ import org.junit.jupiter.api.Test;
  * The {@code isSupplied} marker survives every wrapper that overrides it ({@code
  * PLAN-merged-evaluation-table} §3.1: "a wrapper that does not delegate answers wrongly without
  * error, so a test wraps a view in each wrapper and asserts the marker survives") — one test per
- * override: {@code ViewDataTable}, {@code MergeDataTable}, {@code UnionDataTable}, and the default.
+ * override: {@code ViewDataTable}, {@code MergeDataTable}, {@code UnionDataTable},
+ * {@code OverlayDataTable} and the default — the wrappers both twins carry. A twin's further
+ * wrappers have their rows in a sibling test of that twin.
  */
 class IsSuppliedWrapperTest
 {
@@ -133,5 +136,25 @@ class IsSuppliedWrapperTest
                 "a column the member lacks is a stored missing value, not a marker");
         assertTrue(u.isSupplied(2, 0));
         assertThrows(IndexOutOfBoundsException.class, () -> u.isSupplied(3, 0));
+    }
+
+
+    /**
+     * L1 (W1 review): {@code OverlayDataTable} (both twins) did not override the marker and
+     * answered {@code true} for a not-supplied cell; it now delegates through its column mapping,
+     * and a cell it overrides, or a column it adds, is a stored value.
+     */
+    @Test
+    void overlayDataTable_delegatesThroughItsColumnMapping_anOverrideIsSupplied()
+    {
+        MergedTable t = view();
+        OverlayDataTable o = new OverlayDataTable(t);
+        assertTrue(o.isSupplied(0, sex(t)));
+        assertFalse(o.isSupplied(1, sex(t)), "the marker survives the overlay");
+        o.setValue(1, sex(t), "F");
+        assertTrue(o.isSupplied(1, sex(t)), "an overridden cell is a stored value");
+        int added = o.addColumn("EXTRA");
+        assertTrue(o.isSupplied(1, added), "an added column has no partner to lack");
+        assertThrows(IndexOutOfBoundsException.class, () -> o.isSupplied(2, 0));
     }
 }

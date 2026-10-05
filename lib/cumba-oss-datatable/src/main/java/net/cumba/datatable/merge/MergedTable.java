@@ -20,6 +20,7 @@ import net.cumba.datatable.IDataTable;
  * on an expanded row attributes to its real record.</li>
  * <li>Problems the sources carry that do not abort the merge are published as {@link #issues()}
  * and, per affected column, as {@link MergeMeta#MERGE_ERROR} (OD-7).</li>
+ * <li>{@link #isRowMapped()} tells whether merged row {@code i} is primary row {@code i}.</li>
  * </ul>
  *
  * <p>
@@ -58,13 +59,29 @@ public interface MergedTable extends IDataTable
 
 
     /**
-     * Whether some merge expanded rows, i.e. the merged table has more rows than the primary or
-     * maps them in a different order. On a non-expanded table every row {@code i} is primary row
-     * {@code i}.
+     * Whether the primary is <b>row-mapped</b>: some merge dropped a primary row (an inner join
+     * with no partner) or gave one more than one row (an expansion), so merged row {@code i} is not
+     * primary row {@code i}. Decided on identity, never on the row count — an inner merge whose
+     * dropped and expanded rows cancel out keeps the count and is row-mapped (W1 review H1). On a
+     * table that is not row-mapped every row {@code i} is primary row {@code i}.
      *
-     * @return whether rows were expanded.
+     * @return whether the merged rows map the primary's rows other than one to one, in order.
      */
-    boolean isExpanded();
+    boolean isRowMapped();
+
+
+    /**
+     * The W1 name of {@link #isRowMapped()}, which it answers. W1 decided it on the row count; it
+     * now answers the identity-based fact (W1 review H1). Kept only so the engine's W2 instrument
+     * ({@code MergedTableShadowDifferentialTest}, committed against W1) compiles until it moves to
+     * {@link #isRowMapped()}; then it goes.
+     *
+     * @return {@link #isRowMapped()}.
+     */
+    default boolean isExpanded()
+    {
+        return isRowMapped();
+    }
 
 
     /**
@@ -78,13 +95,14 @@ public interface MergedTable extends IDataTable
 
     /**
      * The datasets the request named that the resolver did not supply — a partner, a parent, a
-     * related domain, a supplemental dataset. Their parts are absent (keyed, child) or present with
-     * every cell not supplied (RELREC related domains the relationships name); the caller decides
-     * what that means (P-1, P-11).
+     * related domain, a supplemental dataset — each with the kind of part that asked
+     * ({@link UnresolvedDataset}), so a caller can tell a declared partner the study lacks from "no
+     * {@code SUPP--}" (W1 review L5). A dataset the merge never saw contributes no columns; the
+     * caller decides what its absence means (P-1, P-11).
      *
-     * @return the names, in the order they were asked for; empty when every dataset resolved.
+     * @return the entries, in the order they were asked for; empty when every dataset resolved.
      */
-    List<String> unresolvedDatasets();
+    List<UnresolvedDataset> unresolvedDatasets();
 
 
     /**
