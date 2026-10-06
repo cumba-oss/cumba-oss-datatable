@@ -250,6 +250,23 @@ class MergeApiTypesTest
 
 
     @Test
+    void mergeStandard_ofStandardName_mapsTheRunStandard()
+    {
+        assertSame(MergeStandard.SEND, MergeStandard.ofStandardName("sendig"));
+        assertSame(MergeStandard.SEND, MergeStandard.ofStandardName("SENDIG"));
+        assertSame(MergeStandard.SEND, MergeStandard.ofStandardName(" send-dart "));
+        assertSame(MergeStandard.SDTM, MergeStandard.ofStandardName("sdtmig"));
+        assertSame(MergeStandard.SDTM, MergeStandard.ofStandardName("SDTMIG-AP"));
+        assertSame(MergeStandard.SDTM, MergeStandard.ofStandardName("sdtm"));
+        assertSame(MergeStandard.UNKNOWN, MergeStandard.ofStandardName("adamig"),
+                "an ADaM run keeps the POOLID inference");
+        assertSame(MergeStandard.UNKNOWN, MergeStandard.ofStandardName("test"));
+        assertSame(MergeStandard.UNKNOWN, MergeStandard.ofStandardName(""));
+        assertSame(MergeStandard.UNKNOWN, MergeStandard.ofStandardName(null));
+    }
+
+
+    @Test
     void unresolvedDataset_record()
     {
         UnresolvedDataset u = new UnresolvedDataset(MergeKind.SUPP, "SUPPAE");

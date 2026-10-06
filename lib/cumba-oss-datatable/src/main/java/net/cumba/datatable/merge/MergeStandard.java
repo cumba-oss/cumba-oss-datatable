@@ -3,6 +3,9 @@ package net.cumba.datatable.merge;
 // OSS-IDENTITY datatable-merge: byte-identical in cumba-datatable and cumba-oss-datatable.
 // Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
 
+import java.util.Locale;
+import org.jspecify.annotations.Nullable;
+
 /**
  * The CDISC standard a merge reads its {@code SUPP--} and {@code RELREC} datasets under
  * ({@code PLAN-merged-evaluation-table} §3.5, §3.6, W1 review M1 / L3). Two readings depend on it:
@@ -34,6 +37,36 @@ public enum MergeStandard
 
     /** Not known: a dataset carrying {@code POOLID} is read as SEND. */
     UNKNOWN;
+
+    /**
+     * The standard a CDISC standard name selects — the run's standard as the engine derives it
+     * ({@code sdtmig}, {@code sendig}, {@code adamig} …) or a Define-XML {@code def:Standards} name
+     * ({@code SDTMIG}, {@code SENDIG}). {@code send…} is SEND, {@code sdtm…} is SDTM (the SDTMIG,
+     * its device and associated-persons supplements); anything else — ADaM, a null or blank name —
+     * is {@link #UNKNOWN}, which keeps the POOLID inference (T2 fold, H1).
+     *
+     * @param aStandardName
+     *            the standard's name, any case; {@code null} when the caller knows none.
+     * @return the standard the name selects, never null.
+     */
+    public static MergeStandard ofStandardName(@Nullable String aStandardName)
+    {
+        if (aStandardName == null)
+        {
+            return UNKNOWN;
+        }
+        String lower = aStandardName.trim().toLowerCase(Locale.ROOT);
+        if (lower.startsWith("send"))
+        {
+            return SEND;
+        }
+        if (lower.startsWith("sdtm"))
+        {
+            return SDTM;
+        }
+        return UNKNOWN;
+    }
+
 
     /**
      * Whether a dataset is read as SEND.
