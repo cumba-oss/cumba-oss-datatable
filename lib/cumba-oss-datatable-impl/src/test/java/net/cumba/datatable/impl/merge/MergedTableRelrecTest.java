@@ -460,6 +460,110 @@ class MergedTableRelrecTest
     }
 
 
+    private static RelrecPartSpec left()
+    {
+        return RelrecPartSpec.builder().joinType(JoinType.LEFT).build();
+    }
+
+
+    /**
+     * M1 (T2 review): a split FA dataset's dataset-level relationship names the DATASET
+     * ({@code FAMH}), not the domain (SDTMIG 3.4 sec. 4.1.7 rule 8); the merge compared
+     * {@code RDOMAIN} with the primary's domain only and never linked it. The primary answers to
+     * its domain and to its dataset name, on both link shapes (one code path).
+     */
+    @Test
+    void m1_splitFa_aRelrecRowNamingThePrimarysDatasetName_links()
+    {
+        IDataTable famh = table("FAMH", "STUDYID,DOMAIN,USUBJID,FASEQ:N,FALNKID,FAOBJ",
+                "S1,FA,01-001,1,L1,ASTHMA", "S1,FA,01-001,2,L9,RASH");
+        IDataTable mh = table("MH", "STUDYID,DOMAIN,USUBJID,MHSEQ:N,MHLNKID,MHTERM",
+                "S1,MH,01-001,1,L1,ASTHMA");
+        MergedTable dataset = merge(left(), famh,
+                relrec("S1,FAMH,,FALNKID,,R1", "S1,MH,,MHLNKID,,R1"), mh);
+        assertEquals(List.of("ASTHMA", UNSUPPLIED), column(dataset, "MH.MHTERM"));
+        MergedTable record = merge(left(), famh,
+                relrec("S1,FAMH,01-001,FASEQ,2,R2", "S1,MH,01-001,MHSEQ,1,R2"), mh);
+        assertEquals(List.of(UNSUPPLIED, "ASTHMA"), column(record, "MH.MHTERM"));
+        MergedTable domain = merge(left(), famh, relrec("S1,FA,,FALNKID,,R1", "S1,MH,,MHLNKID,,R1"),
+                mh);
+        assertEquals(List.of("ASTHMA", UNSUPPLIED), column(domain, "MH.MHTERM"),
+                "the domain still links");
+        // the planted control: a name that is neither the domain nor the dataset links nothing
+        MergedTable other = merge(left(), famh,
+                relrec("S1,FAXX,,FALNKID,,R1", "S1,MH,,MHLNKID,,R1"), mh);
+        assertFalse(columnNames(other).contains("MH.MHTERM"));
+    }
+
+
+    /**
+     * L1 (T2 review): the RELREC link value canonicalised numeric-looking text whatever the
+     * column's type ({@code "01"} paired with {@code "1"} in a character column), unlike the SUPP
+     * and Child pointers (§3.5.2). The token is normalised by the {@code IDVAR} column's type on
+     * each side ({@code JoinToken.normalize}): a character column compares the stripped text.
+     */
+    @Test
+    void l1_linkValuesCompareByTheIdvarColumnsType_likeSuppAndChild()
+    {
+        IDataTable ae = table("AE", "STUDYID,DOMAIN,USUBJID,AESEQ:N,AESPID,AETERM",
+                "S1,AE,01-001,1,1,HEADACHE");
+        IDataTable cm = table("CM", "STUDYID,DOMAIN,USUBJID,CMSEQ:N,CMSPID,CMTRT",
+                "S1,CM,01-001,1,01,ASPIRIN");
+        // record-level, a character column: "01" is not "1"
+        MergedTable character = merge(left(), ae,
+                relrec("S1,AE,01-001,AESPID,01,R1", "S1,CM,01-001,CMSPID,01,R1"), cm);
+        assertEquals(List.of(UNSUPPLIED), column(character, "CM.CMTRT"));
+        // record-level, a numeric column: 1.0 and 01 are 1 (the control)
+        MergedTable numeric = merge(left(), ae,
+                relrec("S1,AE,01-001,AESEQ,1.0,R1", "S1,CM,01-001,CMSEQ,01,R1"), cm);
+        assertEquals(List.of("ASPIRIN"), column(numeric, "CM.CMTRT"));
+        // dataset-level, character columns: AESPID "1" and CMSPID "01" are not equal
+        MergedTable dataset = merge(left(), ae, relrec("S1,AE,,AESPID,,R1", "S1,CM,,CMSPID,,R1"),
+                cm);
+        assertEquals(List.of(UNSUPPLIED), column(dataset, "CM.CMTRT"));
+        // dataset-level, character columns: the stripped text is equal (the control)
+        IDataTable cm2 = table("CM", "STUDYID,DOMAIN,USUBJID,CMSEQ:N,CMSPID,CMTRT",
+                "S1,CM,01-001,1, 1 ,ASPIRIN");
+        MergedTable stripped = merge(left(), ae, relrec("S1,AE,,AESPID,,R1", "S1,CM,,CMSPID,,R1"),
+                cm2);
+        assertEquals(List.of("ASPIRIN"), column(stripped, "CM.CMTRT"));
+    }
+
+
+    /**
+     * L3 (T2 review), P-1: a related domain RELREC names but the resolver does not supply must
+     * never empty a record — its reads are not-supplied. Under {@code inner} a record whose only
+     * relationship led to the unsupplied domain was dropped, and {@code RELREC._matched_} carried
+     * "this row holds a related record" instead of "the record has a relationship" (P-14): a record
+     * is matched when a RELREC row addresses it, whether or not its partner is supplied.
+     */
+    @Test
+    void l3_p1_inner_anUnresolvedRelatedDomain_keepsTheRecord_readsNotSupplied()
+    {
+        IDataTable rr = relrec("S1,AE,01-001,AESEQ,1,R1", "S1,XX,01-001,XXSEQ,1,R1",
+                "S1,AE,01-001,AESEQ,2,R2", "S1,CM,01-001,CMSEQ,1,R2");
+        MergedTable t = MergedTables
+                .build(request(ae(), rr, cm()).relrec(all()).matchedFlags(true).build());
+        assertEquals(List.of(new UnresolvedDataset(MergeKind.RELREC, "XX")),
+                t.unresolvedDatasets());
+        assertEquals(List.of("1", "2"), column(t, "AESEQ"),
+                "inner: AE seq 1 has a relationship (with XX) and is kept");
+        assertEquals(List.of(UNSUPPLIED, "ASPIRIN"), column(t, "CM.CMTRT"));
+        assertEquals(List.of("false", "true"), column(t, "CM._matched_"));
+        assertEquals(List.of("true", "true"), column(t, "RELREC._matched_"));
+        // a dangling link (CM seq 9 does not exist) is a relationship too: kept, CM not supplied
+        IDataTable dangling = relrec("S1,AE,01-001,AESEQ,1,R1", "S1,CM,01-001,CMSEQ,9,R1");
+        MergedTable d = MergedTables
+                .build(request(ae(), dangling, cm()).relrec(all()).matchedFlags(true).build());
+        assertEquals(List.of("1"), column(d, "AESEQ"));
+        assertEquals(List.of(UNSUPPLIED), column(d, "CM.CMTRT"));
+        assertEquals(List.of("false"), column(d, "CM._matched_"));
+        assertEquals(List.of("true"), column(d, "RELREC._matched_"));
+        // the control: a record no RELREC row addresses is still dropped (AE seq 2)
+        assertEquals(1, d.getRowCount());
+    }
+
+
     /**
      * M2 (W1 review): under the browser's setting ({@code includeUnmatchedDomains(false)}) a
      * related domain whose only link names a column it lacks has no pairs — its issue was dropped

@@ -85,6 +85,35 @@ class RelrecLinksTest
     }
 
 
+    /**
+     * M1 (T2 review): a split FA dataset's dataset-level relationship names the dataset
+     * ({@code FAMH}, SDTMIG 3.4 sec. 4.1.7 rule 8): the primary answers to its domain and to its
+     * dataset name, on either side of the link, and the scan offers what the merge pairs.
+     */
+    @Test
+    void m1_thePrimaryAnswersToItsDomainAndToItsDatasetName()
+    {
+        IDataTable rr = relrec("S1,FAMH,,FALNKID,,R1", "S1,MH,,MHLNKID,,R1",
+                "S1,FA,01-001,FASEQ,1,R2", "S1,CM,01-001,CMSEQ,1,R2", "S1,FAXX,,FALNKID,,R3",
+                "S1,LB,,LBLNKID,,R3");
+        Links links = RelrecLinks.collect(rr, "FA", "FAMH", null, MergeStandard.UNKNOWN);
+        assertEquals(List.of("MH", "CM"), links.selectableDomains(),
+                "FAMH (the dataset) and FA (the domain) link; FAXX is neither");
+        assertFalse(links.domains().get(0).links().get(0).recordLevel());
+        assertTrue(links.domains().get(1).links().get(0).recordLevel());
+        assertEquals(List.of("MH", "CM"),
+                RelrecLinks.scan(rr, "FA", "FAMH", MergeStandard.UNKNOWN).selectable());
+        // the control: the domain alone never answers to the dataset name
+        assertEquals(List.of("CM"), RelrecLinks.collect(rr, "FA", null).selectableDomains());
+        assertEquals(List.of("CM"), RelrecLinks.scan(rr, "FA").selectable());
+        // a RELREC row naming the dataset on the RIGHT side is the primary's own row, never a
+        // related domain
+        Links self = RelrecLinks.collect(relrec("S1,FA,,FALNKID,,R1", "S1,FAMH,,FALNKID,,R1"), "FA",
+                "FAMH", null, MergeStandard.UNKNOWN);
+        assertTrue(self.selectableDomains().isEmpty());
+    }
+
+
     @Test
     void selection_keepsOnlyTheNamedDomains()
     {

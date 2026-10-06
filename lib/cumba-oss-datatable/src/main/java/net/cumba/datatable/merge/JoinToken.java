@@ -16,7 +16,10 @@ import org.jspecify.annotations.Nullable;
  * Both sides are {@link String#strip() stripped}; for a <b>numeric</b> parent variable both are
  * canonicalised by {@link NumericKeyText} ({@code "1"}, {@code "01"}, {@code "1.0"}, {@code "1E0"},
  * {@code "+1"} → {@code "1"}); a character parent compares the stripped text exactly. A token that
- * is not a number under a numeric parent keeps its stripped text, so it can only match itself.
+ * is not a number under a numeric parent keeps its stripped text, so it can only match itself. One
+ * rule for the three joins: the RELREC link used to canonicalise any numeric-looking text whatever
+ * the column's type ({@code relrecKey}, retired by the T2 fold, L1) — it now normalises by the
+ * {@code IDVAR} column's type on each side like the other two.
  * </p>
  */
 public final class JoinToken
@@ -49,24 +52,5 @@ public final class JoinToken
         }
         String canonical = NumericKeyText.canonicalOrNull(stripped);
         return canonical != null ? canonical : stripped;
-    }
-
-
-    /**
-     * The RELREC link spelling: a numeric token canonicalises, any other value compares verbatim
-     * (unstripped — the RELREC site's own rule, kept as it was).
-     *
-     * @param aValue
-     *            the raw cell text, or {@code null} for a missing cell.
-     * @return the link key text, or {@code null} for a missing input.
-     */
-    public static @Nullable String relrecKey(@Nullable String aValue)
-    {
-        if (aValue == null)
-        {
-            return null;
-        }
-        String canonical = NumericKeyText.canonicalOrNull(aValue.strip());
-        return canonical != null ? canonical : aValue;
     }
 }

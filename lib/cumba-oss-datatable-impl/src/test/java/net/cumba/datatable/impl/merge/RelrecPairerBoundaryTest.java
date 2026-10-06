@@ -807,11 +807,17 @@ class RelrecPairerBoundaryTest
     @Test
     void recordLevel_idvarvalBeyond2p53_matchesItsOwnDigits()
     {
-        // Control: the same 16-digit value pairs, and "…993.0" folds onto it.
+        // Control: the same 16-digit value pairs.
         var pairing = RelrecPairerCompat.resolve(
-                idvarvalRelrec("9007199254740993", "9007199254740993.0"), aeSeq("9007199254740993"),
+                idvarvalRelrec("9007199254740993", "9007199254740993"), aeSeq("9007199254740993"),
                 "AE", resolver(faSeq("9007199254740993")), null);
         assertEquals(List.of("0>0"), pairsOf(pairing));
+        // Re-pinned by the T2 fold (L1): the columns are character, so "…993.0" is another text
+        // and names neither row (before, every numeric-looking link value was canonicalised).
+        var folded = RelrecPairerCompat.resolve(
+                idvarvalRelrec("9007199254740993", "9007199254740993.0"), aeSeq("9007199254740993"),
+                "AE", resolver(faSeq("9007199254740993")), null);
+        assertTrue(folded.pairs().isEmpty(), folded.pairs().toString());
     }
 
 

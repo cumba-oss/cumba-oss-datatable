@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.BitSet;
+import java.util.concurrent.atomic.AtomicLong;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.merge.Cardinality;
 import net.cumba.datatable.merge.JoinType;
@@ -57,5 +58,58 @@ class KeyMatchLazyViewTest
         KeyedMatcher m = matcher(base, key, null);
         assertEquals(0, m.firstMatchOf(0));
         assertEquals(-1, matcher(base, key, none).firstMatchOf(0));
+    }
+
+
+    /**
+     * M1 (T2 review): the lazy view is read from whichever thread reads the table (the EDT beside
+     * an export, the remote backend), and the matcher's composite-key probe filled ONE scratch
+     * array — two readers interleaving their fills read each other's key halves (the reviewer's
+     * repro: 1.18 M of 8 M mappings wrong). Every probe of the view now carries its own key. The
+     * planted control is the single-threaded answer: every base row maps to its own key row, so a
+     * wrong mapping under two readers can only be the race.
+     */
+    @Test
+    void m1_twoThreadsReadingOneLazyView_everyMappingIsRight() throws InterruptedException
+    {
+        int n = 2000;
+        String[] base = new String[n];
+        String[] key = new String[n];
+        for (int i = 0; i < n; i++)
+        {
+            base[i] = "S1,U" + i;
+            key[i] = "S1,U" + i + ",V" + i;
+        }
+        IDataTable b = table("AE", "STUDYID,USUBJID", base);
+        IDataTable k = table("DM", "STUDYID,USUBJID,AGE", key);
+        KeyedMatcher m = KeyedMatcher.of(b, k,
+                KeyedMergeSpec.builder().qualifier("DM").key(KeyColumn.of("STUDYID"))
+                        .key(KeyColumn.of("USUBJID")).joinType(JoinType.LEFT).build());
+        for (int i = 0; i < n; i++)
+        {
+            assertEquals(i, m.firstMatchOf(i), "the control: confined, every row maps to itself");
+        }
+        KeyMatchLazyView view = new KeyMatchLazyView(m, n);
+        AtomicLong wrong = new AtomicLong();
+        Runnable reader = () ->
+        {
+            for (int it = 0; it < 1000; it++)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    if (view.getRealRow(b, i) != i)
+                    {
+                        wrong.incrementAndGet();
+                    }
+                }
+            }
+        };
+        Thread t1 = new Thread(reader);
+        Thread t2 = new Thread(reader);
+        t1.start();
+        t2.start();
+        t1.join();
+        t2.join();
+        assertEquals(0, wrong.get(), "mappings answered wrong under two concurrent readers");
     }
 }

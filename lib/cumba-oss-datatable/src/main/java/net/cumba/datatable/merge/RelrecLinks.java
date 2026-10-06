@@ -34,6 +34,9 @@ import org.jspecify.annotations.Nullable;
  * <li>A link is <b>record-level</b> when both of its rows carry an {@code IDVARVAL} (it joins the
  * records whose {@code IDVAR} column equals it), else <b>dataset-level</b> (it joins within the
  * subject on equal {@code IDVAR} values).</li>
+ * <li>The primary's side is the row whose {@code RDOMAIN} is the primary's domain <em>or</em> its
+ * dataset name: a split FA dataset's dataset-level relationship names the dataset (SDTMIG 3.4 sec.
+ * 4.1.7 rule 8).</li>
  * <li>A related domain whose links <b>mix</b> the two shapes is not merged (today's rule, kept); it
  * is reported as {@link RelrecScan#mixedSkipped()}, and the merge flags it (W1 review L4).</li>
  * <li>Each link carries the {@code RELTYPE} of its two rows: a dataset-level relationship states
@@ -287,12 +290,35 @@ public final class RelrecLinks
     public static RelrecScan scan(IDataTable aRelrec, @Nullable String aPrimaryDomain,
             MergeStandard aStandard)
     {
+        return scan(aRelrec, aPrimaryDomain, null, aStandard);
+    }
+
+
+    /**
+     * {@link #scan(IDataTable, String, MergeStandard)} for a primary that also answers to its
+     * dataset name — what the merge pairs for a split dataset (T2 review M1), so a dialog built on
+     * this scan offers exactly that.
+     *
+     * @param aRelrec
+     *            the RELREC dataset.
+     * @param aPrimaryDomain
+     *            the primary table's domain.
+     * @param aPrimaryDataset
+     *            the primary table's dataset name ({@code FAMH} for a split FA dataset), or
+     *            {@code null} when it is the domain.
+     * @param aStandard
+     *            the standard RELREC is read under.
+     * @return the scan.
+     */
+    public static RelrecScan scan(IDataTable aRelrec, @Nullable String aPrimaryDomain,
+            @Nullable String aPrimaryDataset, MergeStandard aStandard)
+    {
         DataTableMeta m = aRelrec.getMetaData();
         if (aPrimaryDomain == null || m.getColumnIndex(RDOMAIN) < 0 || m.getColumnIndex(RELID) < 0)
         {
             return RelrecScan.empty();
         }
-        Links links = collect(aRelrec, aPrimaryDomain, null, aStandard);
+        Links links = collect(aRelrec, aPrimaryDomain, aPrimaryDataset, null, aStandard);
         return new RelrecScan(links.selectableDomains(), links.mixedDomains());
     }
 
@@ -336,6 +362,33 @@ public final class RelrecLinks
     public static Links collect(IDataTable aRelrec, String aPrimaryDomain,
             @Nullable Set<String> aSelectedRdomains, MergeStandard aStandard)
     {
+        return collect(aRelrec, aPrimaryDomain, null, aSelectedRdomains, aStandard);
+    }
+
+
+    /**
+     * {@link #collect(IDataTable, String, Set, MergeStandard)} for a primary that also answers to
+     * its dataset name: a split FA dataset's dataset-level relationship names the dataset
+     * ({@code FAMH}), not the domain (SDTMIG 3.4 sec. 4.1.7 rule 8; T2 review M1). A RELREC row
+     * whose {@code RDOMAIN} equals either name is the primary's side; a row naming neither is a
+     * related domain's. Both link shapes go through this one classification.
+     *
+     * @param aRelrec
+     *            the RELREC dataset.
+     * @param aPrimaryDomain
+     *            the primary table's domain.
+     * @param aPrimaryDataset
+     *            the primary table's dataset name, or {@code null} when it is the domain.
+     * @param aSelectedRdomains
+     *            upper-cased related domains to restrict to, or {@code null} for all.
+     * @param aStandard
+     *            the standard RELREC is read under.
+     * @return the links.
+     */
+    public static Links collect(IDataTable aRelrec, String aPrimaryDomain,
+            @Nullable String aPrimaryDataset, @Nullable Set<String> aSelectedRdomains,
+            MergeStandard aStandard)
+    {
         DataTableMeta rm = aRelrec.getMetaData();
         int cStudy = rm.getColumnIndex(STUDYID);
         int cUsubj = rm.getColumnIndex(USUBJID);
@@ -376,14 +429,14 @@ public final class RelrecLinks
             for (long lrr : group)
             {
                 String ldom = cell(aRelrec, cRdom, lrr);
-                if (ldom == null || !ldom.equalsIgnoreCase(aPrimaryDomain))
+                if (ldom == null || !isPrimary(ldom, aPrimaryDomain, aPrimaryDataset))
                 {
-                    continue; // the left side is the primary domain
+                    continue; // the left side is the primary domain (or dataset)
                 }
                 for (long rrr : group)
                 {
                     String rdom = cell(aRelrec, cRdom, rrr);
-                    if (rdom == null || rdom.equalsIgnoreCase(aPrimaryDomain))
+                    if (rdom == null || isPrimary(rdom, aPrimaryDomain, aPrimaryDataset))
                     {
                         continue; // the right side is every other-domain row of the group
                     }
@@ -427,6 +480,15 @@ public final class RelrecLinks
             domains.add(new DomainLinks(e.getKey(), e.getValue()));
         }
         return new Links(send, domains, List.copyOf(mixed), relationship);
+    }
+
+
+    /** Whether an {@code RDOMAIN} value names the primary: its domain or its dataset name. */
+    private static boolean isPrimary(String aRdomain, String aPrimaryDomain,
+            @Nullable String aPrimaryDataset)
+    {
+        return aRdomain.equalsIgnoreCase(aPrimaryDomain)
+                || (aPrimaryDataset != null && aRdomain.equalsIgnoreCase(aPrimaryDataset));
     }
 
     /** The subject a RELREC row names: its raw text, key identity and whether it is a pool. */

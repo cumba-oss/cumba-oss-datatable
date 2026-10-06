@@ -26,7 +26,10 @@ import net.cumba.datatable.merge.RelrecLinks;
  * the base compares {@code RDOMAIN} against the base's domain (P-15);</li>
  * <li>a <b>subject</b> component ({@code USUBJID}, {@code POOLID}, {@code APID}, {@code SPDEVID})
  * is a plain component whose absence everywhere is an error for every qualifier: with no subject
- * key usable, nothing identifies the record;</li>
+ * key usable, nothing identifies the record. Whether a supplemental row names a subject at all is
+ * decided on the row's OWN subject columns — every named one the supplemental dataset carries,
+ * active or not (T2 review L2: a pool's row over a base without {@code POOLID} read as subject-less
+ * and qualified every subject);</li>
  * <li>the {@code IDVAR} / {@code IDVARVAL} <b>pair</b> is recognised by its right-side names, must
  * be named whole (P-15), and is active when the supplemental dataset carries both columns; a
  * supplemental dataset without them keys every row at subject level.</li>
@@ -71,14 +74,19 @@ final class SuppKeyShape
 
     private final String baseDomain;
 
+    /** The supplemental dataset's own subject columns the key names, active or not. */
+    private final int[] suppSubjectColumns;
+
+    @SuppressWarnings("checkstyle:ParameterNumber")
     private SuppKeyShape(List<Component> aComponents, int aSuppIdvarColumn, int aSuppIdvarvalColumn,
-            boolean aSubjectUsable, String aBaseDomain)
+            boolean aSubjectUsable, String aBaseDomain, int[] aSuppSubjectColumns)
     {
         components = List.copyOf(aComponents);
         suppIdvarColumn = aSuppIdvarColumn;
         suppIdvarvalColumn = aSuppIdvarvalColumn;
         subjectUsable = aSubjectUsable;
         baseDomain = aBaseDomain;
+        suppSubjectColumns = aSuppSubjectColumns;
     }
 
 
@@ -113,6 +121,7 @@ final class SuppKeyShape
         boolean namesIdvar = false;
         boolean namesIdvarval = false;
         List<Component> components = new ArrayList<>();
+        List<Integer> suppSubjectColumns = new ArrayList<>();
         boolean anySubjectNamed = false;
         boolean subjectUsable = false;
         for (KeyColumn key : aKeys)
@@ -132,6 +141,10 @@ final class SuppKeyShape
             anySubjectNamed |= subject;
             int suppCol = sm.getColumnIndex(key.right());
             int baseCol = bm.getColumnIndex(key.left());
+            if (subject && suppCol >= 0)
+            {
+                suppSubjectColumns.add(suppCol);
+            }
             boolean domainConstant = baseCol < 0 && "DOMAIN".equalsIgnoreCase(key.left())
                     && "RDOMAIN".equals(right);
             if (suppCol >= 0 && (baseCol >= 0 || domainConstant))
@@ -171,7 +184,8 @@ final class SuppKeyShape
         // keys name USUBJID; a key of STUDYID alone would be the author's); only a NAMED subject
         // component that no side can serve is the "no subject key usable" error.
         return new SuppKeyShape(components, idvarCol, idvarvalCol,
-                subjectUsable || !anySubjectNamed, aBaseDomain);
+                subjectUsable || !anySubjectNamed, aBaseDomain,
+                suppSubjectColumns.stream().mapToInt(Integer::intValue).toArray());
     }
 
 
@@ -295,18 +309,20 @@ final class SuppKeyShape
 
 
     /**
-     * Whether the subject half of a key is blank — every subject component {@code ""} or a missing
-     * value.
+     * Whether a supplemental row names no subject — every subject column the key names and the
+     * dataset carries (active in the key or not) is {@code ""} or a missing value.
      *
-     * @param aKey
-     *            a key from {@link #baseKey} / {@link #suppKey}.
-     * @return whether no subject component carries a value.
+     * @param aSupp
+     *            the supplemental dataset.
+     * @param aRow
+     *            the row.
+     * @return whether the row names neither a subject nor a pool (nor a device, ...).
      */
-    boolean subjectBlank(Object[] aKey)
+    boolean suppSubjectBlank(IDataTable aSupp, long aRow)
     {
-        for (int i = plainCount(); i < aKey.length; i++)
+        for (int col : suppSubjectColumns)
         {
-            if (aKey[i] instanceof String s && !s.isEmpty())
+            if (RelrecLinks.isNonBlank(RelrecLinks.cell(aSupp, col, aRow)))
             {
                 return false;
             }

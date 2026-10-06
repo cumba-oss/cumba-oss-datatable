@@ -178,10 +178,24 @@ class RelrecPairerTest
     }
 
 
+    /**
+     * Re-pinned by the T2 fold (L1): the link value compares by the {@code IDVAR} column's type, as
+     * the SUPP and Child pointers do (§3.5.2). Character links {@code "1"} and {@code "1.0"} are
+     * two values (before: canonicalised whatever the type); numeric links {@code 1} and {@code 1.0}
+     * are one.
+     */
     @Test
-    void datasetLevel_numericKeyCoercion()
+    void datasetLevel_characterLinksCompareTheirText_numericLinksCanonicalise()
     {
-        // AE link "1" (String) vs FA link "1.0" (String) must still join via normKey.
+        IDataTable relrec = table("RELREC", RELREC_COLS, STR6, new Object[][]
+        {
+                {
+                        "S01", "AE", "U01", "AELNKID", "", "AEFA"
+                },
+                {
+                        "S01", "FA", "U01", "FALNKGRP", "", "AEFA"
+                }
+        });
         IDataTable ae = table("AE", new String[]
         {
                 "STUDYID", "USUBJID", "AELNKID"
@@ -200,18 +214,32 @@ class RelrecPairerTest
                         "S01", "U01", "1.0"
                 }
         });
-        IDataTable relrec = table("RELREC", RELREC_COLS, STR6, new Object[][]
+        RelrecPairing character = RelrecPairerCompat.resolve(relrec, ae, "AE", resolver(fa), null);
+        assertEquals(0, character.pairs().size(), "character: \"1\" is not \"1.0\"");
+        DataValueType[] numeric =
+        {
+                DataValueType.STRING, DataValueType.STRING, DataValueType.DOUBLE
+        };
+        IDataTable aeNum = table("AE", new String[]
+        {
+                "STUDYID", "USUBJID", "AELNKID"
+        }, numeric, new Object[][]
         {
                 {
-                        "S01", "AE", "U01", "AELNKID", "", "AEFA"
-                },
-                {
-                        "S01", "FA", "U01", "FALNKGRP", "", "AEFA"
+                        "S01", "U01", 1.0
                 }
         });
-
-        RelrecPairing p = RelrecPairerCompat.resolve(relrec, ae, "AE", resolver(fa), null);
-        assertEquals(1, p.pairs().size());
+        IDataTable faNum = table("FA", new String[]
+        {
+                "STUDYID", "USUBJID", "FALNKGRP"
+        }, numeric, new Object[][]
+        {
+                {
+                        "S01", "U01", 1.0
+                }
+        });
+        RelrecPairing num = RelrecPairerCompat.resolve(relrec, aeNum, "AE", resolver(faNum), null);
+        assertEquals(1, num.pairs().size(), "numeric: 1 and 1.0 are one value");
     }
 
 

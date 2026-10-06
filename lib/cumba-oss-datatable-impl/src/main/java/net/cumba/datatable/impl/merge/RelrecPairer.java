@@ -7,6 +7,7 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -43,6 +44,15 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li><b>Record-level link</b> (both {@code IDVARVAL}s present): each side filtered by
  * {@code IDVAR == IDVARVAL} within the RELREC row's subject, joined on {@code STUDYID}.</li>
+ * <li><b>The link value compares by the {@code IDVAR} column's type</b> on each side
+ * ({@link JoinToken#normalize}, as the SUPP and Child pointers do, §3.5.2): a numeric column
+ * canonicalises ({@code 01}, {@code 1.0} are {@code 1}), a character column compares the stripped
+ * text ({@code "01"} is not {@code "1"}; T2 review L1).</li>
+ * <li><b>A record "has a relationship"</b> ({@code RELREC._matched_}, P-14) when some RELREC row
+ * addresses it — decided on the primary side alone ({@link Pairing#addressed()}), so a related
+ * domain that is not supplied (P-1), flagged, or whose record is missing (a dangling link) never
+ * empties the record: under {@code inner} it keeps one row with that domain not supplied (T2 review
+ * L3).</li>
  * <li><b>Dataset-level link</b>: equi-join on {@code (STUDYID, USUBJID, IDVAR-cell)}.</li>
  * <li><b>{@code STUDYID} is part of the link identity</b> ({@code PLAN-relrec-studyid-link}):
  * {@code keyCell(primary.STUDYID) == keyCell(related.STUDYID)} on every path, and when the RELREC
@@ -124,9 +134,13 @@ final class RelrecPairer
      *            the per-domain problems.
      * @param mixedSkipped
      *            the related domains skipped as mixed.
+     * @param addressed
+     *            the primary rows some RELREC link addresses — the records having a relationship
+     *            (P-14), whether or not a related record was paired.
      */
     record Pairing(List<String> rdomains, List<IDataTable> relatedTables, List<Pair> pairs,
-            List<String> unresolvedDomains, List<DomainIssue> issues, List<String> mixedSkipped)
+            List<String> unresolvedDomains, List<DomainIssue> issues, List<String> mixedSkipped,
+            BitSet addressed)
     {
     }
 
@@ -159,10 +173,15 @@ final class RelrecPairer
         List<Pair> pairs = new ArrayList<>();
         List<String> unresolved = new ArrayList<>();
         List<DomainIssue> issues = new ArrayList<>();
+        BitSet addressed = new BitSet(Math.toIntExact(aPrimary.getRowCount()));
         TableIndex primaryIndex = new TableIndex(aPrimary);
         for (RelrecLinks.DomainLinks e : aLinks.domains())
         {
             String rdomain = e.rdomain();
+            for (Link link : e.links())
+            {
+                addressPrimary(link, aPrimary, primaryIndex, addressed);
+            }
             IDataTable target = aResolver.resolve(rdomain);
             if (target == null)
             {
@@ -194,7 +213,103 @@ final class RelrecPairer
         pairs.sort(Comparator.comparingInt(Pair::primaryRow).thenComparingInt(Pair::ordinal)
                 .thenComparingInt(Pair::relatedRow).thenComparingInt(Pair::relationship));
         return new Pairing(List.copyOf(rdomains), List.copyOf(relatedTables), List.copyOf(pairs),
-                List.copyOf(unresolved), List.copyOf(issues), aLinks.mixedDomains());
+                List.copyOf(unresolved), List.copyOf(issues), aLinks.mixedDomains(), addressed);
+    }
+
+
+    /**
+     * Marks the primary rows one link addresses — on the primary side alone, so the answer does not
+     * depend on the related domain being supplied or its record existing: a record-level link
+     * addresses the records with {@code IDVAR == IDVARVAL} in the link's subject (and study, when
+     * named); a dataset-level link every record carrying a value in its {@code IDVAR} column (in
+     * the study, when named). The same filters as the join's own primary side.
+     */
+    private static void addressPrimary(Link aLink, IDataTable aPrimary, TableIndex aPrimaryIndex,
+            BitSet aAddressed)
+    {
+        DataTableMeta pm = aPrimary.getMetaData();
+        int pIdvarIdx = pm.getColumnIndex(aLink.srcIdvar());
+        if (pIdvarIdx < 0)
+        {
+            return;
+        }
+        boolean scan = aLink.recordLevel()
+                ? !RelrecLinks.isNonBlank(aLink.srcSubject())
+                        || !aPrimaryIndex.hasSubject(aLink.srcPooled())
+                : RelrecLinks.isNonBlank(aLink.srcSubject());
+        if (scan)
+        {
+            int pStudyIdx = pm.getColumnIndex(STUDYID);
+            int pSubjIdx = pm.getColumnIndex(aLink.srcPooled() ? POOLID : USUBJID);
+            if (pSubjIdx < 0)
+            {
+                return;
+            }
+            boolean numeric = aPrimaryIndex.isNumeric(aLink.srcIdvar());
+            String srcNorm = JoinToken.normalize(aLink.srcIdvarval(), numeric);
+            long pRows = aPrimary.getRowCount();
+            for (long r = 0; r < pRows; r++)
+            {
+                if (scanKey(aLink, aPrimary, pStudyIdx, pSubjIdx, pIdvarIdx, r, srcNorm, numeric,
+                        aLink.srcSubject(), aLink.srcSubjectKey()) != null)
+                {
+                    aAddressed.set((int) r);
+                }
+            }
+            return;
+        }
+        KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), aLink.srcPooled());
+        if (aLink.recordLevel())
+        {
+            String pValue = Objects.requireNonNull(JoinToken.normalize(aLink.srcIdvarval(),
+                    aPrimaryIndex.isNumeric(aLink.srcIdvar())));
+            if (RelrecLinks.isNonBlank(aLink.study()))
+            {
+                markRows(pIndex,
+                        pIndex.find(new RelrecKey(aLink.studyKey(), aLink.srcSubjectKey(), pValue)),
+                        aAddressed);
+                return;
+            }
+            for (Object study : pIndex.studies())
+            {
+                markRows(pIndex, pIndex.find(new RelrecKey(study, aLink.srcSubjectKey(), pValue)),
+                        aAddressed);
+            }
+            return;
+        }
+        if (RelrecLinks.isNonBlank(aLink.study()))
+        {
+            int study = pIndex.studyOrdinal(aLink.studyKey());
+            if (study == KeyRows.NOT_FOUND)
+            {
+                return;
+            }
+            int end = pIndex.studyKeyEnd(study);
+            for (int pos = pIndex.studyKeyStart(study); pos < end; pos++)
+            {
+                markRows(pIndex, pIndex.studyKeyId(pos), aAddressed);
+            }
+            return;
+        }
+        for (int id = 0; id < pIndex.keyCount(); id++)
+        {
+            markRows(pIndex, id, aAddressed);
+        }
+    }
+
+
+    /** Marks every row of key {@code aId} ({@code NOT_FOUND} marks nothing). */
+    private static void markRows(KeyRows aIndex, int aId, BitSet aAddressed)
+    {
+        if (aId == KeyRows.NOT_FOUND)
+        {
+            return;
+        }
+        int end = aIndex.end(aId);
+        for (int pos = aIndex.start(aId); pos < end; pos++)
+        {
+            aAddressed.set(aIndex.row(pos));
+        }
     }
 
 
@@ -269,9 +384,9 @@ final class RelrecPairer
     /**
      * Record-level link (both IDVARVALs present): each side filtered by {@code IDVAR == IDVARVAL}
      * within the RELREC row's subject, joined on {@code STUDYID}. The probe is
-     * {@code (STUDYID, subject, normKey(IDVARVAL))}, key-identified exactly like the index, in the
-     * RELREC row's study when one is named and in each study the primary index holds otherwise. A
-     * blank RELREC subject (or a table lacking the subject column) takes the full scan.
+     * {@code (STUDYID, subject, normalize(IDVARVAL))}, key-identified exactly like the index, in
+     * the RELREC row's study when one is named and in each study the primary index holds otherwise.
+     * A blank RELREC subject (or a table lacking the subject column) takes the full scan.
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
     private static void joinRecordLevel(Link aLink, int aOrdinal, IDataTable aPrimary,
@@ -286,8 +401,10 @@ final class RelrecPairer
             joinByScan(aLink, aOrdinal, aPrimary, aTarget, aOut, aSeen);
             return;
         }
-        String pValue = Objects.requireNonNull(JoinToken.relrecKey(aLink.srcIdvarval()));
-        String tValue = Objects.requireNonNull(JoinToken.relrecKey(aLink.tgtIdvarval()));
+        String pValue = Objects.requireNonNull(JoinToken.normalize(aLink.srcIdvarval(),
+                aPrimaryIndex.isNumeric(aLink.srcIdvar())));
+        String tValue = Objects.requireNonNull(
+                JoinToken.normalize(aLink.tgtIdvarval(), aTargetIndex.isNumeric(aLink.tgtIdvar())));
         KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), aLink.srcPooled());
         KeyRows tIndex = aTargetIndex.byColumn(aLink.tgtIdvar(), aLink.tgtPooled());
         if (RelrecLinks.isNonBlank(aLink.study()))
@@ -395,9 +512,6 @@ final class RelrecPairer
     private static void joinByScan(Link aLink, int aOrdinal, IDataTable aPrimary,
             IDataTable aTarget, List<Pair> aOut, Set<PairKey> aSeen)
     {
-        String tgtNorm = JoinToken.relrecKey(aLink.tgtIdvarval());
-        String srcNorm = JoinToken.relrecKey(aLink.srcIdvarval());
-
         DataTableMeta tm = aTarget.getMetaData();
         int tStudyIdx = tm.getColumnIndex(STUDYID);
         int tSubjIdx = tm.getColumnIndex(aLink.tgtPooled() ? POOLID : USUBJID);
@@ -406,8 +520,10 @@ final class RelrecPairer
         {
             return;
         }
+        boolean tNumeric = ColumnKind.isNumeric(tm.getColumn(tIdvarIdx).getType());
+        String tgtNorm = JoinToken.normalize(aLink.tgtIdvarval(), tNumeric);
         KeyRows targetIndex = KeyRows.buildSparse(Math.toIntExact(aTarget.getRowCount()),
-                r -> scanKey(aLink, aTarget, tStudyIdx, tSubjIdx, tIdvarIdx, r, tgtNorm,
+                r -> scanKey(aLink, aTarget, tStudyIdx, tSubjIdx, tIdvarIdx, r, tgtNorm, tNumeric,
                         aLink.tgtSubject(), aLink.tgtSubjectKey()));
 
         DataTableMeta pm = aPrimary.getMetaData();
@@ -418,11 +534,13 @@ final class RelrecPairer
         {
             return;
         }
+        boolean pNumeric = ColumnKind.isNumeric(pm.getColumn(pIdvarIdx).getType());
+        String srcNorm = JoinToken.normalize(aLink.srcIdvarval(), pNumeric);
         long pRows = aPrimary.getRowCount();
         for (long r = 0; r < pRows; r++)
         {
             RelrecKey key = scanKey(aLink, aPrimary, pStudyIdx, pSubjIdx, pIdvarIdx, r, srcNorm,
-                    aLink.srcSubject(), aLink.srcSubjectKey());
+                    pNumeric, aLink.srcSubject(), aLink.srcSubjectKey());
             int id = key == null ? KeyRows.NOT_FOUND : targetIndex.find(key);
             if (id == KeyRows.NOT_FOUND)
             {
@@ -441,13 +559,13 @@ final class RelrecPairer
      * One scanned row's key, or {@code null} when the row does not take part: classified on the RAW
      * RELREC values, then filtered on the key identities. A record-level link keys on
      * {@code (STUDYID, subject)} alone — its value is the {@code IDVAR == IDVARVAL} filter — and a
-     * dataset-level link on {@code (STUDYID, subject, normKey(IDVAR-cell))}. ⚠ The two subject
+     * dataset-level link on {@code (STUDYID, subject, normalize(IDVAR-cell))}. ⚠ The two subject
      * halves are the link's SIDE for this table: in SDTM they are one subject, under SEND the sides
      * may name different subjects or pools (OD-3).
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
     private static @Nullable RelrecKey scanKey(Link aLink, IDataTable aTable, int aStudyIdx,
-            int aSubjIdx, int aIdvarIdx, long aRow, @Nullable String aIdvarFilter,
+            int aSubjIdx, int aIdvarIdx, long aRow, @Nullable String aIdvarFilter, boolean aNumeric,
             @Nullable String aSubject, Object aSubjectKey)
     {
         String idv = RelrecLinks.cell(aTable, aIdvarIdx, aRow);
@@ -455,7 +573,7 @@ final class RelrecPairer
         {
             return null;
         }
-        String idvNorm = Objects.requireNonNull(JoinToken.relrecKey(idv));
+        String idvNorm = Objects.requireNonNull(JoinToken.normalize(idv, aNumeric));
         if (aLink.recordLevel() && !idvNorm.equals(aIdvarFilter))
         {
             return null;
@@ -482,7 +600,7 @@ final class RelrecPairer
      * Lazily builds, per {@code (IDVAR column, subject column)}, one {@link KeyRows} index for one
      * table (rows with a {@code null} value cell are skipped), built once and reused across every
      * link of the related domain. One keying serves both join modes: the key is
-     * {@code (keyCell(STUDYID), keyCell(subject), normKey(cell))}, so a link that names a study
+     * {@code (keyCell(STUDYID), keyCell(subject), normalize(cell))}, so a link that names a study
      * probes that study's keys and a link that names none probes each study the index holds, every
      * key finding only its own study on the other side.
      */
@@ -515,7 +633,16 @@ final class RelrecPairer
         }
 
 
-        /** {@code (keyCell(STUDYID), keyCell(subject), normKey(cell)) → rows}. */
+        /** Whether the table's column is numeric — the type the link value is normalised by. */
+        boolean isNumeric(String aColumn)
+        {
+            DataTableMeta m = table.getMetaData();
+            int c = m.getColumnIndex(aColumn);
+            return c >= 0 && ColumnKind.isNumeric(m.getColumn(c).getType());
+        }
+
+
+        /** {@code (keyCell(STUDYID), keyCell(subject), normalize(cell)) → rows}. */
         KeyRows byColumn(String aColumn, boolean aPooled)
         {
             return byColumn.computeIfAbsent((aPooled ? "P\0" : "U\0") + aColumn,
@@ -530,12 +657,13 @@ final class RelrecPairer
             {
                 return KeyRows.build(0, _ -> null);
             }
+            boolean numeric = ColumnKind.isNumeric(table.getMetaData().getColumn(colIdx).getType());
             return KeyRows.build(Math.toIntExact(table.getRowCount()),
-                    r -> indexKey(colIdx, aSubjIdx, r));
+                    r -> indexKey(colIdx, aSubjIdx, numeric, r));
         }
 
 
-        private @Nullable RelrecKey indexKey(int aColIdx, int aSubjIdx, long aRow)
+        private @Nullable RelrecKey indexKey(int aColIdx, int aSubjIdx, boolean aNumeric, long aRow)
         {
             String v = RelrecLinks.cell(table, aColIdx, aRow);
             if (v == null)
@@ -544,7 +672,7 @@ final class RelrecPairer
             }
             return new RelrecKey(RelrecLinks.keyCell(table, studyIdx, aRow),
                     RelrecLinks.keyCell(table, aSubjIdx, aRow),
-                    Objects.requireNonNull(JoinToken.relrecKey(v)));
+                    Objects.requireNonNull(JoinToken.normalize(v, aNumeric)));
         }
     }
 

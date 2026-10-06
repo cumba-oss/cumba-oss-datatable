@@ -41,6 +41,18 @@ import org.jspecify.annotations.Nullable;
  * primary carries — a nested merged primary that already holds {@code DM.RPATHCD} — is an ordinary
  * column and keys like any other (W1 review M3).
  * </p>
+ *
+ * <p>
+ * ⚠ <b>Thread confinement (T2 review M1).</b> The index is immutable once built, but the probes
+ * that take no key array — {@link #keyIdOf(int)}, {@link #firstMatchOf(int)}, {@code matchesOf} —
+ * fill ONE scratch key array owned by the matcher, so they are confined to one thread at a time
+ * (the merge builder's expansion pass). A reader that may be probed concurrently — the
+ * {@link KeyMatchLazyView}, read from the EDT beside an export or by the remote backend — passes
+ * its own array to {@link #keyIdOf(int, KeyPart[])} / {@link #firstMatchOf(int, KeyPart[])}, one
+ * per probe from {@link #newKey()}; the readers it shares hold no state a probe depends on (a
+ * {@link KeyCellReader.Direct} counts its fall-backs for tests only; a {@link KeyCellReader.Union}
+ * builds its member readers idempotently).
+ * </p>
  */
 public final class KeyedMatcher
 {
@@ -243,8 +255,21 @@ public final class KeyedMatcher
 
 
     /**
+     * A key array for the probes that take one: a fresh array of the active components, or
+     * {@code null} when the key has a single component and no array is needed.
+     *
+     * @return the array, or {@code null}.
+     */
+    public KeyPart @Nullable [] newKey()
+    {
+        return nActive > 1 ? new KeyPart[nActive] : null;
+    }
+
+
+    /**
      * The key id of a primary row in the partner's index, or {@link KeyMatchIndex#NOT_FOUND} when
      * the row matches nothing — including a row an authored {@code keepMissings: false} drops.
+     * Fills the matcher's own scratch key: confined to one thread at a time.
      *
      * @param aRow
      *            the primary row.
@@ -252,16 +277,32 @@ public final class KeyedMatcher
      */
     public int keyIdOf(int aRow)
     {
+        return keyIdOf(aRow, scratch);
+    }
+
+
+    /**
+     * {@link #keyIdOf(int)} filling the caller's key array — the probe a concurrent reader makes.
+     *
+     * @param aRow
+     *            the primary row.
+     * @param aKey
+     *            the caller's array from {@link #newKey()} ({@code null} for a single-component
+     *            key).
+     * @return the key id or {@code NOT_FOUND}.
+     */
+    public int keyIdOf(int aRow, KeyPart @Nullable [] aKey)
+    {
         if (!keepMissings && anyActiveKeyBlank(primary, recordColIds, aRow))
         {
             return KeyMatchIndex.NOT_FOUND;
         }
-        if (scratch == null)
+        if (aKey == null)
         {
             return index.find(keyPart(recordReaders, singleActive, aRow));
         }
-        fillKeyParts(recordReaders, aRow, scratch);
-        return index.find(scratch);
+        fillKeyParts(recordReaders, aRow, aKey);
+        return index.find(aKey);
     }
 
 
@@ -294,7 +335,8 @@ public final class KeyedMatcher
 
     /**
      * The first partner row matching a primary row, the mask applied, or {@code -1} when none does
-     * — the one row an {@code n:1} merge binds.
+     * — the one row an {@code n:1} merge binds. Fills the matcher's own scratch key: confined to
+     * one thread at a time.
      *
      * @param aRow
      *            the primary row.
@@ -302,7 +344,24 @@ public final class KeyedMatcher
      */
     public int firstMatchOf(int aRow)
     {
-        int id = keyIdOf(aRow);
+        return firstMatchOf(aRow, scratch);
+    }
+
+
+    /**
+     * {@link #firstMatchOf(int)} filling the caller's key array — the probe a concurrent reader
+     * makes.
+     *
+     * @param aRow
+     *            the primary row.
+     * @param aKey
+     *            the caller's array from {@link #newKey()} ({@code null} for a single-component
+     *            key).
+     * @return the partner row or {@code -1}.
+     */
+    public int firstMatchOf(int aRow, KeyPart @Nullable [] aKey)
+    {
+        int id = keyIdOf(aRow, aKey);
         if (id == KeyMatchIndex.NOT_FOUND)
         {
             return -1;

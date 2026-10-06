@@ -26,15 +26,4 @@ class JoinTokenTest
         assertNull(JoinToken.normalize(null, true));
         assertNull(JoinToken.normalize(null, false));
     }
-
-
-    @Test
-    void relrecKey_canonicalisesANumber_keepsAnyOtherValueVerbatim()
-    {
-        assertEquals("1", JoinToken.relrecKey(" 1.0 "));
-        assertEquals(" L1 ", JoinToken.relrecKey(" L1 "),
-                "the RELREC site keeps the unstripped text");
-        assertEquals("9007199254740993", JoinToken.relrecKey("9007199254740993"));
-        assertNull(JoinToken.relrecKey(null));
-    }
 }

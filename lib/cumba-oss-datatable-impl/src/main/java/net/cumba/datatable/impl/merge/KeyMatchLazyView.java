@@ -13,6 +13,12 @@ import net.cumba.datatable.view.IDataTableView;
  * whatever the base size), with a one-slot cache for the viewport access pattern that reads one
  * row's cells one after another. The successor of {@code HashLookupView}, which probed its own hash
  * table (MET #10: one matching, two strategies).
+ *
+ * <p>
+ * Safe to read from several threads (T2 review M1): every probe carries its own key array
+ * ({@link KeyedMatcher#newKey()}), never the matcher's thread-confined scratch — the allocation is
+ * per cache miss, which the one-slot cache keeps to one per row read.
+ * </p>
  */
 public final class KeyMatchLazyView implements IDataTableView
 {
@@ -58,7 +64,7 @@ public final class KeyMatchLazyView implements IDataTableView
         {
             return (int) c;
         }
-        int keyRow = matcher.firstMatchOf(baseRow);
+        int keyRow = matcher.firstMatchOf(baseRow, matcher.newKey());
         cache = ((long) baseRow << 32) | (keyRow & 0xFFFFFFFFL);
         return keyRow;
     }

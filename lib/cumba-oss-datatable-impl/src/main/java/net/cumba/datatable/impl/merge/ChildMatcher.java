@@ -30,6 +30,16 @@ import org.jspecify.annotations.Nullable;
  * first-appearance order over the primary rows (or the one fixed parent).
  *
  * <p>
+ * <b>SEND (OD-2 in the reverse direction, MET #19; T2 review M2):</b> read under SEND
+ * ({@link net.cumba.datatable.merge.MergeStandard}; under {@code UNKNOWN} when the primary carries
+ * {@code POOLID}) a primary row whose subject columns are all blank is <b>study-wide</b> — it
+ * points at every parent record with that {@code IDVAR} = {@code IDVARVAL} (SENDIG 3.1.1 sec. 8.3)
+ * — and {@code POOLID} joins the subject key when both sides carry it and the spec's
+ * {@code subjectKeys} do not name it, so a pool's row finds its pool's record only. Under SDTM a
+ * blank subject matches a blank subject only (the ruled IG shift, W4 record).
+ * </p>
+ *
+ * <p>
  * An authored {@code Cardinality} is checked like a keyed partner's (P-16, W1 review M4): a parent
  * side declared {@code 1} is a pointer posting holding two parent records, a primary side declared
  * {@code 1} two primary rows carrying one pointer. The IG's {@code n:m} (P-13) checks nothing.
@@ -40,6 +50,8 @@ final class ChildMatcher
 
     private static final Logger LOGGER = System.getLogger(ChildMatcher.class.getName());
 
+    private static final String POOLID = "POOLID";
+
     /** A parent column the pointer names that the parent lacks. */
     record Issue(String parent, String message, List<Long> primaryRows)
     {
@@ -48,6 +60,8 @@ final class ChildMatcher
     private final IDataTable primary;
 
     private final ChildMergeSpec spec;
+
+    private final boolean send;
 
     private final int rdomainCol;
 
@@ -69,10 +83,12 @@ final class ChildMatcher
 
     private final int fixedOrdinal;
 
-    private ChildMatcher(IDataTable aPrimary, ChildMergeSpec aSpec, DatasetResolver aResolver)
+    private ChildMatcher(IDataTable aPrimary, ChildMergeSpec aSpec, DatasetResolver aResolver,
+            boolean aSend)
     {
         primary = aPrimary;
         spec = aSpec;
+        send = aSend;
         DataTableMeta pm = aPrimary.getMetaData();
         rdomainCol = pm.getColumnIndex(aSpec.getRdomainColumn());
         idvarCol = pm.getColumnIndex(aSpec.getIdvarColumn());
@@ -134,11 +150,15 @@ final class ChildMatcher
      *            the spec.
      * @param aResolver
      *            the resolver.
+     * @param aSend
+     *            whether the primary is read under SEND (a subject-less row is study-wide,
+     *            {@code POOLID} joins the subject key) rather than SDTM.
      * @return the matcher.
      */
-    static ChildMatcher of(IDataTable aPrimary, ChildMergeSpec aSpec, DatasetResolver aResolver)
+    static ChildMatcher of(IDataTable aPrimary, ChildMergeSpec aSpec, DatasetResolver aResolver,
+            boolean aSend)
     {
-        return new ChildMatcher(aPrimary, aSpec, aResolver);
+        return new ChildMatcher(aPrimary, aSpec, aResolver, aSend);
     }
 
 
@@ -194,7 +214,8 @@ final class ChildMatcher
     }
 
     /**
-     * A primary row's complete pointer: its parent, pointer column and probe key. A class, not a
+     * A primary row's complete pointer: its parent, pointer column and probe key — the full key, or
+     * under SEND the plain key of a study-wide row (its subject columns all blank). A class, not a
      * record, because its key is an array.
      */
     private static final class Pointer
@@ -208,13 +229,22 @@ final class ChildMatcher
 
         private final Object @Nullable [] key;
 
+        private final boolean studyWide;
+
         Pointer(int aOrdinal, String aIdvar, ParentIndex.@Nullable ColumnIndex aIndex,
-                Object @Nullable [] aKey)
+                Object @Nullable [] aKey, boolean aStudyWide)
         {
             ordinal = aOrdinal;
             idvar = aIdvar;
             index = aIndex;
             key = aKey;
+            studyWide = aStudyWide;
+        }
+
+
+        boolean studyWide()
+        {
+            return studyWide;
         }
 
 
@@ -263,16 +293,32 @@ final class ChildMatcher
         ParentIndex.ColumnIndex ci = indexes.get(ordinal).forColumn(idvar.strip());
         if (ci == null)
         {
-            return new Pointer(ordinal, idvar.strip(), null, null);
+            return new Pointer(ordinal, idvar.strip(), null, null, false);
         }
         Object[] key = new Object[ci.subjectCols().length + 1];
+        boolean subjectBlank = ci.subjectComponents() > 0;
         for (int i = 0; i < ci.subjectCols().length; i++)
         {
             key[i] = RelrecLinks.keyCell(primary, ci.primarySubjectCols()[i], aRow);
+            subjectBlank &= !ci.subjectComponent()[i] || isBlank(key[i]);
         }
-        key[key.length - 1] = java.util.Objects
+        String token = java.util.Objects
                 .requireNonNull(JoinToken.normalize(idvarval, ci.numeric()));
-        return new Pointer(ordinal, idvar.strip(), ci, key);
+        if (send && subjectBlank)
+        {
+            Object[] plain = ci.plainOf(key);
+            plain[plain.length - 1] = token;
+            return new Pointer(ordinal, idvar.strip(), ci, plain, true);
+        }
+        key[key.length - 1] = token;
+        return new Pointer(ordinal, idvar.strip(), ci, key, false);
+    }
+
+
+    /** Whether a key identity is blank: {@code ""} or a missing value (never a non-empty text). */
+    private static boolean isBlank(Object aIdentity)
+    {
+        return !(aIdentity instanceof String s && !s.isEmpty());
     }
 
 
@@ -305,7 +351,7 @@ final class ChildMatcher
                     .primaryRows().add((long) aRow);
             return;
         }
-        IntList rows = ci.rows().get(new ObjKey(key));
+        IntList rows = (ptr.studyWide() ? ci.plainRows() : ci.rows()).get(new ObjKey(key));
         if (rows != null)
         {
             for (int i = 0; i < rows.size(); i++)
@@ -393,11 +439,23 @@ final class ChildMatcher
             /** The primary's, index-aligned. */
             private final int[] primarySubjectCols;
 
+            /**
+             * Per used column, whether it identifies the subject (or pool) — as opposed to
+             * {@code STUDYID} — index-aligned with {@link #subjectCols}.
+             */
+            private final boolean[] subjectComponent;
+
             /** Whether the pointer column is numeric. */
             private final boolean numeric;
 
             /** (subject identities..., token) → parent rows, ascending. */
             private final Map<ObjKey, IntList> rows;
+
+            /**
+             * Under SEND: (non-subject identities..., token) → parent rows, ascending — the
+             * postings a study-wide row probes; empty under SDTM.
+             */
+            private final Map<ObjKey, IntList> plainRows;
 
             /** The pointer column's name on the parent. */
             private final String column;
@@ -409,17 +467,76 @@ final class ChildMatcher
             private final @Nullable String firstDuplicateToken;
 
             @SuppressWarnings("checkstyle:ParameterNumber")
-            ColumnIndex(int[] aSubjectCols, int[] aPrimarySubjectCols, boolean aNumeric,
-                    Map<ObjKey, IntList> aRows, String aColumn, int @Nullable [] aFirstDuplicate,
+            ColumnIndex(int[] aSubjectCols, int[] aPrimarySubjectCols, boolean[] aSubjectComponent,
+                    boolean aNumeric, Map<ObjKey, IntList> aRows, Map<ObjKey, IntList> aPlainRows,
+                    String aColumn, int @Nullable [] aFirstDuplicate,
                     @Nullable String aFirstDuplicateToken)
             {
                 subjectCols = aSubjectCols;
                 primarySubjectCols = aPrimarySubjectCols;
+                subjectComponent = aSubjectComponent;
                 numeric = aNumeric;
                 rows = aRows;
+                plainRows = aPlainRows;
                 column = aColumn;
                 firstDuplicate = aFirstDuplicate;
                 firstDuplicateToken = aFirstDuplicateToken;
+            }
+
+
+            boolean[] subjectComponent()
+            {
+                return subjectComponent;
+            }
+
+
+            /** The number of used columns that identify the subject. */
+            int subjectComponents()
+            {
+                return subjectComponents(subjectComponent);
+            }
+
+
+            static int subjectComponents(boolean[] aSubjectComponent)
+            {
+                int n = 0;
+                for (boolean s : aSubjectComponent)
+                {
+                    n += s ? 1 : 0;
+                }
+                return n;
+            }
+
+
+            /**
+             * The plain key of a full key: its non-subject components followed by one free slot for
+             * the token.
+             */
+            Object[] plainOf(Object[] aKey)
+            {
+                return plainOf(subjectComponent, aKey);
+            }
+
+
+            static Object[] plainOf(boolean[] aSubjectComponent, Object[] aKey)
+            {
+                Object[] out = new Object[aSubjectComponent.length
+                        - subjectComponents(aSubjectComponent) + 1];
+                int p = 0;
+                for (int i = 0; i < aSubjectComponent.length; i++)
+                {
+                    if (!aSubjectComponent[i])
+                    {
+                        out[p++] = aKey[i];
+                    }
+                }
+                return out;
+            }
+
+
+            Map<ObjKey, IntList> plainRows()
+            {
+                return plainRows;
             }
 
 
@@ -508,19 +625,39 @@ final class ChildMatcher
             }
             List<Integer> parentSubject = new ArrayList<>();
             List<Integer> primarySubject = new ArrayList<>();
+            List<Boolean> subjectComponent = new ArrayList<>();
+            boolean namesPoolid = false;
             for (String name : spec.getSubjectKeys())
             {
+                namesPoolid |= POOLID.equalsIgnoreCase(name);
                 int pc = pm.getColumnIndex(name);
                 int cc = cm.getColumnIndex(name);
                 if (pc >= 0 && cc >= 0)
                 {
                     parentSubject.add(pc);
                     primarySubject.add(cc);
+                    subjectComponent.add(
+                            SuppKeyShape.SUBJECT_NAMES.contains(name.toUpperCase(Locale.ROOT)));
                 }
+            }
+            if (send && !namesPoolid && pm.getColumnIndex(POOLID) >= 0
+                    && cm.getColumnIndex(POOLID) >= 0)
+            {
+                // SEND: POOLID joins the subject key when both sides carry it (MET #19)
+                parentSubject.add(pm.getColumnIndex(POOLID));
+                primarySubject.add(cm.getColumnIndex(POOLID));
+                subjectComponent.add(true);
             }
             boolean numeric = ColumnKind.isNumeric(pm.getColumn(col).getType());
             Map<ObjKey, IntList> rows = new HashMap<>();
+            Map<ObjKey, IntList> plainRows = new HashMap<>();
             int n = parentSubject.size();
+            boolean[] subject = new boolean[n];
+            for (int i = 0; i < n; i++)
+            {
+                subject[i] = subjectComponent.get(i);
+            }
+            boolean studyWide = send && ColumnIndex.subjectComponents(subject) > 0;
             long rowCount = parent.getRowCount();
             int[] firstDuplicate = null;
             String firstDuplicateToken = null;
@@ -538,6 +675,12 @@ final class ChildMatcher
                 }
                 String token = java.util.Objects.requireNonNull(JoinToken.normalize(cell, numeric));
                 key[n] = token;
+                if (studyWide)
+                {
+                    Object[] plain = ColumnIndex.plainOf(subject, key);
+                    plain[plain.length - 1] = token;
+                    plainRows.computeIfAbsent(new ObjKey(plain), _ -> new IntList(1)).add((int) r);
+                }
                 IntList posting = rows.computeIfAbsent(new ObjKey(key), _ -> new IntList(1));
                 posting.add((int) r);
                 if (firstDuplicate == null && posting.size() == 2)
@@ -550,8 +693,9 @@ final class ChildMatcher
                 }
             }
             return new ColumnIndex(parentSubject.stream().mapToInt(Integer::intValue).toArray(),
-                    primarySubject.stream().mapToInt(Integer::intValue).toArray(), numeric, rows,
-                    pm.getColumn(col).getName(), firstDuplicate, firstDuplicateToken);
+                    primarySubject.stream().mapToInt(Integer::intValue).toArray(), subject, numeric,
+                    rows, plainRows, pm.getColumn(col).getName(), firstDuplicate,
+                    firstDuplicateToken);
         }
     }
 }

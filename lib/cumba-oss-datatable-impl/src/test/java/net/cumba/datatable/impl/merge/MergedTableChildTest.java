@@ -21,8 +21,10 @@ import net.cumba.datatable.merge.CardinalityViolationException;
 import net.cumba.datatable.merge.ChildMergeSpec;
 import net.cumba.datatable.merge.JoinType;
 import net.cumba.datatable.merge.MergeColumnClashException;
+import net.cumba.datatable.merge.MergeIssue;
 import net.cumba.datatable.merge.MergeKind;
 import net.cumba.datatable.merge.MergeMeta;
+import net.cumba.datatable.merge.MergeStandard;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.MergedTables;
 import net.cumba.datatable.merge.UnresolvedDataset;
@@ -211,6 +213,120 @@ class MergedTableChildTest
             assertTrue(logs.anyMessageContains("disagrees with the IG's n:m"),
                     logs.records().toString());
         }
+    }
+
+
+    /**
+     * L1 (T2 review): the Child part published only the FIRST issue of a parent — a second pointer
+     * column the parent lacks was lost with its rows. Every issue of the parent is joined with
+     * {@code "; "} and the rows concatenated, as the RELREC part does.
+     */
+    @Test
+    void l1_everyPointerColumnTheParentLacks_isPublished_notOnlyTheFirst()
+    {
+        IDataTable co = table("CO", "STUDYID,USUBJID,RDOMAIN,IDVAR,IDVARVAL,COVAL",
+                "S,U1,AE,AESEQ,1,ok", "S,U1,AE,AEGRPID,G1,c2", "S,U1,AE,AELNKID,L1,c3");
+        IDataTable ae = table("AE", "STUDYID,USUBJID,DOMAIN,AESEQ:N", "S,U1,AE,1");
+        MergedTable t = MergedTables.build(request(co, ae)
+                .child(ChildMergeSpec.builder().joinType(JoinType.LEFT).build()).build());
+        assertEquals(List.of("1", UNSUPPLIED, UNSUPPLIED), column(t, "AE.AESEQ"));
+        assertEquals(1, t.issues().size(), t.issues().toString());
+        MergeIssue issue = t.issues().get(0);
+        assertEquals("pointer column AEGRPID is not a column of parent AE; "
+                + "pointer column AELNKID is not a column of parent AE", issue.message());
+        assertEquals(List.of(1L, 2L), issue.sourceRows());
+        assertEquals("AE", issue.column(), "the parent: every column of its part carries it");
+        assertEquals(issue.message(),
+                t.getMetaData().getColumn("AE.AESEQ").getMetaData(MergeMeta.MERGE_ERROR));
+    }
+
+
+    /**
+     * FDA-SD0077's shape: {@code Keys [USUBJID, IDVAR, IDVARVAL]}, so subject keys
+     * {@code [USUBJID]}.
+     */
+    private static ChildMergeSpec sd0077()
+    {
+        return ChildMergeSpec.builder().subjectKeys(List.of("USUBJID")).joinType(JoinType.LEFT)
+                .build();
+    }
+
+
+    /** SEND CL: two subjects, two pools, all with CLSEQ 1; subject A1 also CLSEQ 2. */
+    private static IDataTable sendCl()
+    {
+        return table("CL", "STUDYID,DOMAIN,USUBJID,POOLID,CLSEQ:N", "S1,CL,A1,,1", "S1,CL,A2,,1",
+                "S1,CL,,P1,1", "S1,CL,,P2,1", "S1,CL,A1,,2");
+    }
+
+
+    /** A study-wide row (no subject, no pool), a pool P1 row, a subject A1 row. */
+    private static IDataTable sendSuppcl()
+    {
+        return table("SUPPCL", "STUDYID,RDOMAIN,USUBJID,POOLID,IDVAR,IDVARVAL,QNAM,QVAL",
+                "S1,CL,,,CLSEQ,1,X,study-wide", "S1,CL,,P1,CLSEQ,1,X,pool",
+                "S1,CL,A1,,CLSEQ,2,X,subject");
+    }
+
+
+    private static List<Long> realRows(MergedTable aTable)
+    {
+        List<Long> out = new java.util.ArrayList<>();
+        for (long r = 0; r < aTable.getRowCount(); r++)
+        {
+            out.add(aTable.getRealRowIndex(r));
+        }
+        return out;
+    }
+
+
+    /**
+     * M2 (T2 review), OD-2 for the reverse direction (MET #19): under SEND a Child row naming
+     * neither subject nor pool is study-wide — it points at every parent record with that
+     * {@code IDVAR} = {@code IDVARVAL} (SENDIG 3.1.1 sec. 8.3) — and {@code POOLID} joins the
+     * subject key when both sides carry it, so a pool's row finds its pool's record only. The
+     * standard comes from the request; {@code UNKNOWN} infers SEND from the child's {@code POOLID}.
+     */
+    @Test
+    void m2_send_aSubjectLessChildRow_isStudyWide_andPoolidJoinsTheSubjectKey()
+    {
+        MergedTable t = MergedTables.build(request(sendSuppcl(), sendCl())
+                .standard(MergeStandard.SEND).child(sd0077()).build());
+        // row 0: every CL record with CLSEQ 1 (A1, A2, P1, P2); row 1: pool P1's; row 2: A1 seq 2
+        assertEquals(List.of("A1", "A2", "", "", "", "A1"), column(t, "CL.USUBJID"));
+        assertEquals(List.of("", "", "P1", "P2", "P1", ""), column(t, "CL.POOLID"));
+        assertEquals(List.of("1", "1", "1", "1", "1", "2"), column(t, "CL.CLSEQ"));
+        assertEquals(List.of(0L, 0L, 0L, 0L, 1L, 2L), realRows(t));
+        assertTrue(t.issues().isEmpty());
+        MergedTable inferred = MergedTables
+                .build(request(sendSuppcl(), sendCl()).child(sd0077()).build());
+        assertEquals(column(t, "CL.POOLID"), column(inferred, "CL.POOLID"),
+                "UNKNOWN + a POOLID column on the child ⇒ SEND");
+        assertEquals(realRows(t), realRows(inferred));
+    }
+
+
+    /**
+     * M2, the SDTM control (explicit, and inferred from a child without {@code POOLID}): a blank
+     * subject matches a blank subject only, and {@code POOLID} stays out of the key — the ruled IG
+     * shift of the W4 record — so nothing here moves.
+     */
+    @Test
+    void m2_sdtm_control_aBlankSubjectMatchesABlankSubjectOnly_poolidStaysOutOfTheKey()
+    {
+        MergedTable t = MergedTables.build(request(sendSuppcl(), sendCl())
+                .standard(MergeStandard.SDTM).child(sd0077()).build());
+        // rows 0 and 1 (USUBJID blank) both find the two pool records (USUBJID blank), never a
+        // subject's; row 2 finds A1 seq 2
+        assertEquals(List.of("P1", "P2", "P1", "P2", ""), column(t, "CL.POOLID"));
+        assertEquals(List.of(0L, 0L, 1L, 1L, 2L), realRows(t));
+        IDataTable noPool = table("SUPPCL", "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL",
+                "S1,CL,,CLSEQ,1,X,blank", "S1,CL,A1,CLSEQ,2,X,subject");
+        MergedTable inferred = MergedTables
+                .build(request(noPool, sendCl()).child(sd0077()).build());
+        assertEquals(List.of("P1", "P2", ""), column(inferred, "CL.POOLID"),
+                "UNKNOWN without POOLID ⇒ SDTM: the blank-subject row finds the blank subjects");
+        assertEquals(List.of(0L, 0L, 1L), realRows(inferred));
     }
 
 

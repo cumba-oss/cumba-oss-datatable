@@ -408,6 +408,54 @@ class MergedTableSuppTest
 
 
     /**
+     * L2 (T2 review, lane 5): whether a supplemental row names a subject was read off the ACTIVE
+     * key — a {@code SUPPCL} carrying {@code POOLID} over a {@code CL} without it had
+     * {@code POOLID} inactive, so a pool's row read as subject-less and, under SEND, qualified
+     * every subject's record. The row's OWN subject columns decide: a pool's row names a pool.
+     */
+    @Test
+    void l2_aPoolRowOverABaseWithoutPoolid_isNotStudyWide()
+    {
+        IDataTable cl = table("CL", "STUDYID,DOMAIN,USUBJID,CLSEQ:N", "S1,CL,A1,1", "S1,CL,A2,1");
+        IDataTable pool = table("SUPPCL", "STUDYID,RDOMAIN,USUBJID,POOLID,IDVAR,IDVARVAL,QNAM,QVAL",
+                "S1,CL,,P1,CLSEQ,1,X,pool");
+        MergedTable t = MergedTables.build(request(cl, pool).standard(MergeStandard.SEND)
+                .supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of(UNSUPPLIED, UNSUPPLIED), column(t, "X"));
+        assertTrue(t.issues().isEmpty());
+        // the control: a row naming neither subject nor pool is study-wide (OD-2)
+        IDataTable studyWide = table("SUPPCL",
+                "STUDYID,RDOMAIN,USUBJID,POOLID,IDVAR,IDVARVAL,QNAM,QVAL", "S1,CL,,,CLSEQ,1,X,all");
+        MergedTable t2 = MergedTables.build(request(cl, studyWide).standard(MergeStandard.SEND)
+                .supp(SuppMergeSpec.builder().build()).build());
+        assertEquals(List.of("all", "all"), column(t2, "X"));
+    }
+
+
+    /**
+     * L2 (T2 review, lane 1): the primary's supplemental part read the base's domain from its
+     * {@code DOMAIN} column, falling back to its NAME — ignoring the request's
+     * {@code primaryDomain}. A split dataset without a {@code DOMAIN} column ({@code QSCG}, domain
+     * {@code QS}) then compared {@code RDOMAIN} {@code QS} against {@code QSCG} and matched
+     * nothing.
+     */
+    @Test
+    void l2_theRequestsPrimaryDomain_isTheBaseDomainOfThePrimarysSupp()
+    {
+        IDataTable qs = table("QSCG", "STUDYID,USUBJID,QSSEQ:N", "S,U1,1");
+        IDataTable supp = table("SUPPQSCG", SUPP_HEADER, "S,QS,U1,QSSEQ,1,QX,lab,v");
+        MergedTable t = MergedTables.build(request(qs, supp).primaryDomain("QS")
+                .supp(SuppMergeSpec.builder().suppDataset("SUPPQSCG").build()).build());
+        assertEquals(List.of("v"), column(t, "QX"));
+        assertTrue(t.issues().isEmpty());
+        // the control: without primaryDomain the name stands in, and RDOMAIN QS is not QSCG
+        MergedTable byName = MergedTables.build(request(qs, supp)
+                .supp(SuppMergeSpec.builder().suppDataset("SUPPQSCG").build()).build());
+        assertEquals(List.of(UNSUPPLIED), column(byName, "QX"));
+    }
+
+
+    /**
      * L2 (W1 review): an associated-persons dataset is qualified by {@code SQAP--} (SDTMIG-AP), and
      * {@code APID} is a subject key of the IG default.
      */

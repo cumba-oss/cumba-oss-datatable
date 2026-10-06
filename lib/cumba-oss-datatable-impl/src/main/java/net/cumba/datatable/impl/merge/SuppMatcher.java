@@ -126,10 +126,51 @@ final class SuppMatcher
      * The probe key of a record-level or study-wide row: the dense id of its key half and its
      * {@code IDVARVAL} token. ⚠ Keyed on BOTH, measured: keyed on the token alone, with the id
      * filtered afterwards, every {@code --SEQ} value's list held one row per subject and the probe
-     * walked it per base row — 1.2 M rows × 20 k candidates on the ×20 pilot, 27 s per build.
+     * walked it per base row — 1.2 M rows × 20 k candidates on the ×20 pilot, 27 s per build. A
+     * mutable class, not a record: the stored keys are built once per entry, and one instance is
+     * {@link #set re-aimed} per probe so the per-row lookup allocates nothing (T2 review L5).
      */
-    private record ProbeKey(int id, String token)
+    private static final class ProbeKey
     {
+
+        private int id;
+
+        private String token;
+
+        ProbeKey(int aId, String aToken)
+        {
+            id = aId;
+            token = aToken;
+        }
+
+
+        int id()
+        {
+            return id;
+        }
+
+
+        /** Re-aims this (probe-only) instance; never called on a stored key. */
+        ProbeKey set(int aId, String aToken)
+        {
+            id = aId;
+            token = aToken;
+            return this;
+        }
+
+
+        @Override
+        public boolean equals(@Nullable Object aOther)
+        {
+            return aOther instanceof ProbeKey o && o.id == id && o.token.equals(token);
+        }
+
+
+        @Override
+        public int hashCode()
+        {
+            return 31 * id + token.hashCode();
+        }
     }
 
 
@@ -218,6 +259,9 @@ final class SuppMatcher
         private final Map<Integer, @Nullable String[]> tokensByColumn = new HashMap<>();
 
         private final LongFunction<String> rowLabel;
+
+        /** The one probe key, re-aimed per lookup (L5). */
+        private final ProbeKey probe = new ProbeKey(0, "");
 
         Matching(IDataTable aBase, IDataTable aSupp, String aSuppName, SuppKeyShape aShape,
                 SuppQnamIndex aIndex, int aQvalIdx)
@@ -372,10 +416,11 @@ final class SuppMatcher
                     Math.max(0, supp.getRowCount() - 1));
             map.setExpectedSize(baseRows);
             List<Keyed> hits = new ArrayList<>(2);
+            boolean anyConflict = !conflicted.isEmpty();
             for (int r = 0; r < baseRows; r++)
             {
                 int fid = fullIdOfRow[r];
-                if (conflicted.contains(fid))
+                if (anyConflict && conflicted.contains(fid))
                 {
                     map.addValue(-1);
                     continue;
@@ -442,7 +487,7 @@ final class SuppMatcher
                 {
                     continue;
                 }
-                List<Keyed> candidates = g.byKey().get(new ProbeKey(aId, token));
+                List<Keyed> candidates = g.byKey().get(probe.set(aId, token));
                 if (candidates != null)
                 {
                     aHits.addAll(candidates);

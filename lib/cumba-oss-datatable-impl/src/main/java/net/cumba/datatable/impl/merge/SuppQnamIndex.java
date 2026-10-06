@@ -25,7 +25,10 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li>A row whose {@code IDVAR} is blank (or whose dataset carries no active {@code IDVAR} /
  * {@code IDVARVAL} pair) is <b>subject-level</b>: it qualifies every record of its subject (SDTMIG
- * 8.4); naming no subject it qualifies nothing (JKM R6) and is dropped.</li>
+ * 8.4); naming no subject it qualifies nothing (JKM R6) and is dropped. Whether a row names a
+ * subject is read off the row's OWN subject columns ({@link SuppKeyShape#suppSubjectBlank}), not
+ * the active key: a pool's row over a base without {@code POOLID} names a pool, so it is not
+ * study-wide (T2 review L2).</li>
  * <li>A row with an {@code IDVAR} and an {@code IDVARVAL} is <b>record-level</b>; one with an
  * {@code IDVAR} but no {@code IDVARVAL} qualifies nothing and is dropped.</li>
  * <li>A record-level row naming no subject at all is <b>study-wide</b> under SEND (OD-2, SENDIG
@@ -177,9 +180,10 @@ final class SuppQnamIndex
             }
             String idvar = stripOrEmpty(RelrecLinks.cell(aSupp, idvarIdx, r));
             Object[] key = aShape.suppKey(aSupp, r);
+            boolean subjectBlank = aShape.suppSubjectBlank(aSupp, r);
             if (idvar.isEmpty())
             {
-                if (aShape.subjectBlank(key))
+                if (subjectBlank)
                 {
                     continue; // a subject-level row naming neither subject nor pool: nothing
                 }
@@ -192,7 +196,7 @@ final class SuppQnamIndex
                 continue; // a record-level row without a record value qualifies nothing
             }
             Level level = Level.RECORD;
-            if (aShape.subjectBlank(key))
+            if (subjectBlank)
             {
                 if (aShape.hasSubjectComponents() && !aSend)
                 {

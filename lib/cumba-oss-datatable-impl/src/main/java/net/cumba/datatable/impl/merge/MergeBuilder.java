@@ -199,7 +199,8 @@ final class MergeBuilder
         List<KeyedUnit> keyedUnits = resolveKeyed();
         ChildMergeSpec childSpec = request.getChild();
         ChildMatcher child = childSpec == null ? null
-                : ChildMatcher.of(primary, childSpec, request.getResolver());
+                : ChildMatcher.of(primary, childSpec, request.getResolver(), request.getStandard()
+                        .isSend(primary.getMetaData().getColumnIndex("POOLID") >= 0));
         List<IDataTable> childParents = child == null ? List.of() : child.parents();
         List<String> childNames = child == null ? List.of() : child.parentNames();
         if (child != null)
@@ -275,7 +276,11 @@ final class MergeBuilder
                 int to = relrec.tupleStart(p + 1);
                 if (to == tupleFrom)
                 {
-                    dropped = relrec.spec().getJoinType() == JoinType.INNER;
+                    // inner drops a record NO RELREC row addresses; one addressed by a link whose
+                    // partner is not supplied, or dangling, is kept with every related domain
+                    // not supplied (P-1, P-14; T2 review L3)
+                    dropped = relrec.spec().getJoinType() == JoinType.INNER
+                            && !relrec.pairing().addressed().get(p);
                 }
                 else
                 {
@@ -371,7 +376,7 @@ final class MergeBuilder
         }
         if (relrec != null)
         {
-            addRelrecParts(tables, parts, relrec, relrecMaps, size);
+            addRelrecParts(tables, parts, relrec, relrecMaps, primaryMap, size);
         }
         Set<String> suppQnams = new LinkedHashSet<>();
         if (request.getSupp() != null)
@@ -394,11 +399,15 @@ final class MergeBuilder
 
     /**
      * Adds the RELREC parts — one per related domain in part order, each carrying its domain's
-     * issue — and the {@code RELREC._matched_} flag. An issue whose domain has no part is still
-     * published (M2: the browser's setting used to drop it with the part).
+     * issue — and the {@code RELREC._matched_} flag: "the record has a relationship" (P-14), i.e.
+     * some RELREC row addresses it, whether or not the partner is supplied (T2 review L3). An issue
+     * whose domain has no part is still published (M2: the browser's setting used to drop it with
+     * the part).
      */
+    @SuppressWarnings("checkstyle:ParameterNumber")
     private void addRelrecParts(List<IDataTable> aTables, List<MergedPart> aParts,
-            RelrecUnit aRelrec, IDataBufferNumeric[] aRelrecMaps, int aSize)
+            RelrecUnit aRelrec, IDataBufferNumeric[] aRelrecMaps, IDataBufferNumeric aPrimaryMap,
+            int aSize)
     {
         int nRelrec = aRelrec.ordinals().size();
         Map<String, RelrecPairer.DomainIssue> issueByDomain = new LinkedHashMap<>();
@@ -430,14 +439,11 @@ final class MergeBuilder
         {
             IDataBufferNumeric any = DataBufferFactory.get().createForRange(-1, 0);
             any.setExpectedSize(aSize);
+            java.util.BitSet addressed = aRelrec.pairing().addressed();
             for (int i = 0; i < aSize; i++)
             {
-                boolean matched = false;
-                for (int d = 0; d < nRelrec && !matched; d++)
-                {
-                    matched = aRelrecMaps[d].getValueAsLong(i) >= 0;
-                }
-                any.addValue(matched ? 0 : -1);
+                int p = Math.toIntExact(aPrimaryMap.getValueAsLong(i));
+                any.addValue(addressed.get(p) ? 0 : -1);
             }
             String name = claim(MergeKind.RELREC, "RELREC", naming.matchedFlagName("RELREC"));
             aTables.add(
@@ -492,17 +498,27 @@ final class MergeBuilder
     }
 
 
+    /**
+     * The one issue of a child parent: every issue the matcher found for it (one per pointer column
+     * the parent lacks), joined with {@code "; "} and the rows concatenated, like
+     * {@link #addRelrecParts} (T2 review L1: only the first was published).
+     */
     private @Nullable MergeIssue childIssueOf(ChildMatcher aChild, String aParent)
     {
+        MergeIssue out = null;
         for (ChildMatcher.Issue i : aChild.issues())
         {
             if (i.parent().equals(aParent))
             {
-                return new MergeIssue(MergeKind.CHILD, aParent, aParent, i.message(),
-                        i.primaryRows());
+                out = out == null
+                        ? new MergeIssue(MergeKind.CHILD, aParent, aParent, i.message(),
+                                i.primaryRows())
+                        : new MergeIssue(MergeKind.CHILD, aParent, aParent,
+                                out.message() + "; " + i.message(),
+                                concat(out.sourceRows(), i.primaryRows()));
             }
         }
-        return null;
+        return out;
     }
 
     // ---- keyed
@@ -543,14 +559,20 @@ final class MergeBuilder
             return null;
         }
         RelrecMergeSpec selection = spec.getSelection();
-        RelrecLinks.Links links = RelrecLinks.collect(relrecTable, domain,
-                selectedRdomains(selection), request.getStandard());
+        // The primary answers to its domain and to its dataset name (a split FA dataset's
+        // dataset-level relationship names the dataset, SDTMIG 3.4 sec. 4.1.7 rule 8; T2 review
+        // M1). The selection is applied to the LINKS, before pairing, so a record whose only
+        // relationship is unselected neither pairs nor counts as addressed (T2 review L3).
+        RelrecLinks.Links links = filterToSelection(
+                RelrecLinks.collect(relrecTable, domain, primary.getMetaData().getName(),
+                        selectedRdomains(selection), request.getStandard()),
+                selection);
         RelrecPairer.Pairing pairing = RelrecPairer.resolve(links, primary, request.getResolver());
         for (String rdomain : pairing.unresolvedDomains())
         {
             unresolved.add(new UnresolvedDataset(MergeKind.RELREC, rdomain));
         }
-        List<RelrecPairer.Pair> pairs = filterToSelection(pairing.pairs(), selection);
+        List<RelrecPairer.Pair> pairs = pairing.pairs();
         checkRelrecCardinality(spec.getCardinality(), links, pairing, pairs);
         List<Integer> ordinals;
         if (spec.isIncludeUnmatchedDomains())
@@ -563,9 +585,9 @@ final class MergeBuilder
         }
         else
         {
-            ordinals = RelrecPairer.usedOrdinalsInPairOrder(
-                    new RelrecPairer.Pairing(pairing.rdomains(), pairing.relatedTables(), pairs,
-                            pairing.unresolvedDomains(), pairing.issues(), pairing.mixedSkipped()));
+            ordinals = RelrecPairer.usedOrdinalsInPairOrder(new RelrecPairer.Pairing(
+                    pairing.rdomains(), pairing.relatedTables(), pairs, pairing.unresolvedDomains(),
+                    pairing.issues(), pairing.mixedSkipped(), pairing.addressed()));
             // M2 (W1 review): a domain with an issue keeps its part even when nothing pairs, so
             // its MERGE_ERROR reaches a consumer that reads the column metadata (the browser)
             Set<String> withIssue = new HashSet<>();
@@ -833,12 +855,18 @@ final class MergeBuilder
     }
 
 
-    private static List<RelrecPairer.Pair> filterToSelection(List<RelrecPairer.Pair> aPairs,
+    /**
+     * The links the selection keeps: every link of a domain selected whole, and the links of the
+     * named {@code RELID} for a domain selected by relationship. A domain is kept (with no links)
+     * when the selection empties it, so it still resolves and publishes its part under
+     * {@code includeUnmatchedDomains}.
+     */
+    private static RelrecLinks.Links filterToSelection(RelrecLinks.Links aLinks,
             @Nullable RelrecMergeSpec aSpec)
     {
         if (aSpec == null || aSpec.getRelationships().isEmpty())
         {
-            return aPairs;
+            return aLinks;
         }
         Set<String> exact = new HashSet<>();
         Set<String> wholeDomains = new HashSet<>();
@@ -853,8 +881,17 @@ final class MergeBuilder
                 exact.add(upper(it.getRdomain()) + '\0' + it.getRelid());
             }
         }
-        return aPairs.stream().filter(p -> wholeDomains.contains(upper(p.rdomain()))
-                || exact.contains(upper(p.rdomain()) + '\0' + p.relid())).toList();
+        List<RelrecLinks.DomainLinks> domains = new ArrayList<>();
+        for (RelrecLinks.DomainLinks dl : aLinks.domains())
+        {
+            domains.add(new RelrecLinks.DomainLinks(dl.rdomain(),
+                    dl.links().stream()
+                            .filter(l -> wholeDomains.contains(upper(l.rdomain()))
+                                    || exact.contains(upper(l.rdomain()) + '\0' + l.relid()))
+                            .toList()));
+        }
+        return new RelrecLinks.Links(aLinks.send(), domains, aLinks.mixedDomains(),
+                aLinks.relationshipCount());
     }
 
 
@@ -940,7 +977,9 @@ final class MergeBuilder
             SuppPending aPending, int aRows)
     {
         IDataTable base = aPending.base();
-        String baseDomain = domainOf(base);
+        // the primary's domain is the request's (T2 review L2: a split dataset without a DOMAIN
+        // column compared RDOMAIN against its name); a partner's is read off the partner
+        String baseDomain = aPending.primaryBase() ? domain : domainOf(base);
         List<String> authored = aPending.spec().getSuppDatasets();
         List<String> names = authored.isEmpty()
                 ? SuppMergeSpec.defaultSuppNames(KeyedMatcher.nameOf(base), baseDomain)
