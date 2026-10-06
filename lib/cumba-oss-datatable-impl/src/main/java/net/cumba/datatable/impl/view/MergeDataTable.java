@@ -14,6 +14,7 @@ import net.cumba.datatable.ExMsgs;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.impl.AbstractDataTable;
+import net.cumba.datatable.merge.MergeMeta;
 import net.cumba.datatable.values.IDataValue;
 import org.jspecify.annotations.Nullable;
 
@@ -62,6 +63,38 @@ public class MergeDataTable extends AbstractDataTable
             }
         }
         return true;
+    }
+
+
+    /**
+     * The source's custom metadata without the keys that describe the merge which PRODUCED the
+     * source ({@link MergeMeta#SUPP_SKIPPED_QNAMS}): a merge over a merged table states its own
+     * result, never its input's. Inherited, a SUPPDM merge over a SUPPAE-merged table reported the
+     * SUPPAE merge's skipped qualifiers as its own, and — the first of duplicate keys winning — a
+     * second SUPP merge could not even replace them (pack-1 review 1a MED-1). A supplemental merge
+     * stamps the key anew for what it skipped itself ({@code MergedTableImpl}).
+     *
+     * @param aMeta
+     *            the metadata the merged table is initialised from.
+     * @return the custom metadata table without those keys, or {@code null} if none remains.
+     */
+    private static Object @Nullable [] metaTableWithoutMergeResult(DataTableMeta aMeta)
+    {
+        Object[] source = aMeta.getMetaTable();
+        if (source == null)
+        {
+            return null;
+        }
+        List<Object> kept = new ArrayList<>(source.length);
+        for (int i = 0; i + 1 < source.length; i += 2)
+        {
+            if (!MergeMeta.SUPP_SKIPPED_QNAMS.equals(source[i]))
+            {
+                kept.add(source[i]);
+                kept.add(source[i + 1]);
+            }
+        }
+        return kept.isEmpty() ? null : kept.toArray();
     }
 
 
@@ -147,12 +180,14 @@ public class MergeDataTable extends AbstractDataTable
         DataTableMetaBuilder mb;
         if (aBaseMeta != null)
         {
-            mb = DataTableMeta.builderFrom(aBaseMeta);
+            mb = DataTableMeta.builderFrom(aBaseMeta)
+                    .metaTable(metaTableWithoutMergeResult(aBaseMeta));
         }
         else
         {
             mb = DataTableMeta.builderFrom(aTables[0].getMetaData())
-                    .name(aTables[0].getMetaData().getName() + "+");
+                    .name(aTables[0].getMetaData().getName() + "+")
+                    .metaTable(metaTableWithoutMergeResult(aTables[0].getMetaData()));
         }
 
         mb//

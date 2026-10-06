@@ -304,6 +304,27 @@ class MergedTableSuppTest
 
 
     @Test
+    void m2_skippedQnams_areTheMergesOwn_neverInheritedFromAMergedBase()
+    {
+        // pack-1 review 1a MED-1: a merge over a table an earlier merge stamped reports its own
+        // skipped qualifiers only — none, or a set the earlier one's would otherwise shadow (the
+        // first of duplicate metadata keys wins)
+        MergedTable first = merge(ae(), suppae("S1,AE,01-001,AESEQ,1,AESPID,Dup,Y",
+                "S1,AE,01-001,AESEQ,1,AETRTEM,Emergent,Y"));
+        assertEquals("AESPID", first.getMetaData().getMetaData(MergeMeta.SUPP_SKIPPED_QNAMS),
+                "fixture: the first merge skipped the base's AESPID");
+
+        MergedTable clean = merge(first, suppae("S1,AE,01-001,AESEQ,1,AENEW,New,1"));
+        assertFalse(clean.getMetaData().getMetaDataKeys().contains(MergeMeta.SUPP_SKIPPED_QNAMS),
+                "this merge skipped nothing: no key, whatever its base carried");
+
+        MergedTable again = merge(first, suppae("S1,AE,01-001,AESEQ,1,AETRTEM,Emergent,N"));
+        assertEquals("AETRTEM", again.getMetaData().getMetaData(MergeMeta.SUPP_SKIPPED_QNAMS),
+                "this merge's own skip, not the base's AESPID");
+    }
+
+
+    @Test
     void columnsAppearInFirstSeenQnamOrder()
     {
         MergedTable t = merge(ae(), suppae("S1,AE,01-001,AESEQ,1,B,b,1",

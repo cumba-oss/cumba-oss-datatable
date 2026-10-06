@@ -1,6 +1,8 @@
 package net.cumba.datatable.impl.view;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import net.cumba.datatable.DataTableColumnMeta;
@@ -8,6 +10,7 @@ import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
+import net.cumba.datatable.merge.MergeMeta;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValueNumber;
 import org.junit.jupiter.api.Test;
@@ -532,5 +535,64 @@ class MergeDataTableTest
 
         assertEquals(0, merged.getRowCount());
         assertEquals(2, merged.getColumnCount());
+    }
+
+
+    /**
+     * Pack-1 review 1a MED-1: {@link MergeMeta#SUPP_SKIPPED_QNAMS} describes the merge that
+     * produced a table; a further merge over that table (or over its metadata as the base) states
+     * its own result and never inherits the key, while any other table metadata is kept.
+     */
+    @Test
+    void mergeOverAStampedTable_dropsTheSkippedQnams_keepsOtherMetadata()
+    {
+        IDataTable left = createTable("AE", new String[]
+        {
+                "AESEQ"
+        }, new DataValueType[]
+        {
+                DataValueType.LONG
+        }, new Object[][]
+        {
+                {
+                        1L
+                }
+        });
+        IDataTable right = createTable("X", new String[]
+        {
+                "XVAL"
+        }, new DataValueType[]
+        {
+                DataValueType.STRING
+        }, new Object[][]
+        {
+                {
+                        "x"
+                }
+        });
+        // a table an earlier merge stamped (as MergedTableImpl does)
+        CachedDataTableColumn seq = new CachedDataTableColumn(0, DataValueType.LONG);
+        seq.addElement(1L);
+        seq.complete();
+        DataTableMeta stampedMeta = DataTableMeta.builderFrom(left.getMetaData())
+                .addMetaData(MergeMeta.SUPP_SKIPPED_QNAMS, "AETRTEM").addMetaData("OTHER", "kept")
+                .build();
+        IDataTable stamped = new ColumnCachedDataTable(stampedMeta, new CachedDataTableColumn[]
+        {
+                seq
+        });
+        assertEquals("AETRTEM", stamped.getMetaData().getMetaData(MergeMeta.SUPP_SKIPPED_QNAMS),
+                "fixture: the table is stamped");
+
+        MergeDataTable overBaseMeta = new MergeDataTable(stampedMeta, left, right);
+        assertFalse(
+                overBaseMeta.getMetaData().getMetaDataKeys().contains(MergeMeta.SUPP_SKIPPED_QNAMS),
+                "not inherited from the base metadata");
+        assertEquals("kept", overBaseMeta.getMetaData().getMetaData("OTHER"));
+
+        MergeDataTable overStampedTable = new MergeDataTable(stamped, right);
+        assertNull(overStampedTable.getMetaData().getMetaData(MergeMeta.SUPP_SKIPPED_QNAMS),
+                "not inherited from the first table");
+        assertEquals("kept", overStampedTable.getMetaData().getMetaData("OTHER"));
     }
 }
