@@ -31,8 +31,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * {@link ProbeFailures}: remote is decided by the URI scheme (never by the exception type), a local
- * failure returns, a remote one throws the abort whose message is the UI's headline.
+ * {@link ProbeFailures}: remote is decided by the URI scheme (never by the exception type; a
+ * {@code jar:} URI by its inner URL's), a local failure returns, a remote one throws the abort
+ * whose message is the UI's headline.
  */
 class ProbeFailuresTest
 {
@@ -41,7 +42,9 @@ class ProbeFailuresTest
     @ValueSource(strings =
     {
             "http://example.org/x.csv", "https://example.org/x.csv", "HTTPS://example.org/x.csv",
-            "HtTp://example.org:8080/x.csv", "https://[::1]:8443/x.csv"
+            "HtTp://example.org:8080/x.csv", "https://[::1]:8443/x.csv",
+            "jar:https://example.org/a.zip!/x.csv", "jar:HTTP://example.org/a.zip!/x.csv",
+            "jar:https://example.org/a.zip"
     })
     void httpAndHttpsAreRemote(String aUri)
     {
@@ -52,8 +55,9 @@ class ProbeFailuresTest
     @ParameterizedTest
     @ValueSource(strings =
     {
-            "file:///tmp/x.csv", "file://server/share/x.csv",
-            "jar:https://example.org/a.zip!/x.csv", "databricks://workspace/catalog/schema",
+            "file:///tmp/x.csv", "file://server/share/x.csv", "jar:file:///tmp/a.zip!/x.csv",
+            "jar:ftp://example.org/a.zip!/x.csv", "jar:a.zip!/x.csv", "jar:!/x.csv",
+            "jar:httpx://example.org/a.zip!/x.csv", "databricks://workspace/catalog/schema",
             "x.csv", "ftp://example.org/x.csv", "httpx://example.org/x.csv"
     })
     void everythingElseIsLocal(String aUri)
@@ -130,6 +134,25 @@ class ProbeFailuresTest
     }
 
 
+    /**
+     * A {@code jar:} URI is read over the network when its inner URL is: the abort names the inner
+     * URL's host:port, and a {@code jar:file:} source keeps its default (review B #5).
+     */
+    @Test
+    void aJarOverHttpsAbortsWithTheInnerHost()
+    {
+        SSLHandshakeException ssl = new SSLHandshakeException("(certificate_unknown) refused");
+
+        UncheckedIOException ex = assertThrows(UncheckedIOException.class, () -> ProbeFailures
+                .rethrowIfRemote(URI.create("jar:https://example.org:8443/a.zip!/x.csv"), ssl));
+
+        assertEquals("Opening aborted: example.org:8443 could not be read ((certificate_unknown) "
+                + "refused).", ex.getMessage());
+        assertDoesNotThrow(() -> ProbeFailures
+                .rethrowIfRemote(URI.create("jar:file:///tmp/a.zip!/x.csv"), ssl));
+    }
+
+
     @Test
     void aRemote404AbortsWithNotFound() throws IOException
     {
@@ -194,6 +217,10 @@ class ProbeFailuresTest
         assertEquals("example.org:8080",
                 ProbeFailures.hostAndPort(URI.create("https://example.org:8080/x.csv")));
         assertEquals("[::1]:443", ProbeFailures.hostAndPort(URI.create("https://[::1]/x.csv")));
+        assertEquals("example.org:443",
+                ProbeFailures.hostAndPort(URI.create("jar:HTTPS://example.org/a.zip!/x.csv")));
+        assertEquals("example.org:8080",
+                ProbeFailures.hostAndPort(URI.create("jar:http://example.org:8080/a.zip!/x.csv")));
     }
 
 

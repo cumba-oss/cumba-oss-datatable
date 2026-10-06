@@ -7,6 +7,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.security.cert.CertificateException;
 import java.util.Objects;
@@ -30,9 +31,11 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * <b>Remote is decided by the URI scheme, never by the exception type</b>: a
  * {@link FileNotFoundException} is also what a missing local file throws. Only {@code http} and
- * {@code https} (ASCII case-insensitive) are remote; {@code file:} — a UNC path
- * {@code file://server/share/…} included —, {@code jar:} (even {@code jar:https:…}, which is scheme
- * {@code jar}), {@code databricks:} and a URI without a scheme are local here.
+ * {@code https} (ASCII case-insensitive) are remote, and a {@code jar:} URI whose inner URL (the
+ * part before {@code !/}) is {@code http} / {@code https} — {@code jar:https://host/a.zip!/x.csv}
+ * reads the archive over the network, so its headline names the inner URL's host:port.
+ * {@code file:} — a UNC path {@code file://server/share/…} included —, {@code jar:file:},
+ * {@code databricks:} and a URI without a scheme are local here.
  * </p>
  *
  * <p>
@@ -63,21 +66,62 @@ public final class ProbeFailures
 
     /**
      * Whether the given URI is read over the network: scheme {@code http} or {@code https}, ASCII
-     * case-insensitive.
+     * case-insensitive, or a {@code jar:} URI whose inner URL is.
      *
      * @param aUri
      *            the URI; may be {@code null} (local).
-     * @return {@code true} for an {@code http} / {@code https} URI.
+     * @return {@code true} for an {@code http} / {@code https} URI or a {@code jar:} over one.
      */
     public static boolean isRemote(@Nullable URI aUri)
     {
+        return networkUri(aUri) != null;
+    }
+
+
+    /**
+     * The URI actually read over the network: the URI itself for {@code http} / {@code https}, the
+     * inner URL (before {@code !/}) for a {@code jar:} URI over one, else {@code null}.
+     *
+     * @param aUri
+     *            the URI; may be {@code null}.
+     * @return the network URI, or {@code null} for a local source.
+     */
+    private static @Nullable URI networkUri(@Nullable URI aUri)
+    {
         if (aUri == null)
         {
-            return false;
+            return null;
         }
         String scheme = aUri.getScheme();
-        return scheme != null && (asciiEqualsIgnoreCase(scheme, "http")
-                || asciiEqualsIgnoreCase(scheme, "https"));
+        if (scheme == null)
+        {
+            return null;
+        }
+        if (asciiEqualsIgnoreCase(scheme, "http") || asciiEqualsIgnoreCase(scheme, "https"))
+        {
+            return aUri;
+        }
+        if (!asciiEqualsIgnoreCase(scheme, "jar"))
+        {
+            return null;
+        }
+        String inner = aUri.getRawSchemeSpecificPart();
+        int separator = inner.indexOf("!/");
+        if (separator >= 0)
+        {
+            inner = inner.substring(0, separator);
+        }
+        try
+        {
+            URI innerUri = new URI(inner);
+            String innerScheme = innerUri.getScheme();
+            return innerScheme != null && (asciiEqualsIgnoreCase(innerScheme, "http")
+                    || asciiEqualsIgnoreCase(innerScheme, "https")) ? innerUri : null;
+        }
+        catch (URISyntaxException e)
+        {
+            return null;
+        }
     }
 
 
@@ -96,7 +140,8 @@ public final class ProbeFailures
      */
     public static void rethrowIfRemote(URI aUri, Throwable aFailure)
     {
-        if (!isRemote(aUri))
+        URI network = networkUri(aUri);
+        if (network == null)
         {
             return;
         }
@@ -115,30 +160,32 @@ public final class ProbeFailures
             cause = new IOException(reason, aFailure);
         }
         throw new UncheckedIOException(
-                "Opening aborted: " + hostAndPort(aUri) + " could not be read (" + reason + ").",
+                "Opening aborted: " + hostAndPort(network) + " could not be read (" + reason + ").",
                 cause);
     }
 
 
     /**
-     * The {@code host:port} of a remote URI, the scheme's default port filled in.
+     * The {@code host:port} of a remote URI (of a {@code jar:} URI: of its inner URL), the scheme's
+     * default port filled in.
      *
-     * @param aUri
+     * @param aRemote
      *            a remote URI.
      * @return {@code host:port}; the authority (or the whole URI) when there is no host.
      */
-    static String hostAndPort(URI aUri)
+    static String hostAndPort(URI aRemote)
     {
-        String host = aUri.getHost();
+        URI uri = Objects.requireNonNullElse(networkUri(aRemote), aRemote);
+        String host = uri.getHost();
         if (host == null)
         {
-            String authority = aUri.getAuthority();
-            return authority != null ? authority : aUri.toString();
+            String authority = uri.getAuthority();
+            return authority != null ? authority : uri.toString();
         }
-        int port = aUri.getPort();
+        int port = uri.getPort();
         if (port < 0)
         {
-            String scheme = aUri.getScheme();
+            String scheme = uri.getScheme();
             port = scheme != null && asciiEqualsIgnoreCase(scheme, "https") ? HTTPS_DEFAULT_PORT
                     : HTTP_DEFAULT_PORT;
         }
