@@ -281,6 +281,17 @@ class MergedTableRelrecTest
         MergedTable t2 = merge(RelrecPartSpec.builder().selection(r2).build(), ae(), rr, cm());
         assertEquals(List.of("OMEPRAZOLE"), column(t2, "CM.CMTRT"));
         assertEquals(1, t2.getRealRowIndex(0));
+        // The selection is applied to the LINKS, before pairing (T2 review L3, pinned by
+        // PLAN-merge-followups item 4): AE row 0's only relationship is R1, unselected, so the
+        // record neither pairs (inner drops it) nor counts as addressed (left: both flags false)
+        assertEquals(1, t2.getRowCount(), "the unselected record is not addressed");
+        MergedTable left = MergedTables.build(request(ae(), rr, cm())
+                .relrec(RelrecPartSpec.builder().selection(r2).joinType(JoinType.LEFT).build())
+                .matchedFlags(true).build());
+        assertEquals(2, left.getRowCount());
+        assertEquals(List.of("false", "true"), column(left, "RELREC._matched_"),
+                "an unselected relationship does not make the record addressed");
+        assertEquals(List.of("false", "true"), column(left, "CM._matched_"));
     }
 
 

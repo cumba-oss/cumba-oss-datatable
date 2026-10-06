@@ -5,10 +5,13 @@ package net.cumba.datatable.impl.merge;
 
 import java.util.List;
 import java.util.Set;
+import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.ExMsgs;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.view.MergeDataTable;
+import net.cumba.datatable.impl.view.ViewDataTable;
 import net.cumba.datatable.merge.MergeIssue;
+import net.cumba.datatable.merge.MergeMeta;
 import net.cumba.datatable.merge.MergedPart;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.UnresolvedDataset;
@@ -35,9 +38,10 @@ final class MergedTableImpl extends MergeDataTable implements MergedTable
 
     private final boolean rowMapped;
 
+    @SuppressWarnings("checkstyle:ParameterNumber")
     MergedTableImpl(IDataTable aPrimary, IDataTable[] aTables, List<MergedPart> aParts,
             List<MergeIssue> aIssues, List<UnresolvedDataset> aUnresolved, Set<String> aSuppQnams,
-            boolean aRowMapped)
+            Set<String> aSuppSkippedQnams, boolean aRowMapped)
     {
         super(null, aTables);
         primary = aPrimary;
@@ -46,6 +50,31 @@ final class MergedTableImpl extends MergeDataTable implements MergedTable
         unresolved = List.copyOf(aUnresolved);
         suppQnams = new java.util.LinkedHashSet<>(aSuppQnams);
         rowMapped = aRowMapped;
+        if (!aSuppSkippedQnams.isEmpty())
+        {
+            // P-10's skipped qualifiers travel on the table's own metadata (M2): a consumer
+            // holding only the IDataTable (the data browser behind a manager) still reads them
+            setMetaData(DataTableMeta.builderFrom(getMetaData())
+                    .addMetaData(MergeMeta.SUPP_SKIPPED_QNAMS, String.join(", ", aSuppSkippedQnams))
+                    .build());
+        }
+    }
+
+
+    @Override
+    public long primaryRowOf(long aRow) throws IndexOutOfBoundsException
+    {
+        ensureValidRow(aRow);
+        if (!rowMapped)
+        {
+            return aRow;
+        }
+        if (part(0) instanceof ViewDataTable mapped)
+        {
+            return mapped.getBaseRowIndex(aRow);
+        }
+        throw new IllegalStateException("a row-mapped merged table whose primary part is not a"
+                + " row map over its primary: " + part(0).getClass().getName());
     }
 
 

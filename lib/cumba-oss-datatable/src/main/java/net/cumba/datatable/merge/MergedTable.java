@@ -103,4 +103,21 @@ public interface MergedTable extends IDataTable
      * @return the QNAM set.
      */
     Set<String> suppQnams();
+
+
+    /**
+     * The primary's <b>position</b> a merged row was built from — part 0's row map
+     * ({@code PLAN-merge-followups} L3): on a {@linkplain #isRowMapped() row-mapped} table the base
+     * row the primary part maps merged row {@code aRow} to; otherwise {@code aRow} itself. A
+     * position, not {@link #getRealRowIndex}: that also maps through a non-positional primary's own
+     * real rows (a sorted or filtered view), which a consumer chaining several merged tables must
+     * not do twice.
+     *
+     * @param aRow
+     *            a merged row index.
+     * @return the primary's position the row reads.
+     * @throws IndexOutOfBoundsException
+     *             for an invalid row.
+     */
+    long primaryRowOf(long aRow) throws IndexOutOfBoundsException;
 }

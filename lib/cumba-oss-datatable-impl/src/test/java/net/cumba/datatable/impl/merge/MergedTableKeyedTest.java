@@ -82,6 +82,10 @@ class MergedTableKeyedTest
         assertFalse(t.isRowMapped());
         assertEquals(List.of(0L, 1L, 2L),
                 List.of(t.getRealRowIndex(0), t.getRealRowIndex(1), t.getRealRowIndex(2)));
+        assertEquals(List.of(0L, 1L, 2L),
+                List.of(t.primaryRowOf(0), t.primaryRowOf(1), t.primaryRowOf(2)),
+                "not row-mapped: the primary's position is the row itself (L3)");
+        assertThrows(IndexOutOfBoundsException.class, () -> t.primaryRowOf(3));
         assertEquals(List.of("STUDYID", "DOMAIN", "USUBJID", "AESEQ", "AETERM", "DM.STUDYID",
                 "DM.USUBJID", "DM.AGE", "DM.SEX"), columnNames(t));
         assertTrue(t.issues().isEmpty());
@@ -140,6 +144,10 @@ class MergedTableKeyedTest
         assertEquals(List.of(0L, 0L, 1L, 2L, 2L),
                 List.of(t.getRealRowIndex(0), t.getRealRowIndex(1), t.getRealRowIndex(2),
                         t.getRealRowIndex(3), t.getRealRowIndex(4)));
+        assertEquals(List.of(0L, 0L, 1L, 2L, 2L),
+                List.of(t.primaryRowOf(0), t.primaryRowOf(1), t.primaryRowOf(2), t.primaryRowOf(3),
+                        t.primaryRowOf(4)),
+                "row-mapped: part 0's row map, the primary's positions (L3)");
         // with Cardinality n:1 the same data errors instead
         assertThrows(CardinalityViolationException.class,
                 () -> MergedTables.build(request(sm, tm).keyed(
@@ -516,6 +524,8 @@ class MergedTableKeyedTest
         assertEquals(List.of("HEADACHE", "01-001", "01-001", "99"),
                 row(t, 1, "AETERM", "USUBJID", "DM.USUBJID", "DM.AGE"));
         assertTrue(t.isRowMapped(), "row-mapped: part 0 is not the identity");
+        assertEquals(List.of(0L, 0L), List.of(t.primaryRowOf(0), t.primaryRowOf(1)),
+                "equal count, still the map [0, 0], never the identity");
     }
 
 

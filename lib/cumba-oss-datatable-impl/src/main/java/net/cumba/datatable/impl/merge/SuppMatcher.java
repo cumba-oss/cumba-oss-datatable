@@ -110,8 +110,13 @@ final class SuppMatcher
      *            every {@code QNAM} it carries, in first-seen order.
      * @param columns
      *            the qualifier columns, in first-seen order of their {@code QNAM}.
+     * @param skipped
+     *            the {@code QNAM}s that became no column because the base carries a column of that
+     *            name (P-10), in first-seen order — published as
+     *            {@link net.cumba.datatable.merge.MergeMeta#SUPP_SKIPPED_QNAMS}.
      */
-    record Result(IDataTable supp, int qvalIdx, Set<String> qnams, List<QnamColumn> columns)
+    record Result(IDataTable supp, int qvalIdx, Set<String> qnams, List<QnamColumn> columns,
+            Set<String> skipped)
     {
     }
 
@@ -211,7 +216,7 @@ final class SuppMatcher
         int qvalIdx = sm.getColumnIndex("QVAL");
         if (sm.getColumnIndex("QNAM") < 0)
         {
-            return new Result(aSupp, qvalIdx, Set.of(), List.of());
+            return new Result(aSupp, qvalIdx, Set.of(), List.of(), Set.of());
         }
         SuppKeyShape shape = SuppKeyShape.resolve(aBase, aBaseDomain, aSupp, aSuppName, aKeys);
         SuppQnamIndex index = SuppQnamIndex.of(aSupp, shape, aSend);
@@ -221,8 +226,9 @@ final class SuppMatcher
         }
         Set<String> qnams = new LinkedHashSet<>(index.qnams());
         List<QnamColumn> columns = new ArrayList<>();
-        new Matching(aBase, aSupp, aSuppName, shape, index, qvalIdx).run(columns);
-        return new Result(aSupp, qvalIdx, qnams, columns);
+        Set<String> skipped = new LinkedHashSet<>();
+        new Matching(aBase, aSupp, aSuppName, shape, index, qvalIdx).run(columns, skipped);
+        return new Result(aSupp, qvalIdx, qnams, columns, skipped);
     }
 
     /** One matching run; every structure it allocates dies with it. */
@@ -297,7 +303,7 @@ final class SuppMatcher
         }
 
 
-        void run(List<QnamColumn> aOut)
+        void run(List<QnamColumn> aOut, Set<String> aSkipped)
         {
             Map<String, Integer> columnByLowerName = new HashMap<>();
             DataTableMeta bm = base.getMetaData();
@@ -305,6 +311,7 @@ final class SuppMatcher
             {
                 if (bm.getColumnIndex(qnam) >= 0)
                 {
+                    aSkipped.add(qnam);
                     continue; // P-10: the base's own column always wins
                 }
                 String lower = qnam.toLowerCase(Locale.ROOT);

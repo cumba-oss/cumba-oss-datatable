@@ -13,9 +13,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.BitSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.manager.RelrecMergeSpec;
+import net.cumba.datatable.metadata.ICodeList;
+import net.cumba.datatable.metadata.IDataTableMetadata;
+import net.cumba.datatable.metadata.IMetadataLibrary;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /** The small API types of the merge package: enums, the key, the naming rules, the specs. */
@@ -265,6 +271,92 @@ class MergeApiTypesTest
         assertSame(MergeStandard.UNKNOWN, MergeStandard.ofStandardName(null));
     }
 
+
+    /**
+     * FU-2 / M1 ({@code PLAN-merge-followups}): the one lookup the browser's merges and the RELREC
+     * dialog share reads the library's {@code StandardName} — a Define-XML's IG — and keeps the
+     * inference when no library is attached or it names none.
+     */
+    @Test
+    void mergeStandard_ofLibrary_readsTheLibrarysStandardName()
+    {
+        assertSame(MergeStandard.SEND, MergeStandard.ofLibrary(new NamedStandard("SENDIG")));
+        assertSame(MergeStandard.SDTM, MergeStandard.ofLibrary(new NamedStandard("SDTMIG")));
+        assertSame(MergeStandard.UNKNOWN, MergeStandard.ofLibrary(new NamedStandard("ADaMIG")),
+                "an ADaM library keeps the POOLID inference");
+        assertSame(MergeStandard.UNKNOWN, MergeStandard.ofLibrary(new NamedStandard(null)),
+                "a library naming no standard keeps the inference");
+        assertSame(MergeStandard.UNKNOWN, MergeStandard.ofLibrary(null),
+                "no library attached keeps the inference");
+    }
+
+    /** A metadata library that answers only its {@code StandardName}. */
+    private record NamedStandard(@Nullable String standardName) implements IMetadataLibrary
+    {
+
+        @Override
+        public Set<String> getMetaKeys()
+        {
+            return standardName == null ? Set.of() : Set.of(META_KEY_STANDARD_NAME);
+        }
+
+
+        @Override
+        public Optional<Object> getMetaValue(String aKey)
+        {
+            return META_KEY_STANDARD_NAME.equals(aKey) ? Optional.ofNullable(standardName)
+                    : Optional.empty();
+        }
+
+
+        @Override
+        public String getName()
+        {
+            return "named-standard";
+        }
+
+
+        @Override
+        public String getVersion()
+        {
+            return "0";
+        }
+
+
+        @Override
+        public boolean isColumnNameCaseSensitive()
+        {
+            return false;
+        }
+
+
+        @Override
+        public List<IDataTableMetadata> getDataTables()
+        {
+            return List.of();
+        }
+
+
+        @Override
+        public Optional<IDataTableMetadata> getDataTable(String aDomainName)
+        {
+            return Optional.empty();
+        }
+
+
+        @Override
+        public List<ICodeList> getCodelists()
+        {
+            return List.of();
+        }
+
+
+        @Override
+        public Optional<ICodeList> getCodelist(String aName)
+        {
+            return Optional.empty();
+        }
+    }
 
     @Test
     void unresolvedDataset_record()

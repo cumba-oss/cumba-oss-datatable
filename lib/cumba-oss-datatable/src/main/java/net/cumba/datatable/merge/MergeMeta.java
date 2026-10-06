@@ -45,6 +45,18 @@ public final class MergeMeta
      */
     public static final String MATCHED_FLAG = "_matched_";
 
+    /**
+     * <b>Table-level</b> (on the merged table's {@link net.cumba.datatable.DataTableMeta}, not a
+     * column's): the {@code QNAM}s of the primary's supplemental dataset that became no column
+     * because the primary already carries a column of that name — the base's own column wins (P-10,
+     * {@code PLAN-merge-followups} M2). A {@link String}, the names joined by {@code ", "} in
+     * first-seen order; absent when nothing was skipped. The case-collision qualifier (two
+     * {@code QNAM}s differing in case alone, a {@link #MERGE_ERROR} on the column) is not in it. A
+     * consumer re-merging a SUPP into a table merged before reads it to tell the user what the
+     * partial re-merge left out instead of reporting a silent success.
+     */
+    public static final String SUPP_SKIPPED_QNAMS = "SUPP_SKIPPED_QNAMS";
+
     private MergeMeta()
     {
     }

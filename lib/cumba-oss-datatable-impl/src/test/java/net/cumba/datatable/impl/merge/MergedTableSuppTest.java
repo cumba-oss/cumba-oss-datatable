@@ -277,6 +277,29 @@ class MergedTableSuppTest
         assertEquals(List.of(UNSUPPLIED, UNSUPPLIED), column(t, "Q"));
         assertTrue(onlyIssue(t).message().contains("Q and q differ only in case"));
         assertEquals(Set.of("AESPID", "Q", "q"), t.suppQnams(), "every QNAM is still known");
+        // M2 (PLAN-merge-followups): the skipped set is the P-10 set exactly — the base's own
+        // column — published on the TABLE's metadata; the case-collision qualifier q is a
+        // MERGE_ERROR on Q, not a skipped name
+        assertEquals("AESPID", t.getMetaData().getMetaData(MergeMeta.SUPP_SKIPPED_QNAMS));
+    }
+
+
+    @Test
+    void m2_skippedQnams_areAbsentWhenNothingWasSkipped_andListedInFirstSeenOrder()
+    {
+        MergedTable clean = merge(ae(), suppae("S1,AE,01-001,AESEQ,1,AETRTEM,Emergent,Y"));
+        assertNull(clean.getMetaData().getMetaData(MergeMeta.SUPP_SKIPPED_QNAMS),
+                "no key when every QNAM became a column");
+        assertFalse(clean.getMetaData().getMetaDataKeys().contains(MergeMeta.SUPP_SKIPPED_QNAMS));
+        // a re-merge of a SUPP into a table merged before: every QNAM is already a column
+        IDataTable merged = table("AE", "STUDYID,DOMAIN,USUBJID,AESEQ:N,AESPID,AETRTEM,AEREL",
+                "S1,AE,01-001,1,A1,Y,N", "S1,AE,01-001,2,A2,N,N");
+        MergedTable again = merge(merged, suppae("S1,AE,01-001,AESEQ,1,AEREL,Related,Y",
+                "S1,AE,01-001,AESEQ,1,AETRTEM,Emergent,Y", "S1,AE,01-001,AESEQ,2,AENEW,New,1"));
+        assertEquals(List.of("STUDYID", "DOMAIN", "USUBJID", "AESEQ", "AESPID", "AETRTEM", "AEREL",
+                "AENEW"), columnNames(again), "only the new qualifier is a column");
+        assertEquals("AEREL, AETRTEM",
+                again.getMetaData().getMetaData(MergeMeta.SUPP_SKIPPED_QNAMS));
     }
 
 

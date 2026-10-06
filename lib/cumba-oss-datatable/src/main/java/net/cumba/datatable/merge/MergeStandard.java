@@ -4,6 +4,7 @@ package net.cumba.datatable.merge;
 // Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
 
 import java.util.Locale;
+import net.cumba.datatable.metadata.IMetadataLibrary;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -65,6 +66,29 @@ public enum MergeStandard
             return SDTM;
         }
         return UNKNOWN;
+    }
+
+
+    /**
+     * The standard a study's metadata library names — the one lookup every browser merge and the
+     * RELREC dialog share ({@code PLAN-merge-followups} FU-2 / M1): the library's
+     * {@link IMetadataLibrary#META_KEY_STANDARD_NAME} (a Define-XML's IG, {@code SDTMIG} /
+     * {@code SENDIG}) through {@link #ofStandardName}; {@link #UNKNOWN} when no library is attached
+     * or it names no standard, which keeps the POOLID inference.
+     *
+     * @param aLibrary
+     *            the metadata library attached to the study's library, or {@code null} when none is
+     *            ({@code IDataTableManager.getMetadataLibrary}).
+     * @return the standard the library selects, never null.
+     */
+    public static MergeStandard ofLibrary(@Nullable IMetadataLibrary aLibrary)
+    {
+        if (aLibrary == null)
+        {
+            return UNKNOWN;
+        }
+        return ofStandardName(aLibrary.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME)
+                .map(Object::toString).orElse(null));
     }
 
 

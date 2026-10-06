@@ -6,7 +6,6 @@ package net.cumba.datatable.impl.merge;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -379,6 +378,7 @@ final class MergeBuilder
             addRelrecParts(tables, parts, relrec, relrecMaps, primaryMap, size);
         }
         Set<String> suppQnams = new LinkedHashSet<>();
+        Set<String> suppSkipped = new LinkedHashSet<>();
         if (request.getSupp() != null)
         {
             supps.add(0, new SuppPending(primary, primaryName, true, request.getSupp(),
@@ -386,14 +386,15 @@ final class MergeBuilder
         }
         for (SuppPending sp : supps)
         {
-            Set<String> qnams = addSuppPart(tables, parts, sp, size);
-            if (sp.primaryBase())
+            SuppMatcher.Result served = addSuppPart(tables, parts, sp, size);
+            if (sp.primaryBase() && served != null)
             {
-                suppQnams.addAll(qnams);
+                suppQnams.addAll(served.qnams());
+                suppSkipped.addAll(served.skipped());
             }
         }
         return new MergedTableImpl(primary, tables.toArray(IDataTable[]::new), parts, issues,
-                unresolved, suppQnams, rowMapped);
+                unresolved, suppQnams, suppSkipped, rowMapped);
     }
 
 
@@ -969,12 +970,13 @@ final class MergeBuilder
 
 
     /**
-     * Adds a supplemental part; returns the base's {@code QNAM} set. Every source that resolves is
+     * Adds a supplemental part; returns the matching over the base — its {@code QNAM} set and the
+     * P-10 skipped names — or {@code null} when no source resolved. Every source that resolves is
      * fed (P-7: a split dataset's own {@code SUPP} and its domain's, both); several are stacked
      * into one table, so a record two of them qualify for one {@code QNAM} is a duplicate.
      */
-    private Set<String> addSuppPart(List<IDataTable> aTables, List<MergedPart> aParts,
-            SuppPending aPending, int aRows)
+    private SuppMatcher.@Nullable Result addSuppPart(List<IDataTable> aTables,
+            List<MergedPart> aParts, SuppPending aPending, int aRows)
     {
         IDataTable base = aPending.base();
         // the primary's domain is the request's (T2 review L2: a split dataset without a DOMAIN
@@ -1011,7 +1013,7 @@ final class MergeBuilder
         }
         if (sources.isEmpty())
         {
-            return Collections.emptySet();
+            return null;
         }
         String suppName = String.join("+", sourceNames);
         // the part's name is what MergeDataTable publishes as MERGED_FROM: the dataset's own name
@@ -1074,6 +1076,6 @@ final class MergeBuilder
                 aPending.baseMap(), columns, maps));
         aParts.add(new MergedPart(MergeKind.SUPP, aPending.qualifier(), partName.toString(), first,
                 columns.size(), -1));
-        return result.qnams();
+        return result;
     }
 }
