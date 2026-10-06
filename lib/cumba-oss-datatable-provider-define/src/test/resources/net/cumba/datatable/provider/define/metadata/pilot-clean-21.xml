@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- // OSS-IDENTITY provider-define: byte-identical in cumba-datatable-cdisc and cumba-oss-datatable.
+     Edit in cumba-datatable-cdisc, then copy; check_oss_identity.py fails on any divergence. -->
 <ODM xmlns="http://www.cdisc.org/ns/odm/v1.3"
      xmlns:def="http://www.cdisc.org/ns/def/v2.1"
      xmlns:xlink="http://www.w3.org/1999/xlink"

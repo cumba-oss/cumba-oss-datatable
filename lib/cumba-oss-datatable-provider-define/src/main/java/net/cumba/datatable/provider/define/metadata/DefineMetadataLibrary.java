@@ -1,5 +1,8 @@
 package net.cumba.datatable.provider.define.metadata;
 
+// OSS-IDENTITY provider-define: byte-identical in cumba-datatable-cdisc and cumba-oss-datatable.
+// Edit in cumba-datatable-cdisc, then copy; check_oss_identity.py fails on any divergence.
+
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -86,7 +89,7 @@ public class DefineMetadataLibrary implements IMetadataLibrary
             if (!CDT.isEmptyOrNull(mdvs))
             {
                 MetaDataVersion mdv = mdvs.get(0);
-                Standard ig = firstImplementationGuide(mdv);
+                Standard ig = primaryImplementationGuide(mdv);
                 if (ig != null)
                 {
                     mdvStdName = ig.getName();
@@ -110,39 +113,50 @@ public class DefineMetadataLibrary implements IMetadataLibrary
 
 
     /**
-     * The implementation guide a Define-XML 2.1 declares: the <b>first</b> {@code <def:Standard>}
-     * with {@code Type="IG"} in document order inside the MetaDataVersion's
-     * {@code <def:Standards>}. Its {@code Name} and {@code Version} become this library's standard
-     * name and version, and win over the Define-XML 2.0 MetaDataVersion attributes
-     * {@code def:StandardName} / {@code def:StandardVersion} (a 2.1 define does not carry those; a
-     * 2.0 define has no {@code <def:Standards>}, so the attributes remain its only source).
+     * The implementation guide a Define-XML 2.1 declares: among the {@code <def:Standard>} entries
+     * with {@code Type="IG"} inside the MetaDataVersion's {@code <def:Standards>}, the first
+     * <b>base</b> IG — a {@code Name} without a hyphenated suffix — in document order, else the
+     * first IG. Its {@code Name} and {@code Version} become this library's standard name and
+     * version, and win over the Define-XML 2.0 MetaDataVersion attributes {@code def:StandardName}
+     * / {@code def:StandardVersion} (a 2.1 define does not carry those; a 2.0 define has no
+     * {@code <def:Standards>}, so the attributes remain its only source).
      *
      * <p>
-     * ⚠ "First in document order" is the rule, not "the only one": a 2.1 define may list further
-     * {@code Type="IG"} standards after the primary IG, e.g. a supplement such as {@code SDTMIG-MD}
-     * after {@code SDTMIG} (the CDISC MSG v2 example does exactly that). Those later entries are
-     * ignored here.
+     * ⚠ A 2.1 define may list further {@code Type="IG"} standards beside the primary IG, e.g. a
+     * supplement such as {@code SDTMIG-MD} with {@code SDTMIG} (the CDISC MSG v2 example lists it
+     * after). Document order alone would let a supplement listed FIRST name the study's standard;
+     * the base IG wins wherever it is listed (pack-1 review 1a LOW-4). A define naming only
+     * hyphenated IGs (e.g. {@code SENDIG-DART}) reports the first of them.
      * </p>
      *
      * @param aMdv
      *            the MetaDataVersion to read.
-     * @return the first IG standard, or {@code null} when the MetaDataVersion declares none.
+     * @return the primary IG standard, or {@code null} when the MetaDataVersion declares none.
      */
-    private static @Nullable Standard firstImplementationGuide(MetaDataVersion aMdv)
+    private static @Nullable Standard primaryImplementationGuide(MetaDataVersion aMdv)
     {
         Standards stds = aMdv.getStandards();
         if (stds == null || stds.getStandards() == null)
         {
             return null;
         }
+        Standard first = null;
         for (Standard s : stds.getStandards())
         {
             if (s != null && "IG".equalsIgnoreCase(s.getType()))
             {
-                return s;
+                String name = s.getName();
+                if (name != null && name.indexOf('-') < 0)
+                {
+                    return s;
+                }
+                if (first == null)
+                {
+                    first = s;
+                }
             }
         }
-        return null;
+        return first;
     }
 
 

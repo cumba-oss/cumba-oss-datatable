@@ -1,5 +1,8 @@
 package net.cumba.datatable.provider.define.metadata;
 
+// OSS-IDENTITY provider-define: byte-identical in cumba-datatable-cdisc and cumba-oss-datatable.
+// Edit in cumba-datatable-cdisc, then copy; check_oss_identity.py fails on any divergence.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -241,8 +244,8 @@ class DefineMetadataLibraryIntegrationTest
 
 
     /**
-     * The first {@code Type="IG"} standard in document order is the IG: a supplement listed after
-     * it ({@code SDTMIG-MD}, as in the CDISC MSG v2 example) does not replace it.
+     * The base IG listed first is the IG: a supplement listed after it ({@code SDTMIG-MD}, as in
+     * the CDISC MSG v2 example) does not replace it.
      */
     @Test
     void standard_firstIgInDocumentOrder_aSupplementAfterItIsIgnored()
@@ -260,6 +263,43 @@ class DefineMetadataLibraryIntegrationTest
                 lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME));
         assertEquals(Optional.of("3.3"),
                 lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION));
+    }
+
+
+    /**
+     * Pack-1 review 1a LOW-4: a supplement listed BEFORE the base IG does not name the standard —
+     * the base IG (no hyphenated suffix) wins wherever it is listed.
+     */
+    @Test
+    void standard_aSupplementListedFirst_theBaseIgStillWins()
+    {
+        Standards stds = Standards.builder().standards(List.of(ig("STD.1", "SDTMIG-MD", "1.1"),
+                ig("STD.2", "SDTMIG", "3.3"), ct("STD.3", "SDTM", "2020-12-18"))).build();
+        MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1").defineVersion("2.1.0")
+                .standards(stds).build();
+
+        IMetadataLibrary lib = buildLibrary(mdv, null);
+
+        assertEquals(Optional.of("SDTMIG"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME));
+        assertEquals(Optional.of("3.3"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION));
+    }
+
+
+    /** Only hyphenated IGs listed: the first in document order is reported. */
+    @Test
+    void standard_onlyHyphenatedIgs_theFirstIsReported()
+    {
+        Standards stds = Standards.builder()
+                .standards(
+                        List.of(ig("STD.1", "SENDIG-DART", "1.1"), ig("STD.2", "SENDIG-AR", "1.0")))
+                .build();
+        MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1").defineVersion("2.1.0")
+                .standards(stds).build();
+
+        assertEquals(Optional.of("SENDIG-DART"),
+                buildLibrary(mdv, null).getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME));
     }
 
 
