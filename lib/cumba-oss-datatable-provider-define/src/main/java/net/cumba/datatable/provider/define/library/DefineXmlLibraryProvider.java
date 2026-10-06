@@ -23,6 +23,7 @@ import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserSourceBean;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.ProbeFailures;
 import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
@@ -128,8 +129,12 @@ public class DefineXmlLibraryProvider extends AbstractLibraryProvider
 
     /**
      * Attempts to compute the "StudyName - StandardName Version" default by loading the Define-XML
-     * via {@link DefineCache}. Returns {@code null} on any failure so callers fall back to the
-     * URI-based default.
+     * via {@link DefineCache}. Returns {@code null} on any failure loading a local file so callers
+     * fall back to the URI-based default; a remote ({@code http} / {@code https}) Define-XML that
+     * cannot be loaded — read or interpreted — aborts the open instead ({@link ProbeFailures}).
+     *
+     * @throws java.io.UncheckedIOException
+     *             if a remote Define-XML cannot be loaded.
      */
     private static @Nullable String computeStudyDefaultName(URI aUri)
     {
@@ -141,11 +146,16 @@ public class DefineXmlLibraryProvider extends AbstractLibraryProvider
         }
         catch (IOException | RuntimeException ex)
         {
-            // F-dtcdisc-05: the javadoc above promises "null on any failure", but only IOException
-            // was caught. Define-XML parsing and DefineMetadataLibrary.from(...) can raise
-            // unchecked failures (InvalidPathException, JAXB/DOM RuntimeExceptions, an NPE on a
-            // structurally odd document), and those aborted provide() entirely — the library would
-            // not open at all — where the documented behaviour is the URI-based fallback name.
+            // A remote source that cannot be loaded aborts the open: the load would fail the same
+            // way, and the properties dialog would only delay the error. Rethrown here, inside the
+            // catch, before the local fallback below.
+            ProbeFailures.rethrowIfRemote(aUri, ex);
+            // F-dtcdisc-05: for a local file the javadoc above promises "null on any failure", but
+            // only IOException was caught. Define-XML parsing and DefineMetadataLibrary.from(...)
+            // can raise unchecked failures (InvalidPathException, JAXB/DOM RuntimeExceptions, an
+            // NPE on a structurally odd document), and those aborted provide() entirely — the
+            // library would not open at all — where the documented behaviour is the URI-based
+            // fallback name.
             LOGGER.log(System.Logger.Level.DEBUG,
                     "Failed to pre-load Define-XML for default library name: {0}", aUri, ex);
             return null;

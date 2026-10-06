@@ -170,12 +170,21 @@ public interface ILibraryProvider extends IGenericProvider<IDataTableLibrary>
     /**
      * Retrieve the list of supported properties for loading the given URI as a library.
      *
+     * <p>
+     * A provider that reads its source here to propose defaults (a <i>probe</i>) keeps its
+     * best-effort defaults when a local source cannot be read, but a remote ({@code http} /
+     * {@code https}) source it cannot read aborts the open: the failure is thrown, unchecked, never
+     * swallowed ({@link net.cumba.datatable.io.ProbeFailures}).
+     * </p>
+     *
      * @param aUri
      *            the URI to retrieve the properties for.
      * @param aFileInfo
      *            the optional FileInfo how to interpret the file.
      * @return a list of all supported properties by the provider. This might be empty but never
      *         null.
+     * @throws java.io.UncheckedIOException
+     *             if the probe cannot read a remote source; the message is the UI's headline.
      */
     default List<Property> getProviderProperties(URI aUri, @Nullable FileInfo aFileInfo)
     {

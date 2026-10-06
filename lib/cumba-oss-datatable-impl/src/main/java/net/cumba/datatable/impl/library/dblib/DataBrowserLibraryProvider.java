@@ -22,6 +22,7 @@ import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary;
 import net.cumba.datatable.impl.provider.DataTableProviderFactory;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.ProbeFailures;
 import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
@@ -88,8 +89,13 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
     /**
      * Reads the {@code .dblib} JSON file just to extract the stored library name for use as default
-     * in the library-name property. Returns {@code null} on any failure so callers fall back to the
-     * URI-based default.
+     * in the library-name property. Returns {@code null} on any failure reading a local file so
+     * callers fall back to the URI-based default; a remote ({@code http} / {@code https})
+     * {@code .dblib} that cannot be read — or does not parse — aborts the open instead
+     * ({@link ProbeFailures}).
+     *
+     * @throws java.io.UncheckedIOException
+     *             if a remote {@code .dblib} cannot be read.
      */
     private static @Nullable String computeBeanDefaultName(URI aUri)
     {
@@ -104,6 +110,7 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
         }
         catch (Exception ex)
         {
+            ProbeFailures.rethrowIfRemote(aUri, ex);
             LOGGER.log(System.Logger.Level.DEBUG,
                     "Failed to pre-load .dblib for default library name: {0}", aUri, ex);
             return null;

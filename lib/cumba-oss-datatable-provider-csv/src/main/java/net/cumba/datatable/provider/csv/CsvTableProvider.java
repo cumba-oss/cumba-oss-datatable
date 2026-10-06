@@ -30,6 +30,7 @@ import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.io.ProbeFailures;
 import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.provider.IDataTableProvider;
@@ -267,8 +268,12 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
     /**
      * Best-effort read of the first line of the given URI, using the currently configured
-     * {@link #getCharset() charset}. Returns {@code null} on any I/O failure so the caller can fall
-     * back to static defaults.
+     * {@link #getCharset() charset}. Returns {@code null} on an I/O failure reading a local source
+     * so the caller can fall back to static defaults; a remote ({@code http} / {@code https})
+     * source that cannot be read aborts the open instead ({@link ProbeFailures}).
+     *
+     * @throws java.io.UncheckedIOException
+     *             if a remote source cannot be read.
      */
     private @Nullable String peekFirstLine(URI aUri)
     {
@@ -279,6 +284,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
         }
         catch (IOException ex)
         {
+            ProbeFailures.rethrowIfRemote(aUri, ex);
             LOGGER.log(System.Logger.Level.DEBUG,
                     "Unable to peek first line of " + aUri + ": " + ex.getMessage());
             return null;
