@@ -428,10 +428,12 @@ class MockTableTest
         assertThrows(NoSuchElementException.class, () -> m.getColumns("A", "NOPE").toList());
         // ⚠ The MESSAGE again: index == columnCount is the boundary, and past it the raw array
         // access raises an IndexOutOfBoundsException SUBCLASS that a type-only assertion accepts.
-        assertEquals("column 2 is out of bounds, valid range is [0, 2)",
+        // The meta is the REAL DataTableMeta since T1 of PLAN-merged-evaluation-table, so this is
+        // its own range check's message.
+        assertEquals("Column 2 is out of range 0 <= column < 2",
                 assertThrows(IndexOutOfBoundsException.class, () -> m.getColumns(0, 2).toList())
                         .getMessage());
-        assertEquals("column -1 is out of bounds, valid range is [0, 2)",
+        assertEquals("Column -1 is out of range 0 <= column < 2",
                 assertThrows(IndexOutOfBoundsException.class, () -> m.getColumns(-1).toList())
                         .getMessage());
         // getOptionalColumns SKIPS what it cannot resolve rather than throwing.
@@ -496,10 +498,12 @@ class MockTableTest
                 assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(1)).getMessage());
         assertEquals("column -1 is out of bounds, valid range is [0, 1)",
                 assertThrows(IndexOutOfBoundsException.class, () -> t.getColumn(-1)).getMessage());
-        assertEquals("column 1 is out of bounds, valid range is [0, 1)",
+        // the meta view is the REAL DataTableMeta (T1 of PLAN-merged-evaluation-table): its own
+        // range check and message
+        assertEquals("Column 1 is out of range 0 <= column < 1",
                 assertThrows(IndexOutOfBoundsException.class, () -> t.getMetaData().getColumn(1))
                         .getMessage());
-        assertEquals("column -1 is out of bounds, valid range is [0, 1)",
+        assertEquals("Column -1 is out of range 0 <= column < 1",
                 assertThrows(IndexOutOfBoundsException.class, () -> t.getMetaData().getColumn(-1))
                         .getMessage());
         assertThrows(IndexOutOfBoundsException.class, () -> t.getValue(0, 1));
@@ -857,6 +861,30 @@ class MockTableTest
         assertEquals(0L, empty.getRowCount());
         assertEquals(2, empty.getMetaData().getColumnCount());
         assertThrows(IndexOutOfBoundsException.class, () -> empty.getColumn(0).getValue(0));
+    }
+
+
+    @Test
+    void theMetadataIsRealSoAMergedViewCanCopyIt()
+    {
+        // T1 of PLAN-merged-evaluation-table (owner: Mockito-free tests): the metas are the
+        // datatable's own classes, not mocks — a merged view copies them through builderFrom /
+        // toBuilder, which answered null for a Mockito meta (the engine's RealMetaTable face
+        // existed only for that), and isSupplied is a real table's answer, not Mockito's false.
+        IDataTable t = MockTable.of().name("AE").label("Adverse Events").col("A", "x", "y")
+                .colLong("N", 1L, 2L).build();
+        assertSame(DataTableMeta.class, t.getMetaData().getClass());
+        assertSame(DataTableColumnMeta.class, t.getMetaData().getColumn(0).getClass());
+        DataTableMeta copy = DataTableMeta.builderFrom(t.getMetaData()).build();
+        assertEquals("AE", copy.getName());
+        assertEquals("Adverse Events", copy.getLabel());
+        assertEquals(List.of("A", "N"),
+                copy.getAllColumns().map(DataTableColumnMeta::getName).toList());
+        assertEquals(DataValueType.LONG, copy.getColumn("N").getType());
+        assertEquals(2, t.getMetaData().getRowCount());
+        assertTrue(t.isSupplied(1, 1));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.isSupplied(2, 0));
+        assertThrows(IndexOutOfBoundsException.class, () -> t.isSupplied(0, 2));
     }
 
 

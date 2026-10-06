@@ -10,7 +10,6 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -27,7 +26,10 @@ import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Builds a mock IDataTable for testing. Column data is String-based by default.
+ * Builds a test IDataTable. Column data is String-based by default. ⭐ Its metadata is REAL — a
+ * {@link DataTableMeta} of {@link DataTableColumnMeta}s, exactly what a loaded table carries
+ * ({@code PLAN-merged-evaluation-table} T1) — so it can be copied, merged and resolved by name like
+ * any table; the cells are answered by a Mockito {@link IDataTable} / {@link IDataTableColumn}.
  *
  * <p>
  * Numeric columns can be added via {@link #colLong(String, Long...)} and
@@ -245,9 +247,10 @@ public final class MockTable
 
 
     /**
-     * Makes {@code getColumnIndex} / {@code getOptionalColumn} resolve case-insensitively, which is
-     * what real tables do by default ({@code DataTableMeta.columnNameCaseSensitive} is {@code
-     * false}). Opt-in, so every existing test keeps the stricter exact-match stubbing.
+     * Makes the table's column names resolve case-insensitively — the real meta's
+     * {@code columnNameCaseSensitive} flag {@code false}, which is what a loaded table carries by
+     * default. Opt-in, so every existing test keeps the stricter exact-match lookup (the meta is
+     * then built {@code columnNameCaseSensitive(true)}).
      */
     public MockTable caseInsensitiveColumnNames()
     {
@@ -361,21 +364,40 @@ public final class MockTable
         String[] colNames = colOrder.toArray(String[]::new);
         final int rc = rowCount;
 
+        // ⭐ REAL metadata (PLAN-merged-evaluation-table T1; owner 2026-09-28: Mockito-free tests).
+        // The column and table metas are the datatable's own DataTableColumnMeta / DataTableMeta,
+        // so the whole by-name family (getColumnIndex, getOptionalColumn, the contains*Column
+        // defaults, getAllColumns, getColumns(...)) answers by construction exactly as for a
+        // loaded table, and a merged view can COPY them (DataTableColumnMeta.builderFrom /
+        // DataTableMeta.toBuilder answer null for a Mockito mock — the reason the engine carried
+        // a RealMetaTable face until T1). Only the cells below stay mock answers.
+        // ⚠ Name lookup keeps this builder's contract: exact unless caseInsensitiveColumnNames()
+        // (the real meta's columnNameCaseSensitive flag), so no fixture's resolution changes.
+        DataTableColumnMeta[] colMetaArr = new DataTableColumnMeta[colNames.length];
+        for (int c = 0; c < colNames.length; c++)
+        {
+            String colName = colNames[c];
+            Integer declaredLen = colLengths.get(colName);
+            colMetaArr[c] = DataTableColumnMeta.builder().index(c).name(colName)
+                    .label(colLabels.get(colName))
+                    .type(java.util.Objects.requireNonNull(colTypeByName.get(colName)))
+                    .length(declaredLen != null ? declaredLen : 0)
+                    .displayFormat(colFormats.get(colName)).build();
+        }
+        DataTableMeta.DataTableMetaBuilder metaBuilder = DataTableMeta.builder().name(tableName)
+                .label(tableLabel).columns(colMetaArr).rowCount(rc).totalRowCount(rc)
+                .columnNameCaseSensitive(!caseInsensitiveColumns)
+                .tableURI(tableUri == null ? null : java.net.URI.create(tableUri));
+        metaValues.forEach(metaBuilder::addMetaData);
+        DataTableMeta meta = metaBuilder.build();
+
         IDataTable table = mock(IDataTable.class);
-        DataTableMeta meta = mock(DataTableMeta.class);
         lenient().when(table.getMetaData()).thenReturn(meta);
         lenient().when(table.getRowCount()).thenReturn((long) rc);
         // MockTable represents a non-filtered/non-sorted base table — display row index
         // equals real row index. RuleRunner now emits Violation rows via getRealRowIndex
         // (commit 9b7bf4b3f), so the unstubbed default of 0 would mask the actual row.
         lenient().when(table.getRealRowIndex(anyLong())).thenAnswer(inv -> inv.getArgument(0));
-        lenient().when(meta.getColumnCount()).thenReturn(colNames.length);
-        lenient().when(meta.getName()).thenReturn(tableName);
-        lenient().when(meta.getLabel()).thenReturn(tableLabel);
-        lenient().when(meta.getTableURI())
-                .thenReturn(tableUri == null ? null : java.net.URI.create(tableUri));
-        metaValues.forEach((k, v) -> lenient().when(meta.getMetaData(k)).thenReturn(v));
-
         // ⚠ A table-level accessor that Mockito answers 0 for. IDataTable.getColumnCount() is a
         // DEFAULT method (`return getMetaData().getColumnCount()`), so leaving it unstubbed made
         // every MockTable report ZERO columns through the table view while the meta view
@@ -410,8 +432,10 @@ public final class MockTable
             throw outOfRangeColumn(inv.getArgument(1), colNames.length);
         }).when(table).isEmptyOrMissing(anyLong(), anyInt());
 
-        Map<String, DataTableColumnMeta> colMetaByName = new LinkedHashMap<>();
-        Map<String, Integer> colIdxByName = new LinkedHashMap<>();
+        // isSupplied is a DEFAULT method (a plain table: true for every valid cell, range-checked),
+        // which Mockito does not run — it answered false, the not-supplied marker, for every cell.
+        lenient().doCallRealMethod().when(table).isSupplied(anyLong(), anyInt());
+
         List<IDataTableColumn> colsByIndex = new ArrayList<>();
 
         for (int c = 0; c < colNames.length; c++)
@@ -419,19 +443,6 @@ public final class MockTable
             String colName = colNames[c];
             IDataValue[] dvs = java.util.Objects.requireNonNull(dvByName.get(colName));
             final int colIdx = c;
-
-            DataTableColumnMeta colMeta = mock(DataTableColumnMeta.class);
-            lenient().when(colMeta.getName()).thenReturn(colName);
-            lenient().when(colMeta.getIndex()).thenReturn(colIdx);
-            DataValueType colType = colTypeByName.get(colName);
-            lenient().when(colMeta.getType()).thenReturn(colType);
-            lenient().when(colMeta.getLabel()).thenReturn(colLabels.get(colName));
-            lenient().when(colMeta.getDisplayFormat()).thenReturn(colFormats.get(colName));
-            Integer declaredLen = colLengths.get(colName);
-            lenient().when(colMeta.getLength()).thenReturn(declaredLen != null ? declaredLen : 0);
-
-            colMetaByName.put(colName, colMeta);
-            colIdxByName.put(colName, colIdx);
 
             IDataTableColumn col = mock(IDataTableColumn.class);
             lenient().when(col.getRowCount()).thenReturn((long) rc);
@@ -512,147 +523,21 @@ public final class MockTable
                     .isEmptyOrMissing(anyLong(), eq(colIdx));
         }
 
-        // ⚠⚠ Name resolution is stubbed ONCE, over an answer, rather than per column plus a
-        // hard-coded ALL-UPPER / all-lower pair. Two things were wrong with the pair: a real
-        // table is case-insensitive through CDT.equalsIgnoreCase, so "UsubjId" resolves against
-        // a USUBJID column and did NOT resolve here even with the opt-in on; and the three
-        // contains*Column DEFAULT methods of IDataTableMeta -- which Mockito does not run --
-        // answered FALSE for every column the table actually has.
-        // ⚠⚠ Captured ONCE, here, not read from the field inside each answer. An answer runs at
-        // CALL time, so reading this.caseInsensitiveColumns from inside one would make an
-        // already-built table's name resolution change retroactively if the builder were mutated
-        // afterwards -- a fixture that is not frozen by build(). Every other value these answers
-        // close over (cells, colMetaByName, colIdxByName, colsByIndex, colNames) is build-local
-        // and never mutated after registration; this field was the only late-bound one.
-        final boolean ci = caseInsensitiveColumns;
-        lenient().doAnswer(inv -> resolve(colMetaByName, inv.getArgument(0), ci)).when(meta)
-                .getOptionalColumn(anyString());
-        lenient().doAnswer(inv ->
-        {
-            Integer idx = resolve(colIdxByName, inv.getArgument(0), ci);
-            return idx != null ? idx : -1;
-        }).when(meta).getColumnIndex(anyString());
-        // IDataTable.getColumnIndex is a DEFAULT method delegating to the meta, so unstubbed it
-        // answered 0 -- i.e. "column 0" -- for a name the table does NOT have, contradicting the
-        // -1 the meta view answers and disarming every `idx < 0` guard in IDataTable's own
-        // by-name accessors.
-        lenient().doAnswer(inv ->
-        {
-            Integer idx = resolve(colIdxByName, inv.getArgument(0), ci);
-            return idx != null ? idx : -1;
-        }).when(table).getColumnIndex(anyString());
-        lenient().doAnswer(inv -> resolve(colMetaByName, inv.getArgument(0), ci) != null).when(meta)
-                .containsColumn(anyString());
-        lenient().doAnswer(inv ->
-        {
-            for (String cn : varargNames(inv))
-            {
-                if (cn == null || resolve(colMetaByName, cn, ci) == null)
-                {
-                    return false;
-                }
-            }
-            return true;
-        }).when(meta).containsAllColumns(any(String[].class));
-        lenient().doAnswer(inv ->
-        {
-            for (String cn : varargNames(inv))
-            {
-                if (cn != null && resolve(colMetaByName, cn, ci) != null)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }).when(meta).containsAnyColumn(any(String[].class));
-        lenient().doAnswer(inv ->
-        {
-            int idx = inv.getArgument(0);
-            if (idx < 0 || idx >= colNames.length)
-            {
-                throw outOfRangeColumn(idx, colNames.length);
-            }
-            return colMetaByName.get(colNames[idx]);
-        }).when(meta).getColumn(anyInt());
-
-        // ⚠⚠ The WHOLE by-name family, or none of it. Stubbing getOptionalColumn / getColumnIndex
-        // / contains*Column and stopping there leaves the mock CONTRADICTING ITSELF: a production
-        // path that asks containsColumn("A") (true) and then getColumn("A") took the happy branch
-        // and got null. Everything below is either a DEFAULT method of IDataTableMeta /
-        // IDataTable, which Mockito does not run, or a concrete method of the mocked
-        // DataTableMeta class, which Mockito replaces -- so every one of them answered null or an
-        // EMPTY Stream. getAllColumns alone is read at 63 main-code sites and the getColumns
-        // overloads at 94, and an empty Stream there is the campaign's signature shape: an
-        // operation that quietly finds nothing and reports success.
-        DataTableColumnMeta[] colMetaArr = new DataTableColumnMeta[colNames.length];
-        for (int c = 0; c < colNames.length; c++)
-        {
-            // requireNonNull, not @Nullable: colMetaByName was filled from colNames in the loop
-            // above, one entry per name, so a miss here is a broken invariant rather than an
-            // absent column -- and a null in this array would be answered to getAllColumns().
-            colMetaArr[c] = java.util.Objects.requireNonNull(colMetaByName.get(colNames[c]));
-        }
-        // ⚠ A FRESH Stream per call -- a Stream is single-use, so answering one cached instance
-        // would work once and throw IllegalStateException on the second reader.
-        lenient().doAnswer(inv -> Arrays.stream(colMetaArr)).when(meta).getAllColumns();
-        lenient().doAnswer(inv -> Arrays.copyOf(colMetaArr, colMetaArr.length)).when(meta)
-                .getColumns();
-        lenient().doAnswer(inv -> requireColumn(colMetaByName, inv.getArgument(0), ci)).when(meta)
-                .getColumn(anyString());
-        lenient().doAnswer(inv ->
-        {
-            List<DataTableColumnMeta> out = new ArrayList<>();
-            for (String cn : varargNames(inv))
-            {
-                DataTableColumnMeta cm = cn != null ? resolve(colMetaByName, cn, ci) : null;
-                if (cm != null)
-                {
-                    out.add(cm);
-                }
-            }
-            return out.stream();
-        }).when(meta).getOptionalColumns(any(String[].class));
-        lenient().doAnswer(inv -> namedColumns(colMetaByName, varargNames(inv), ci)).when(meta)
+        // The table-side by-name mirrors. IDataTable.getColumn(String) / getColumnIndex /
+        // getColumns(...) are DEFAULT methods resolving through the META's index, which Mockito
+        // does not run; each answers here through the real meta, so the two views agree by
+        // construction (an unknown name: -1 / NoSuchElementException, as on a real table).
+        lenient().doAnswer(inv -> meta.getColumnIndex((String) inv.getArgument(0))).when(table)
+                .getColumnIndex(anyString());
+        lenient().doAnswer(inv -> colsByIndex.get(columnIndexOrThrow(meta, inv.getArgument(0))))
+                .when(table).getColumn(anyString());
+        lenient().doAnswer(inv -> colsByIndex.stream()).when(table).getColumns();
+        lenient().doAnswer(inv -> tableColumns(meta, colsByIndex, varargNames(inv))).when(table)
                 .getColumns(any(String[].class));
         lenient().doAnswer(inv ->
         {
             Collection<String> names = inv.getArgument(0);
-            return namedColumns(colMetaByName, names.toArray(String[]::new), ci);
-        }).when(meta).getColumns(anyCollection());
-        lenient().doAnswer(inv ->
-        {
-            List<DataTableColumnMeta> out = new ArrayList<>();
-            for (int idx : varargInts(inv))
-            {
-                if (idx < 0 || idx >= colMetaArr.length)
-                {
-                    throw outOfRangeColumn(idx, colMetaArr.length);
-                }
-                out.add(colMetaArr[idx]);
-            }
-            return out.stream();
-        }).when(meta).getColumns(any(int[].class));
-
-        // The table-side mirrors. IDataTable.getColumn(String) resolves through the META's index
-        // and throws NoSuchElementException for an unknown name; the getColumns overloads map
-        // that index onto this table's columns.
-        lenient().doAnswer(inv ->
-        {
-            String name = inv.getArgument(0);
-            Integer idx = resolve(colIdxByName, name, ci);
-            if (idx == null)
-            {
-                throw new NoSuchElementException("No column found for name " + name);
-            }
-            return colsByIndex.get(idx);
-        }).when(table).getColumn(anyString());
-        lenient().doAnswer(inv -> colsByIndex.stream()).when(table).getColumns();
-        lenient().doAnswer(inv -> tableColumns(colIdxByName, colsByIndex, varargNames(inv), ci))
-                .when(table).getColumns(any(String[].class));
-        lenient().doAnswer(inv ->
-        {
-            Collection<String> names = inv.getArgument(0);
-            return tableColumns(colIdxByName, colsByIndex, names.toArray(String[]::new), ci);
+            return tableColumns(meta, colsByIndex, names.toArray(String[]::new));
         }).when(table).getColumns(anyCollection());
         lenient().doAnswer(inv ->
         {
@@ -682,29 +567,6 @@ public final class MockTable
 
 
     /**
-     * Looks a column name up, honouring {@link #caseInsensitiveColumnNames()}. Exact match first in
-     * both modes, so a case-sensitive table behaves exactly as it always did.
-     */
-    private static <T> @Nullable T resolve(Map<String, T> aByName, String aName,
-            boolean aIgnoreCase)
-    {
-        T exact = aByName.get(aName);
-        if (exact != null || !aIgnoreCase)
-        {
-            return exact;
-        }
-        for (Map.Entry<String, T> e : aByName.entrySet())
-        {
-            if (e.getKey().equalsIgnoreCase(aName))
-            {
-                return e.getValue();
-            }
-        }
-        return null;
-    }
-
-
-    /**
      * The column names of a {@code contains*Columns(String...)} invocation. Mockito hands a varargs
      * answer its arguments <b>expanded</b>, one element per slot &mdash; measured, not assumed: the
      * raw-array branch this method used to carry was reported NO_COVERAGE, so it was defensive code
@@ -724,48 +586,29 @@ public final class MockTable
 
 
     /**
-     * The column metadata for a name, or {@link NoSuchElementException} &mdash; mirroring
-     * {@code IDataTableMeta.getColumn(String)}, which is never null and never silent.
+     * The index of a named column through the real meta (its own case policy), or
+     * {@link NoSuchElementException} &mdash; mirroring {@code IDataTable.getColumn(String)}, which
+     * is never null and never silent.
      */
-    private static DataTableColumnMeta requireColumn(Map<String, DataTableColumnMeta> aByName,
-            String aName, boolean aIgnoreCase)
+    private static int columnIndexOrThrow(DataTableMeta aMeta, String aName)
     {
-        DataTableColumnMeta cm = resolve(aByName, aName, aIgnoreCase);
-        if (cm == null)
+        int idx = aMeta.getColumnIndex(aName);
+        if (idx < 0)
         {
-            throw new NoSuchElementException("No column available for name %s.".formatted(aName));
+            throw new NoSuchElementException("No column found for name " + aName);
         }
-        return cm;
-    }
-
-
-    /** {@code getColumns(String...)} over the meta view: every name must resolve. */
-    private static java.util.stream.Stream<DataTableColumnMeta> namedColumns(
-            Map<String, DataTableColumnMeta> aByName, String[] aNames, boolean aIgnoreCase)
-    {
-        List<DataTableColumnMeta> out = new ArrayList<>();
-        for (String cn : aNames)
-        {
-            out.add(requireColumn(aByName, cn, aIgnoreCase));
-        }
-        return out.stream();
+        return idx;
     }
 
 
     /** {@code getColumns(String...)} over the table view: every name must resolve. */
-    private static java.util.stream.Stream<IDataTableColumn> tableColumns(
-            Map<String, Integer> aIdxByName, List<IDataTableColumn> aColumns, String[] aNames,
-            boolean aIgnoreCase)
+    private static java.util.stream.Stream<IDataTableColumn> tableColumns(DataTableMeta aMeta,
+            List<IDataTableColumn> aColumns, String[] aNames)
     {
         List<IDataTableColumn> out = new ArrayList<>();
         for (String cn : aNames)
         {
-            Integer idx = resolve(aIdxByName, cn, aIgnoreCase);
-            if (idx == null)
-            {
-                throw new NoSuchElementException("No column found for name " + cn);
-            }
-            out.add(aColumns.get(idx));
+            out.add(aColumns.get(columnIndexOrThrow(aMeta, cn)));
         }
         return out.stream();
     }
