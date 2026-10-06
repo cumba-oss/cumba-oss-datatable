@@ -1,5 +1,8 @@
 package net.cumba.datatable;
 
+// OSS-IDENTITY datatable-column-meta: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.util.Collection;
 
 import lombok.NonNull;
@@ -18,6 +21,29 @@ public interface IDataTableColumnMeta
      * display format. Populated by the data-table manager on table load.
      */
     String META_KEY_HAS_UNMAPPED_FORMAT_VALUES = "hasUnmappedFormatValues";
+
+    /**
+     * Metadata key carrying a {@link String} reason code when the column names a display format
+     * that is not available: neither a built-in format of the data browser nor a format of any
+     * loaded format catalog, so its cells are shown unformatted. The value is
+     * {@link #DISPLAY_FORMAT_NO_CATALOG} or {@link #DISPLAY_FORMAT_NOT_IN_CATALOG}. Populated by
+     * the data-table manager on table load, like {@link #META_KEY_HAS_UNMAPPED_FORMAT_VALUES}, and
+     * absent on a column whose display format is available or blank.
+     */
+    String META_KEY_DISPLAY_FORMAT_UNAVAILABLE = "displayFormatUnavailable";
+
+    /**
+     * Reason code of {@link #META_KEY_DISPLAY_FORMAT_UNAVAILABLE}: the table has no format
+     * definitions loaded besides the built-in formats (no format catalog, or one without named
+     * formats).
+     */
+    String DISPLAY_FORMAT_NO_CATALOG = "NO_CATALOG";
+
+    /**
+     * Reason code of {@link #META_KEY_DISPLAY_FORMAT_UNAVAILABLE}: format definitions are loaded
+     * for the table, but none of them defines the column's display format.
+     */
+    String DISPLAY_FORMAT_NOT_IN_CATALOG = "NOT_IN_CATALOG";
 
     /**
      * Returns the index of the column in the data table.
@@ -120,5 +146,31 @@ public interface IDataTableColumnMeta
     default boolean hasUnmappedFormatValues()
     {
         return Boolean.TRUE.equals(getMetaData(META_KEY_HAS_UNMAPPED_FORMAT_VALUES, false));
+    }
+
+
+    /**
+     * Convenience accessor for the {@link #META_KEY_DISPLAY_FORMAT_UNAVAILABLE} flag.
+     *
+     * @return true if this column has been flagged as naming a display format that is not available
+     *         (its cells are shown unformatted); false otherwise.
+     */
+    default boolean isDisplayFormatUnavailable()
+    {
+        return getDisplayFormatUnavailableReason() != null;
+    }
+
+
+    /**
+     * Returns the reason code of the {@link #META_KEY_DISPLAY_FORMAT_UNAVAILABLE} flag.
+     *
+     * @return {@link #DISPLAY_FORMAT_NO_CATALOG}, {@link #DISPLAY_FORMAT_NOT_IN_CATALOG}, or
+     *         {@code null} if the column is not flagged (a value that is not a {@link String} does
+     *         not count as a flag).
+     */
+    default @Nullable String getDisplayFormatUnavailableReason()
+    {
+        return getMetaData(META_KEY_DISPLAY_FORMAT_UNAVAILABLE) instanceof String reason ? reason
+                : null;
     }
 }

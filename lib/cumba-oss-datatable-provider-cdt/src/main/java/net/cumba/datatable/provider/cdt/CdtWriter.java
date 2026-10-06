@@ -1,5 +1,8 @@
 package net.cumba.datatable.provider.cdt;
 
+// OSS-IDENTITY datatable-column-meta: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.io.IOException;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
@@ -15,6 +18,7 @@ import java.util.Locale;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.IDataTableColumnMeta;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
 import net.cumba.datatable.values.MissingValue;
@@ -243,10 +247,16 @@ public final class CdtWriter
             // F-prov-cdt-04: route the key through safeIdent, matching writeDatasetHeader's own
             // hygiene - a key is data too, and one containing whitespace or '=' would otherwise
             // tokenize back into something other than the key it started as.
+            // The two load-time format annotations are skipped: they describe the format catalog
+            // of the table as loaded, which the written file does not carry, and a reader would
+            // otherwise get them back as live values (PLAN-unavailable-display-format-highlight
+            // D5).
             for (String key : c.getMetaDataKeys())
             {
                 Object val = c.getMetaData(key);
-                if (val == null)
+                if (val == null
+                        || IDataTableColumnMeta.META_KEY_HAS_UNMAPPED_FORMAT_VALUES.equals(key)
+                        || IDataTableColumnMeta.META_KEY_DISPLAY_FORMAT_UNAVAILABLE.equals(key))
                 {
                     continue;
                 }
