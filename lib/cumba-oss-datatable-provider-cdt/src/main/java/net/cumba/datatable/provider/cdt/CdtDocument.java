@@ -3,6 +3,7 @@ package net.cumba.datatable.provider.cdt;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -34,7 +35,20 @@ import org.jspecify.annotations.Nullable;
  * {@link CdtValues#encodeField(String, boolean)}'s encoding (the parser's own: an unquoted missing
  * sentinel verbatim, a literal that would read back as a sentinel backslash-escaped), quoted only
  * where the parser needs the quotes to recover the exact characters, an all-missing row as its
- * cells (never the bare {@code .} line, which the reader folds to every cell missing anyway).
+ * cells (never the bare {@code .} line, which the reader folds to every cell missing anyway). A
+ * cell the parser cannot read back exactly is refused with an {@link IllegalArgumentException},
+ * never written: a line break of any kind ({@code \R}, which the parser splits on before it sees a
+ * quote), trailing whitespace (the parser strips it, inside quotes too), and a row whose field
+ * count is not the column count. The same holds for a {@code col} line's name and attribute values.
+ * </p>
+ *
+ * <h2>Lines</h2>
+ *
+ * <p>
+ * The text is split exactly where {@link CdtParser} splits it — on every {@code \R} line break
+ * ({@code \r\n}, {@code \n}, {@code \r}, {@code U+000B}, {@code U+000C}, {@code U+0085},
+ * {@code U+2028}, {@code U+2029}) — and a dataset's name is the parser's own reading of it (quotes
+ * removed).
  * </p>
  */
 public final class CdtDocument
@@ -56,7 +70,7 @@ public final class CdtDocument
      * the closing fence (or at the end of the file when there is none).
      *
      * @param name
-     *            the dataset name as written
+     *            the dataset name as the parser reads it (a quoted name without its quotes)
      * @param headerLine
      *            the {@code dataset …} line
      * @param columnsStart
@@ -94,11 +108,16 @@ public final class CdtDocument
     public static CdtDocument parse(String aText)
     {
         Objects.requireNonNull(aText, "text");
-        // Locate the blocks with the parser's own reading, so the two can never disagree on what a
-        // dataset is; the parse also throws exactly the errors the parser throws.
-        CdtParser.parseAll(aText, "document");
+        // The parse throws exactly the errors the parser throws and names the datasets; the lines
+        // are split on the parser's own \R, so the walk below finds the parser's blocks.
+        List<CdtDataset> parsed = CdtParser.parseAll(aText, "document");
         List<String> lines = splitKeepingTerminators(aText);
-        return new CdtDocument(lines, locate(lines));
+        List<String> names = new ArrayList<>(parsed.size());
+        for (CdtDataset dataset : parsed)
+        {
+            names.add(dataset.getName());
+        }
+        return new CdtDocument(lines, locate(lines, names));
     }
 
 
@@ -151,7 +170,10 @@ public final class CdtDocument
      *            as {@link CdtParser} produces and a grid edit hands back)
      * @return the rewritten document
      * @throws IllegalArgumentException
-     *             when the document holds no dataset of that name
+     *             when the document holds no dataset of that name, when {@code aDataset} has no
+     *             column, or when a column or a cell cannot be written so that the parser reads it
+     *             back exactly (a line break, trailing whitespace, a field count that is not the
+     *             column count, a name the parser cannot read as one)
      */
     public CdtDocument withDataset(CdtDataset aDataset)
     {
@@ -161,6 +183,12 @@ public final class CdtDocument
             throw new IllegalArgumentException(
                     "no dataset " + aDataset.getName() + " in the document");
         }
+        int columnCount = aDataset.getColumns().size();
+        if (columnCount == 0)
+        {
+            throw new IllegalArgumentException(
+                    "dataset " + aDataset.getName() + " has no column; the parser refuses it");
+        }
         String eol = terminatorOf(block);
         List<String> out = new ArrayList<>(lines.size());
         out.addAll(lines.subList(0, block.columnsStart()));
@@ -168,9 +196,22 @@ public final class CdtDocument
         {
             out.add(columnLine(column) + eol);
         }
-        out.add(lines.get(block.fenceLine()));
+        String fence = lines.get(block.fenceLine());
+        if (!aDataset.getDataRows().isEmpty() && !endsWithTerminator(fence))
+        {
+            // a file-final fence without a line break: the first row needs one before it
+            fence = fence + eol;
+        }
+        out.add(fence);
+        int rowNo = 0;
         for (List<String> row : aDataset.getDataRows())
         {
+            rowNo++;
+            if (row.size() != columnCount)
+            {
+                throw new IllegalArgumentException("row " + rowNo + " has " + row.size()
+                        + " field(s) but " + columnCount + " column(s) declared");
+            }
             out.add(rowLine(row) + eol);
         }
         if (block.closeLine() >= 0)
@@ -184,17 +225,32 @@ public final class CdtDocument
             out.add(last.substring(0, last.length() - eol.length()));
         }
         out.addAll(lines.subList(block.end(), lines.size()));
-        return new CdtDocument(out, locate(out));
+        List<String> names = new ArrayList<>(blocks.size());
+        for (DatasetBlock b : blocks)
+        {
+            names.add(b.name());
+        }
+        return new CdtDocument(out, locate(out, names));
     }
 
     // ---- rendering ----------------------------------------------------------------------
 
 
-    /** The {@code col} line of a column, in the writer's spelling. */
+    /**
+     * The {@code col} line of a column, in the writer's spelling; the name is quoted when the
+     * parser's tokenizer needs the quotes.
+     */
     static String columnLine(CdtColumn aColumn)
     {
+        String name = aColumn.getName();
+        requireWritable(name, "column name");
+        if (name.indexOf('=') >= 0)
+        {
+            throw new IllegalArgumentException("column name " + name
+                    + " holds '=', which the parser reads as a key=value, not a name");
+        }
         StringBuilder sb = new StringBuilder(32);
-        sb.append("col ").append(aColumn.getName());
+        sb.append("col ").append(quoteAttribute(name));
         if (aColumn.getType() != null)
         {
             sb.append(" type=").append(aColumn.getType().token());
@@ -218,8 +274,13 @@ public final class CdtDocument
         }
         for (Map.Entry<String, String> attr : aColumn.getAttrs().entrySet())
         {
-            sb.append(' ').append(attr.getKey()).append('=')
-                    .append(quoteAttribute(attr.getValue()));
+            String key = attr.getKey();
+            if (key.isEmpty() || !key.equals(quoteAttribute(key)))
+            {
+                throw new IllegalArgumentException("column " + name + ": attribute key [" + key
+                        + "] is not a bare word the parser can read");
+            }
+            sb.append(' ').append(key).append('=').append(quoteAttribute(attr.getValue()));
         }
         return sb.toString();
     }
@@ -274,12 +335,17 @@ public final class CdtDocument
      * (that is what it means), an escaped literal is unescaped and quoted (the quotes are what keep
      * it a literal), everything else is quoted only when the characters need it.
      */
-    static String renderField(String aEncoded)
+    static String renderField(@Nullable String aEncoded)
     {
+        if (aEncoded == null)
+        {
+            throw new IllegalArgumentException("a cell is null; a missing value is a sentinel");
+        }
         if (CdtValues.isMissingSentinel(aEncoded))
         {
             return aEncoded;
         }
+        requireWritable(aEncoded, "cell");
         String text = aEncoded;
         boolean forceQuote = false;
         int i = 0;
@@ -301,9 +367,12 @@ public final class CdtDocument
         boolean needQuote = forceQuote || CdtFence.isFence(text);
         if (!needQuote)
         {
+            // String.trim() on the row drops every char up to U+0020 at its edges, so such a
+            // char at a field's edge needs the quotes as much as whitespace does
             char first = text.charAt(0);
-            if (Character.isWhitespace(first) || first == '#' || first == '|'
-                    || Character.isWhitespace(text.charAt(text.length() - 1)))
+            char last = text.charAt(text.length() - 1);
+            if (first <= ' ' || Character.isWhitespace(first) || first == '#' || first == '|'
+                    || last <= ' ')
             {
                 needQuote = true;
             }
@@ -328,9 +397,34 @@ public final class CdtDocument
     }
 
 
+    /**
+     * A refusal for text the parser cannot read back exactly: a line break of any kind (the parser
+     * splits the file on {@code \R} before it looks at quotes) or trailing whitespace (the parser
+     * strips it, inside quotes too).
+     */
+    private static void requireWritable(String aText, String aWhat)
+    {
+        for (int i = 0; i < aText.length(); i++)
+        {
+            if (isLineBreak(aText.charAt(i)))
+            {
+                throw new IllegalArgumentException(aWhat + " holds a line break (U+"
+                        + String.format(Locale.ROOT, "%04X", (int) aText.charAt(i))
+                        + "), which a .cdt line cannot carry: " + aText.strip());
+            }
+        }
+        if (!aText.isEmpty() && Character.isWhitespace(aText.charAt(aText.length() - 1)))
+        {
+            throw new IllegalArgumentException(aWhat + " ends in trailing whitespace, which the"
+                    + " parser strips: [" + aText + "]");
+        }
+    }
+
+
     /** A header attribute value, quoted the way {@link CdtWriter} quotes it. */
     static String quoteAttribute(String aValue)
     {
+        requireWritable(aValue, "attribute value");
         if (aValue.isEmpty())
         {
             return "\"\"";
@@ -339,7 +433,7 @@ public final class CdtDocument
         for (int i = 0; i < aValue.length(); i++)
         {
             char ch = aValue.charAt(i);
-            if (Character.isWhitespace(ch) || ch == '=' || ch == '"' || ch == '\'')
+            if (ch <= ' ' || Character.isWhitespace(ch) || ch == '=' || ch == '"' || ch == '\'')
             {
                 needQuote = true;
                 break;
@@ -359,25 +453,34 @@ public final class CdtDocument
     private String terminatorOf(DatasetBlock aBlock)
     {
         String header = lines.get(aBlock.headerLine());
-        if (header.endsWith("\r\n"))
-        {
-            return "\r\n";
-        }
-        if (header.endsWith("\n") || header.endsWith("\r"))
-        {
-            return header.substring(header.length() - 1);
-        }
-        return "\n";
+        String body = stripTerminator(header);
+        return body.length() == header.length() ? "\n" : header.substring(body.length());
+    }
+
+
+    /**
+     * Whether a char is one of the {@code \R} line breaks {@link CdtParser} splits on ({@code \r\n}
+     * is the pair of two of them).
+     */
+    static boolean isLineBreak(char aCh)
+    {
+        return aCh == '\n' || aCh == '\r' || aCh == '\u000B' || aCh == '\f' || aCh == '\u0085'
+                || aCh == '\u2028' || aCh == '\u2029';
     }
 
 
     private static boolean endsWithTerminator(String aLine)
     {
-        return aLine.endsWith("\n") || aLine.endsWith("\r");
+        return !aLine.isEmpty() && isLineBreak(aLine.charAt(aLine.length() - 1));
     }
 
 
-    /** Split into lines, each keeping its own terminator; a final unterminated line is kept. */
+    /**
+     * Split into lines, each keeping its own terminator; a final unterminated line is kept. The
+     * split points are {@link CdtParser}'s {@code \R}: {@code \r\n} as one terminator, and each of
+     * {@code \n}, {@code \r}, {@code U+000B}, {@code U+000C}, {@code U+0085}, {@code U+2028},
+     * {@code U+2029} alone.
+     */
     public static List<String> splitKeepingTerminators(String aText)
     {
         List<String> out = new ArrayList<>();
@@ -387,15 +490,9 @@ public final class CdtDocument
         while (i < n)
         {
             char c = aText.charAt(i);
-            if (c == '\n')
+            if (isLineBreak(c))
             {
-                out.add(aText.substring(start, i + 1));
-                start = i + 1;
-                i++;
-            }
-            else if (c == '\r')
-            {
-                int end = i + 1 < n && aText.charAt(i + 1) == '\n' ? i + 2 : i + 1;
+                int end = c == '\r' && i + 1 < n && aText.charAt(i + 1) == '\n' ? i + 2 : i + 1;
                 out.add(aText.substring(start, end));
                 start = end;
                 i = end;
@@ -413,19 +510,26 @@ public final class CdtDocument
     }
 
 
+    /** A line without its terminator (one terminator at most, as split). */
     private static String stripTerminator(String aLine)
     {
-        int end = aLine.length();
-        while (end > 0 && (aLine.charAt(end - 1) == '\n' || aLine.charAt(end - 1) == '\r'))
+        if (aLine.endsWith("\r\n"))
         {
-            end--;
+            return aLine.substring(0, aLine.length() - 2);
         }
-        return aLine.substring(0, end);
+        return endsWithTerminator(aLine) ? aLine.substring(0, aLine.length() - 1) : aLine;
     }
 
 
-    /** Walk the lines the way the parser does and record where each block sits. */
-    static List<DatasetBlock> locate(List<String> aLines)
+    /**
+     * Walk the lines the way the parser does and record where each block sits.
+     *
+     * @param aLines
+     *            the lines, split as {@link #splitKeepingTerminators(String)} splits
+     * @param aNames
+     *            the parser's dataset names in file order (one per block)
+     */
+    static List<DatasetBlock> locate(List<String> aLines, List<String> aNames)
     {
         List<DatasetBlock> out = new ArrayList<>();
         int i = 0;
@@ -443,7 +547,12 @@ public final class CdtDocument
                 throw new CdtParseException(
                         "document:" + (i + 1) + ": expected 'dataset' line, got: " + trimmed);
             }
-            String name = datasetName(trimmed, i);
+            if (out.size() >= aNames.size())
+            {
+                throw new IllegalStateException("document:" + (i + 1)
+                        + ": more dataset blocks than the parser read (" + aNames.size() + ")");
+            }
+            String name = aNames.get(out.size());
             int header = i;
             i++;
             int fence = -1;
@@ -479,23 +588,11 @@ public final class CdtDocument
             }
             out.add(new DatasetBlock(name, header, header + 1, fence, rowsStart, close, i));
         }
+        if (out.size() != aNames.size())
+        {
+            throw new IllegalStateException("document: " + out.size()
+                    + " dataset block(s) located, the parser read " + aNames.size());
+        }
         return Collections.unmodifiableList(out);
-    }
-
-
-    private static String datasetName(String aTrimmedLine, int aLineIdx)
-    {
-        String rest = aTrimmedLine.substring("dataset".length()).trim();
-        int end = 0;
-        while (end < rest.length() && !Character.isWhitespace(rest.charAt(end)))
-        {
-            end++;
-        }
-        if (end == 0)
-        {
-            throw new CdtParseException(
-                    "document:" + (aLineIdx + 1) + ": dataset line missing name");
-        }
-        return rest.substring(0, end);
     }
 }
