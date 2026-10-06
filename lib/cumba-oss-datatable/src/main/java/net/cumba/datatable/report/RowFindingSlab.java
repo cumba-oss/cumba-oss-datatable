@@ -18,13 +18,20 @@ import org.jspecify.annotations.Nullable;
  * <h2>Layout</h2>
  *
  * <pre>
- *   rowIndices = [r0, r1, …, rN-1]        (sorted ascending, distinct)
+ *   rowIndices = [r0, r1, …, rN-1]        (sorted ascending; a row may repeat)
  *   flatValues = [ v(0,0), v(0,1), …, v(0,C-1),
  *                  v(1,0), v(1,1), …, v(1,C-1),
  *                  …,
  *                  v(N-1,0), …, v(N-1,C-1) ]
  *   variableCount = C
  * </pre>
+ *
+ * <p>
+ * The row indices are sorted ascending, and a row may repeat: several findings can sit on one
+ * record — per-(column, row) findings, or an expanded row's distinct related values (the merged
+ * evaluation table's fan-out, {@code PLAN-merged-evaluation-table} P-9). Each occurrence is its own
+ * slab position with its own values.
+ * </p>
  *
  * <p>
  * {@code flatValues.length == rowIndices.length * variableCount} is an invariant enforced at
@@ -97,8 +104,8 @@ public final class RowFindingSlab
 
 
     /**
-     * Raw access to the (sorted, distinct) row indices. The returned array is the internal storage
-     * — callers MUST NOT mutate it.
+     * Raw access to the row indices (sorted; a row index may repeat). The returned array is the
+     * internal storage — callers MUST NOT mutate it.
      */
     @JsonProperty("rowIndices")
     public int[] rowIndices()
@@ -155,7 +162,14 @@ public final class RowFindingSlab
     /**
      * Binary search for the given 0-based row index.
      *
-     * @return slab position of the matching row, or {@code -1} if the row is not covered.
+     * <p>
+     * ⚠ When the row repeats (several findings on one record) the position returned is ONE of its
+     * occurrences, which one is unspecified ({@link Arrays#binarySearch(int[], int)} makes no
+     * guarantee among equal elements) — a caller that needs every occurrence walks the neighbours
+     * of the answer, and a caller that needs a particular one must not rely on this method.
+     * </p>
+     *
+     * @return slab position of a matching row, or {@code -1} if the row is not covered.
      */
     public int positionOf(int aRowIndex)
     {
