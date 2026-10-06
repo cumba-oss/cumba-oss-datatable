@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.merge;
 
+// OSS-IDENTITY datatable-merge: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import net.cumba.datatable.merge.MergeRequest;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.MergedTableFactory;

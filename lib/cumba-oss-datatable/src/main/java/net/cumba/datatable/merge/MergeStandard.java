@@ -1,5 +1,8 @@
 package net.cumba.datatable.merge;
 
+// OSS-IDENTITY datatable-merge: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 /**
  * The CDISC standard a merge reads its {@code SUPP--} and {@code RELREC} datasets under
  * ({@code PLAN-merged-evaluation-table} §3.5, §3.6, W1 review M1 / L3). Two readings depend on it:

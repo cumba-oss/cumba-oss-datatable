@@ -1,5 +1,8 @@
 package net.cumba.datatable.merge;
 
+// OSS-IDENTITY datatable-merge: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 /**
  * A dataset a merge asked its {@link DatasetResolver} for and did not get
  * ({@link MergedTable#unresolvedDatasets()}): what kind of part asked, and the name it asked for.

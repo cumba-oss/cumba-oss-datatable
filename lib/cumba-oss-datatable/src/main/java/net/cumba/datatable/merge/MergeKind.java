@@ -1,5 +1,8 @@
 package net.cumba.datatable.merge;
 
+// OSS-IDENTITY datatable-merge: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 /**
  * The kind of a part of a {@link MergedTable}: where its columns come from and how its row map was
  * built. Published per merged column as {@link MergeMeta#MERGE_KIND} (its {@link #name()}), so a
