@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -93,8 +96,9 @@ class DefineMetadataLibraryIntegrationTest
     void name_takenFromStudyName_whenPresent()
     {
         GlobalVariables gv = GlobalVariables.builder().studyName("MY-STUDY").build();
+        // Define-XML 2.0 shape: the standard is carried by the MetaDataVersion attributes.
         MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1")
-                .standardName("SDTM-IG").standardVersion("3.4").defineVersion("2.1.0").build();
+                .standardName("SDTM-IG").standardVersion("3.4").defineVersion("2.0.0").build();
 
         IMetadataLibrary lib = buildLibrary(mdv, gv);
 
@@ -138,8 +142,9 @@ class DefineMetadataLibraryIntegrationTest
     void metaValue_lookup_byKnownKeys()
     {
         GlobalVariables gv = GlobalVariables.builder().studyName("S").build();
+        // Define-XML 2.0 shape: the standard is carried by the MetaDataVersion attributes.
         MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1")
-                .standardName("SDTM-IG").standardVersion("3.4").defineVersion("2.1.0").build();
+                .standardName("SDTM-IG").standardVersion("3.4").defineVersion("2.0.0").build();
 
         IMetadataLibrary lib = buildLibrary(mdv, gv);
 
@@ -147,7 +152,7 @@ class DefineMetadataLibraryIntegrationTest
                 lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME).orElseThrow());
         assertEquals("3.4",
                 lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION).orElseThrow());
-        assertEquals("2.1.0",
+        assertEquals("2.0.0",
                 lib.getMetaValue(IMetadataLibrary.META_KEY_DEFINE_VERSION).orElseThrow());
         assertEquals(BASE_URI.toString(),
                 lib.getMetaValue(IMetadataLibrary.META_KEY_SOURCE_URI).orElseThrow());
@@ -159,7 +164,7 @@ class DefineMetadataLibraryIntegrationTest
     void getMetaKeys_includesPopulatedFieldsOnly()
     {
         GlobalVariables gv = GlobalVariables.builder().studyName("S").build();
-        // only standardName is populated
+        // only standardName is populated (Define-XML 2.0 attribute, no def:Standards)
         MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1")
                 .standardName("SDTM-IG").build();
         IMetadataLibrary lib = buildLibrary(mdv, gv);
@@ -169,6 +174,134 @@ class DefineMetadataLibraryIntegrationTest
         assertFalse(keys.contains(IMetadataLibrary.META_KEY_STANDARD_VERSION));
         assertFalse(keys.contains(IMetadataLibrary.META_KEY_DEFINE_VERSION));
         assertTrue(keys.contains(IMetadataLibrary.META_KEY_SOURCE_URI));
+    }
+
+    // ==================== Define-XML 2.1: the IG from def:Standards ====================
+
+
+    private static Standard ig(String aOid, String aName, String aVersion)
+    {
+        return Standard.builder().oid(aOid).name(aName).type("IG").version(aVersion).status("Final")
+                .build();
+    }
+
+
+    private static Standard ct(String aOid, String aPublishingSet, String aVersion)
+    {
+        return Standard.builder().oid(aOid).name("CDISC/NCI").type("CT")
+                .publishingSet(aPublishingSet).version(aVersion).status("Final").build();
+    }
+
+
+    /**
+     * H1: a Define-XML 2.1 carries its implementation guide only in {@code def:Standards} (no
+     * {@code def:StandardName} attribute). Before the fix every 2.1 define answered no standard at
+     * all. The CT entry precedes the IG on purpose: the IG is found by its type, not its position.
+     */
+    @Test
+    void standard_define21_comesFromTheIgStandard()
+    {
+        GlobalVariables gv = GlobalVariables.builder().studyName("S").build();
+        Standards stds = Standards.builder()
+                .standards(
+                        List.of(ct("STD.CT", "SDTM", "2024-09-27"), ig("STD.IG", "SDTMIG", "3.4")))
+                .build();
+        MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1").defineVersion("2.1.0")
+                .standards(stds).build();
+
+        IMetadataLibrary lib = buildLibrary(mdv, gv);
+
+        assertEquals(Optional.of("SDTMIG"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME));
+        assertEquals(Optional.of("3.4"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION));
+        assertEquals("SDTMIG", lib.getVersion());
+        Set<String> keys = lib.getMetaKeys();
+        assertTrue(keys.contains(IMetadataLibrary.META_KEY_STANDARD_NAME));
+        assertTrue(keys.contains(IMetadataLibrary.META_KEY_STANDARD_VERSION));
+    }
+
+
+    /** When both shapes are present the 2.1 {@code def:Standards} IG wins over the attributes. */
+    @Test
+    void standard_igStandardWinsOverThe20Attributes()
+    {
+        Standards stds = Standards.builder().standards(List.of(ig("STD.IG", "SDTMIG", "3.4")))
+                .build();
+        MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1").defineVersion("2.1.0")
+                .standardName("SDTM-IG").standardVersion("3.2").standards(stds).build();
+
+        IMetadataLibrary lib = buildLibrary(mdv, null);
+
+        assertEquals(Optional.of("SDTMIG"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME));
+        assertEquals(Optional.of("3.4"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION));
+    }
+
+
+    /**
+     * The first {@code Type="IG"} standard in document order is the IG: a supplement listed after
+     * it ({@code SDTMIG-MD}, as in the CDISC MSG v2 example) does not replace it.
+     */
+    @Test
+    void standard_firstIgInDocumentOrder_aSupplementAfterItIsIgnored()
+    {
+        Standards stds = Standards
+                .builder().standards(List.of(ig("STD.1", "SDTMIG", "3.3"),
+                        ig("STD.2", "SDTMIG-MD", "1.1"), ct("STD.3", "SDTM", "2020-12-18")))
+                .build();
+        MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1").defineVersion("2.1.0")
+                .standards(stds).build();
+
+        IMetadataLibrary lib = buildLibrary(mdv, null);
+
+        assertEquals(Optional.of("SDTMIG"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME));
+        assertEquals(Optional.of("3.3"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION));
+    }
+
+
+    /** A {@code def:Standards} block with CT entries only names no IG: no standard is reported. */
+    @Test
+    void standard_ctOnlyStandards_reportNoStandard()
+    {
+        Standards stds = Standards.builder().standards(List.of(ct("STD.CT", "SDTM", "2024-09-27")))
+                .build();
+        MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1").defineVersion("2.1.0")
+                .standards(stds).build();
+
+        IMetadataLibrary lib = buildLibrary(mdv, null);
+
+        assertTrue(lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME).isEmpty());
+        assertTrue(lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION).isEmpty());
+        assertFalse(lib.getMetaKeys().contains(IMetadataLibrary.META_KEY_STANDARD_NAME));
+    }
+
+
+    /**
+     * The same claim on a real Define-XML 2.1 file read through the production parser
+     * ({@link DefineSupport#DefineSupport(URI)}), not a hand-built model:
+     * {@code pilot-clean-21.xml} is the schema-clean pilot fixture of
+     * {@code cumba-corej-define-conformance}, copied verbatim. It declares
+     * {@code <def:Standard Name="SDTMIG" Type="IG" Version="3.4"/>} and no {@code def:StandardName}
+     * attribute.
+     */
+    @Test
+    void standard_realDefine21File_readsTheIgStandard() throws IOException, URISyntaxException
+    {
+        URL url = DefineMetadataLibraryIntegrationTest.class.getResource("pilot-clean-21.xml");
+        assertNotNull(url, "test resource pilot-clean-21.xml");
+        IMetadataLibrary lib = DefineMetadataLibrary.from(new DefineSupport(url.toURI()));
+
+        assertEquals("PILOT-STUDY", lib.getName());
+        assertEquals(Optional.of("2.1.0"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_DEFINE_VERSION));
+        assertEquals(Optional.of("SDTMIG"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_NAME));
+        assertEquals(Optional.of("3.4"),
+                lib.getMetaValue(IMetadataLibrary.META_KEY_STANDARD_VERSION));
     }
 
     // ==================== Ct-package id assembly ====================

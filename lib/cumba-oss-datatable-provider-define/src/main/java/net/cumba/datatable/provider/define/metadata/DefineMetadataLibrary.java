@@ -26,6 +26,7 @@ import net.cumba.cdisc.define.Leaf;
 import net.cumba.cdisc.define.MetaDataVersion;
 import net.cumba.cdisc.define.MethodDef;
 import net.cumba.cdisc.define.Standard;
+import net.cumba.cdisc.define.Standards;
 import net.cumba.cdisc.define.Study;
 import net.cumba.cdisc.define.TranslatedText;
 import net.cumba.datatable.help.CDT;
@@ -85,8 +86,17 @@ public class DefineMetadataLibrary implements IMetadataLibrary
             if (!CDT.isEmptyOrNull(mdvs))
             {
                 MetaDataVersion mdv = mdvs.get(0);
-                mdvStdName = mdv.getStandardName();
-                mdvStdVersion = mdv.getStandardVersion();
+                Standard ig = firstImplementationGuide(mdv);
+                if (ig != null)
+                {
+                    mdvStdName = ig.getName();
+                    mdvStdVersion = ig.getVersion();
+                }
+                else
+                {
+                    mdvStdName = mdv.getStandardName();
+                    mdvStdVersion = mdv.getStandardVersion();
+                }
                 mdvDefineVersion = mdv.getDefineVersion();
             }
         }
@@ -96,6 +106,43 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         standardVersion = mdvStdVersion;
         defineVersion = mdvDefineVersion;
         ctPackages = collectCtPackageIds(aDefine);
+    }
+
+
+    /**
+     * The implementation guide a Define-XML 2.1 declares: the <b>first</b> {@code <def:Standard>}
+     * with {@code Type="IG"} in document order inside the MetaDataVersion's
+     * {@code <def:Standards>}. Its {@code Name} and {@code Version} become this library's standard
+     * name and version, and win over the Define-XML 2.0 MetaDataVersion attributes
+     * {@code def:StandardName} / {@code def:StandardVersion} (a 2.1 define does not carry those; a
+     * 2.0 define has no {@code <def:Standards>}, so the attributes remain its only source).
+     *
+     * <p>
+     * ⚠ "First in document order" is the rule, not "the only one": a 2.1 define may list further
+     * {@code Type="IG"} standards after the primary IG, e.g. a supplement such as {@code SDTMIG-MD}
+     * after {@code SDTMIG} (the CDISC MSG v2 example does exactly that). Those later entries are
+     * ignored here.
+     * </p>
+     *
+     * @param aMdv
+     *            the MetaDataVersion to read.
+     * @return the first IG standard, or {@code null} when the MetaDataVersion declares none.
+     */
+    private static @Nullable Standard firstImplementationGuide(MetaDataVersion aMdv)
+    {
+        Standards stds = aMdv.getStandards();
+        if (stds == null || stds.getStandards() == null)
+        {
+            return null;
+        }
+        for (Standard s : stds.getStandards())
+        {
+            if (s != null && "IG".equalsIgnoreCase(s.getType()))
+            {
+                return s;
+            }
+        }
+        return null;
     }
 
 
