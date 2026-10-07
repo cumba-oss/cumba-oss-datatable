@@ -230,6 +230,21 @@ public class ViewDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The viewed table's generation: a change below this view invalidates the view's cached column
+     * contents.
+     * </p>
+     */
+    @Override
+    protected long sourceContentGeneration()
+    {
+        return table.contentGeneration();
+    }
+
+
     @Override
     public long getRowCount()
     {

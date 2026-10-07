@@ -398,6 +398,26 @@ public final class UnionDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The members' generations, summed: a change in any member invalidates the union's cached
+     * column contents.
+     * </p>
+     */
+    @Override
+    protected long sourceContentGeneration()
+    {
+        long sum = 0L;
+        for (IDataTable t : members)
+        {
+            sum += t.contentGeneration();
+        }
+        return sum;
+    }
+
+
     @Override
     public long getRowCount()
     {

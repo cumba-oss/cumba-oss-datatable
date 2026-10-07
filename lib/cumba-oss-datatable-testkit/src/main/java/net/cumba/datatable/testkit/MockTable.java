@@ -16,6 +16,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import net.cumba.datatable.ColumnContentScan;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
@@ -435,6 +436,13 @@ public final class MockTable
         // isSupplied is a DEFAULT method (a plain table: true for every valid cell, range-checked),
         // which Mockito does not run — it answered false, the not-supplied marker, for every cell.
         lenient().doCallRealMethod().when(table).isSupplied(anyLong(), anyInt());
+        // The content status (PLAN-present-empty-column-fold): a mock answers null for an
+        // unstubbed default method, which the engine would read as an ABSENT column; answer as
+        // a real table does — the scan over the stubbed cell reads, uncached (the default).
+        lenient().doAnswer(inv -> ColumnContentScan.scan(table, inv.getArgument(0))).when(table)
+                .getColumnContent(anyInt());
+        lenient().doCallRealMethod().when(table).getColumnContents();
+        lenient().doCallRealMethod().when(table).contentGeneration();
 
         List<IDataTableColumn> colsByIndex = new ArrayList<>();
 

@@ -74,6 +74,21 @@ final class SuppPart extends AbstractDataTable
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The SUPP table's generation: this part serves its cells through the pivot maps, so a change
+     * below it invalidates the cached column contents.
+     * </p>
+     */
+    @Override
+    protected long sourceContentGeneration()
+    {
+        return supp.contentGeneration();
+    }
+
+
     @Override
     public long getRowCount()
     {

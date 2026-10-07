@@ -438,6 +438,20 @@ public class OverlayDataTable extends AbstractDataTable
     // ---- IDataTable implementation ----
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The delegate's generation: an overlay serves the delegate's cells.
+     * </p>
+     */
+    @Override
+    protected long sourceContentGeneration()
+    {
+        return delegate.contentGeneration();
+    }
+
+
     @Override
     public long getRowCount()
     {

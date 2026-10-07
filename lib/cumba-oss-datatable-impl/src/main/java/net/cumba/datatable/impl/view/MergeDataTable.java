@@ -331,6 +331,25 @@ public class MergeDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>
+     * The merged tables' generations, summed.
+     * </p>
+     */
+    @Override
+    protected long sourceContentGeneration()
+    {
+        long sum = 0L;
+        for (IDataTable t : tables)
+        {
+            sum += t.contentGeneration();
+        }
+        return sum;
+    }
+
+
     @Override
     public long getRowCount()
     {

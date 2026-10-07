@@ -420,6 +420,77 @@ public interface IDataTable
 
 
     /**
+     * The {@linkplain ColumnContent content status} of one column — its fill ({@code FILLED} /
+     * {@code EMPTY} / {@code MISSING}) and uniformity ({@code SINGLE_VALUE} /
+     * {@code MULTI_VALUES}), read over every row ({@code PLAN-present-empty-column-fold} C1).
+     * <p>
+     * This default scans once with {@link #isEmptyOrMissing(long, int)},
+     * {@link #isMissingOrNull(long, int)} and value equality ({@link ColumnContentScan}) and caches
+     * nothing: an interface default has no per-instance state. The implementation module's
+     * {@code AbstractDataTable} caches the answer per instance under its
+     * {@linkplain #contentGeneration() content generation} and drops it on an edit; storage that
+     * knows the answer for free (a constant-value buffer) answers without a scan.
+     * </p>
+     * <p>
+     * ⚠ A table with no rows answers {@link ColumnContent#NO_ROWS} ({@code MISSING +
+     * SINGLE_VALUE}), vacuously. A caller that folds or collapses a check on this status must test
+     * {@link #getRowCount()} itself — a 0-row table never folds (C5: a record-level rule on no
+     * records reports no finding, and a fold must not turn that into one).
+     * </p>
+     *
+     * @param aColumn
+     *            the 0-based column index.<br/>
+     *            Valid range is <code>0 &lt;= aColumn &lt; columnCount</code>.
+     * @return the column's content status
+     * @throws IndexOutOfBoundsException
+     *             if the column index is outside of the valid bounds.
+     */
+    default ColumnContent getColumnContent(int aColumn) throws IndexOutOfBoundsException
+    {
+        return ColumnContentScan.scan(this, aColumn);
+    }
+
+
+    /**
+     * The {@linkplain #getColumnContent(int) content status} of every column, indexed like the
+     * metadata's columns.
+     *
+     * @return one status per column
+     */
+    default ColumnContent[] getColumnContents()
+    {
+        int cc = getColumnCount();
+        ColumnContent[] out = new ColumnContent[cc];
+        for (int c = 0; c < cc; c++)
+        {
+            out[c] = getColumnContent(c);
+        }
+        return out;
+    }
+
+
+    /**
+     * The <b>content generation</b> of this table: a counter that moves whenever the cells this
+     * table serves may have changed, so a cached {@link #getColumnContent(int)} answer taken under
+     * one generation is stale under another. A table whose cells never change answers a constant;
+     * an editable table bumps its own counter on every edit; a table that serves another table's
+     * cells (a view, a filter, a union, a merge, an overlay) <b>must</b> fold its sources'
+     * generations into its own, or its cache outlives an edit made below it
+     * ({@code PLAN-present-empty-column-fold} §9 V2: a sorted or filtered view above an editable
+     * table is exactly that chain).
+     * <p>
+     * The default answers {@code 0}: an immutable table with no sources.
+     * </p>
+     *
+     * @return the current content generation
+     */
+    default long contentGeneration()
+    {
+        return 0L;
+    }
+
+
+    /**
      * Retrieve a single value of the table in its original data type.
      *
      * @param aRow
