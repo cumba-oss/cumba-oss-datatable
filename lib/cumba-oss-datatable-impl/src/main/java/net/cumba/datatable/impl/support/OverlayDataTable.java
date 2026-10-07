@@ -159,6 +159,7 @@ public class OverlayDataTable extends AbstractDataTable
         long key = cellKey(aRow, aColumn);
         valueOverrides.put(key, aValue);
         dataValueOverrides.remove(key);
+        invalidateColumnContent();
     }
 
 
@@ -197,6 +198,7 @@ public class OverlayDataTable extends AbstractDataTable
         long key = cellKey(aRow, aColumn);
         dataValueOverrides.put(key, aValue);
         valueOverrides.remove(key);
+        invalidateColumnContent();
     }
 
     // ---- Column modifications ----
@@ -224,6 +226,7 @@ public class OverlayDataTable extends AbstractDataTable
         DataTableColumnMeta existing = getEffectiveColumnMeta(idx);
         columnMetaOverrides.put(idx, existing.toBuilder().name(aNewName).build());
         metaDirty = true;
+        invalidateColumnContent();
         return true;
     }
 
@@ -256,6 +259,7 @@ public class OverlayDataTable extends AbstractDataTable
         reindexColumnMeta(idx);
 
         metaDirty = true;
+        invalidateColumnContent();
         return true;
     }
 
@@ -282,6 +286,7 @@ public class OverlayDataTable extends AbstractDataTable
                         .label(aLabel != null ? aLabel : aName)
                         .type(aType != null ? aType : DataValueType.STRING).build());
         metaDirty = true;
+        invalidateColumnContent();
         return newIndex;
     }
 
@@ -412,6 +417,7 @@ public class OverlayDataTable extends AbstractDataTable
             DataTableColumnMeta existing = getEffectiveColumnMeta(idx);
             columnMetaOverrides.put(idx, existing.toBuilder().type(aNewType).build());
             metaDirty = true;
+            invalidateColumnContent();
         }
     }
 

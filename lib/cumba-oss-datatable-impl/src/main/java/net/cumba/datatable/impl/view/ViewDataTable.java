@@ -149,6 +149,7 @@ public class ViewDataTable extends AbstractDataTable
         valueUnavailable = aValue;
         columnUnavailable = computeColumnUnavailable(
                 getMetaData().getAllColumns().toArray(DataTableColumnMeta[]::new));
+        invalidateColumnContent();
     }
 
 
@@ -203,6 +204,7 @@ public class ViewDataTable extends AbstractDataTable
         throws IndexOutOfBoundsException
     {
         columnUnavailable[ensureValidColumn(aColumn)] = aValue;
+        invalidateColumnContent();
     }
 
 

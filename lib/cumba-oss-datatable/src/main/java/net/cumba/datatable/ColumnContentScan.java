@@ -1,6 +1,5 @@
 package net.cumba.datatable;
 
-import java.util.Objects;
 import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
@@ -14,12 +13,12 @@ import org.jspecify.annotations.Nullable;
  * value.
  *
  * <p>
- * Value equality is {@link Objects#equals} over the raw cell, with one normalisation: a boxed NaN
- * (the payload-coded missing of a floating-point buffer) is the {@link MissingValue} it encodes
- * ({@link MissingValue#forNaN(double)}) — for the fill (it is missing, never a value, even where
- * the table's own cell test does not decode it) and for the equality, so {@code .A} and {@code ._}
- * stay distinct and a NaN-coded {@code .} equals an explicit {@code MissingValue.MIS}, exactly as
- * the typed read reports them.
+ * Value equality is {@link java.util.Objects#equals} over the raw cell, with one normalisation: a
+ * boxed NaN (the payload-coded missing of a floating-point buffer) is the {@link MissingValue} it
+ * encodes ({@link MissingValue#forNaN(double)}) — for the fill (it is missing, never a value, even
+ * where the table's own cell test does not decode it) and for the equality, so {@code .A} and
+ * {@code ._} stay distinct and a NaN-coded {@code .} equals an explicit {@code MissingValue.MIS},
+ * exactly as the typed read reports them.
  * </p>
  */
 public final class ColumnContentScan
@@ -56,55 +55,53 @@ public final class ColumnContentScan
             }
             return ColumnContent.NO_ROWS;
         }
-        boolean anyFilled = false;
-        boolean allMissing = true;
-        boolean uniform = true;
+        Accumulator acc = new Accumulator();
         int hash0 = aTable.hashCodeAt(0, aColumn);
-        Object value0 = normalise(aTable.getValue(0, aColumn));
         for (long r = 0; r < rowCount; r++)
         {
-            if (aTable.isEmptyOrMissing(r, aColumn))
+            boolean blank = aTable.isEmptyOrMissing(r, aColumn);
+            // The hash is the allocation-free pre-filter: different hashes are different values
+            // — except against a missing row 0, whose NaN-coded or null twin hashes differently
+            // and still equals it once normalised. The value is read only where it is needed.
+            boolean readValue = !blank || acc.needsValue()
+                    || (r > 0 && aTable.hashCodeAt(r, aColumn) == hash0);
+            if (r > 0 && !readValue && !acc.firstIsMissing())
             {
-                if (allMissing && !aTable.isMissingOrNull(r, aColumn))
-                {
-                    allMissing = false;
-                }
+                acc.addDifferentValue(blank, blank && aTable.isMissingOrNull(r, aColumn));
             }
-            else if (!(normalise(aTable.getValue(r, aColumn)) instanceof MissingValue))
+            else
             {
-                // A raw NaN a table does not decode itself is still a missing value (the typed
-                // read reports it as one), so only a genuine value makes the column FILLED.
-                anyFilled = true;
-                allMissing = false;
+                Object value = r == 0 || readValue || acc.firstIsMissing()
+                        ? aTable.getValue(r, aColumn)
+                        : null;
+                acc.add(blank, blank && aTable.isMissingOrNull(r, aColumn), value);
             }
-            if (uniform && r > 0)
+            if (acc.decided())
             {
-                // The hash is the allocation-free pre-filter: different hashes are different
-                // values — except against a missing row 0, whose NaN-coded twin hashes as a
-                // Double and still equals it once normalised.
-                if (aTable.hashCodeAt(r, aColumn) != hash0 && !(value0 instanceof MissingValue))
-                {
-                    uniform = false;
-                }
-                else if (!Objects.equals(normalise(aTable.getValue(r, aColumn)), value0))
-                {
-                    uniform = false;
-                }
-            }
-            if (anyFilled && !uniform)
-            {
-                break; // both answers are final: FILLED cannot change, MULTI_VALUES cannot change
+                break;
             }
         }
-        ColumnContent.Fill fill = anyFilled ? ColumnContent.Fill.FILLED
-                : allMissing ? ColumnContent.Fill.MISSING : ColumnContent.Fill.EMPTY;
-        return new ColumnContent(fill, uniform ? ColumnContent.Uniformity.SINGLE_VALUE
-                : ColumnContent.Uniformity.MULTI_VALUES);
+        return acc.result();
     }
 
 
-    private static @Nullable Object normalise(@Nullable Object aValue)
+    /**
+     * The raw cell value as the scan compares it: a boxed NaN (the payload-coded missing of a
+     * floating-point buffer) and a {@code null} are the {@link MissingValue} they stand for
+     * ({@link MissingValue#forNaN(double)} / {@link MissingValue#MIS}); every other value is
+     * itself. Shared with every scan over cells the table does not own (a SUPP-qualifier view
+     * column, a joined vector), so the three arms cannot drift.
+     *
+     * @param aValue
+     *            the raw cell value
+     * @return the comparable value, never {@code null}
+     */
+    public static Object normalise(@Nullable Object aValue)
     {
+        if (aValue == null)
+        {
+            return MissingValue.MIS;
+        }
         if (aValue instanceof Double d && d.isNaN())
         {
             return MissingValue.forNaN(d);
@@ -114,5 +111,129 @@ public final class ColumnContentScan
             return MissingValue.forNaN(f);
         }
         return aValue;
+    }
+
+    /**
+     * The one fill / uniformity fold, fed one cell at a time by every scan arm — the table scan
+     * above, and the arms over cells the table does not own. {@link #add} takes the cell's
+     * blankness, its missingness and its raw value (normalised here); {@link #result()} is the
+     * status, {@link #decided()} says when the rest of the rows cannot change it.
+     */
+    public static final class Accumulator
+    {
+
+        private boolean anyFilled;
+
+        private boolean allMissing = true;
+
+        private boolean uniform = true;
+
+        private boolean first = true;
+
+        private @Nullable Object firstValue;
+
+        private boolean firstMissing;
+
+        /**
+         * Adds one cell.
+         *
+         * @param aBlank
+         *            whether the cell is blank ({@code ""}, missing or null)
+         * @param aMissing
+         *            whether the cell is a missing value (or null)
+         * @param aValue
+         *            the raw cell value (a NaN or a null is a missing value)
+         */
+        public void add(boolean aBlank, boolean aMissing, @Nullable Object aValue)
+        {
+            Object value = normalise(aValue);
+            boolean missing = aMissing || value instanceof MissingValue;
+            if (!aBlank && !missing)
+            {
+                anyFilled = true;
+                allMissing = false;
+            }
+            else if (!missing)
+            {
+                allMissing = false;
+            }
+            if (first)
+            {
+                first = false;
+                firstValue = value;
+                firstMissing = missing;
+            }
+            else if (uniform && !java.util.Objects.equals(value, firstValue))
+            {
+                uniform = false;
+            }
+        }
+
+
+        /**
+         * Adds a cell already known to differ from row 0's value (a hash pre-filter said so).
+         *
+         * @param aBlank
+         *            whether the cell is blank
+         * @param aMissing
+         *            whether the cell is a missing value
+         */
+        public void addDifferentValue(boolean aBlank, boolean aMissing)
+        {
+            if (!aBlank)
+            {
+                anyFilled = true;
+                allMissing = false;
+            }
+            else if (!aMissing)
+            {
+                allMissing = false;
+            }
+            first = false;
+            uniform = false;
+        }
+
+
+        /** Whether the uniformity test still needs the cell's value (row 0 not yet seen). */
+        boolean needsValue()
+        {
+            return first || uniform;
+        }
+
+
+        /** Whether row 0 holds a missing value (then a different hash may still be equal). */
+        boolean firstIsMissing()
+        {
+            return !first && firstMissing;
+        }
+
+
+        /**
+         * Whether both answers are final: FILLED cannot change back and MULTI_VALUES cannot.
+         *
+         * @return whether the remaining cells cannot change the result
+         */
+        public boolean decided()
+        {
+            return anyFilled && !uniform;
+        }
+
+
+        /**
+         * The status of the cells added so far.
+         *
+         * @return the content status; {@link ColumnContent#NO_ROWS} when nothing was added
+         */
+        public ColumnContent result()
+        {
+            if (first)
+            {
+                return ColumnContent.NO_ROWS;
+            }
+            ColumnContent.Fill fill = anyFilled ? ColumnContent.Fill.FILLED
+                    : allMissing ? ColumnContent.Fill.MISSING : ColumnContent.Fill.EMPTY;
+            return new ColumnContent(fill, uniform ? ColumnContent.Uniformity.SINGLE_VALUE
+                    : ColumnContent.Uniformity.MULTI_VALUES);
+        }
     }
 }

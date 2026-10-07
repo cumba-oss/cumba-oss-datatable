@@ -177,6 +177,14 @@ class ColumnContentScanTest
     {
         assertEquals(of(Fill.MISSING, Uniformity.SINGLE_VALUE),
                 scan(DataValueType.STRING, (Object) null, null));
+        // PACK 4 review L1: a raw null IS MissingValue.MIS for the uniformity too — in either row
+        // position (row 0's hash pre-filter yields to the equality against a missing row 0).
+        assertEquals(of(Fill.MISSING, Uniformity.SINGLE_VALUE),
+                scan(DataValueType.STRING, (Object) null, MissingValue.MIS));
+        assertEquals(of(Fill.MISSING, Uniformity.SINGLE_VALUE),
+                scan(DataValueType.STRING, MissingValue.MIS, null));
+        assertEquals(of(Fill.MISSING, Uniformity.MULTI_VALUES),
+                scan(DataValueType.STRING, (Object) null, MissingValue.MIS_A), "null is ., not .A");
     }
 
 

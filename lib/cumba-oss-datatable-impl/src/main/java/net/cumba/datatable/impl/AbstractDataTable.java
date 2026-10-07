@@ -122,16 +122,22 @@ public abstract class AbstractDataTable implements IDataTable
         }
         ColumnContent content = computeColumnContent(aColumn);
         // Store only under the generation the scan started with: an invalidation in between
-        // (an edit's clear) must win over this result, never the other way round.
+        // (an edit's clear) must win over this result, never the other way round. The column
+        // count is read outside the lock (a wrapper may take its source's lock to answer it).
+        int columnCount = getColumnCount();
         if (contentGeneration() == generation)
         {
             synchronized (contentLock)
             {
                 @Nullable
                 ColumnContent[] cache = contentCache;
+                if (cache != null && contentCacheGeneration > generation)
+                {
+                    return content; // a newer generation already owns the cache
+                }
                 if (cache == null || contentCacheGeneration != generation)
                 {
-                    cache = new @Nullable ColumnContent[getColumnCount()];
+                    cache = new @Nullable ColumnContent[columnCount];
                     contentCache = cache;
                     contentCacheGeneration = generation;
                 }
