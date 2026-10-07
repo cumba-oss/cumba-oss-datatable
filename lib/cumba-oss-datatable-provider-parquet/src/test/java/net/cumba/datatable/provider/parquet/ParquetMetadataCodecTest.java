@@ -123,4 +123,18 @@ class ParquetMetadataCodecTest
         assertEquals("ADaM", meta.getMetaData("Standard"));
     }
 
+
+    @Test
+    void testApplyTableSkipsAnEncodingPairFromAnOlderFooter()
+    {
+        JsonNode root = ParquetMetadataCodec.parse("{\"tableMeta\":{\"Encoding\":\"windows-1252\","
+                + "\"EncodingSource\":\"DECLARED\",\"Standard\":\"ADaM\"}}");
+        DataTableMeta.DataTableMetaBuilder b = DataTableMeta.builder().name("T");
+        ParquetMetadataCodec.applyTable(root, b);
+        DataTableMeta meta = b.rowCount(0).totalRowCount(0).columns(new DataTableColumnMeta[0])
+                .build();
+        assertEquals("ADaM", meta.getMetaData("Standard"));
+        assertNull(meta.getMetaData("Encoding"));
+        assertNull(meta.getMetaData("EncodingSource"));
+    }
 }

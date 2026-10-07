@@ -317,6 +317,20 @@ public class BdatTableProvider extends AbstractDataTableProvider
 
 
     /**
+     * The {@code EncodingSource} of the charset {@link #resolveCharset(int)} answers for a header
+     * byte (E5, PLAN-provider-encoding-metadata): {@code DECLARED} when the byte maps to a charset
+     * the JVM supports, else {@code DEFAULT} — the ISO-8859-1 fallback was never declared.
+     */
+    static String resolveEncodingSource(int aEncodingByte)
+    {
+        String encodingName = getEncodingName(aEncodingByte);
+        return encodingName != null && Charset.isSupported(encodingName)
+                ? DataTableMetaSupport.ENCODING_SOURCE_DECLARED
+                : DataTableMetaSupport.ENCODING_SOURCE_DEFAULT;
+    }
+
+
+    /**
      * Build a {@link DataTableMeta} from a pre-parsed BDAT dataset descriptor without touching any
      * observation data.
      */
@@ -924,7 +938,9 @@ public class BdatTableProvider extends AbstractDataTableProvider
                 .rowCount(aRowCount)//
                 .totalRowCount(aRowCount)//
                 .addMetaData("Compression", compr)//
-                .addMetaData(META_KEY_ENCODING, aCharset.toString())//
+                .addMetaData(META_KEY_ENCODING, aCharset.name())//
+                .addMetaData(DataTableMetaSupport.META_KEY_ENCODING_SOURCE,
+                        resolveEncodingSource(aDataSet.getHeader2().encoding & 0xFF))//
                 .addMetaData("Row Length", aDataSet.getRowLength())//
         ;
 

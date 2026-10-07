@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.System.Logger.Level;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -173,6 +174,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri, aSheet.getSheetName());
         dtms.setFileFormat("XLSX", null);
+        // Text in an XLSX package is UTF-8 XML (E4, owner ruling 2026-10-07).
+        dtms.setEncoding(StandardCharsets.UTF_8.name(),
+                DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
         dtms.setDatasetSize(aUri);
 
         int colCount = headRow.getColumnCount();
@@ -229,6 +233,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
         dtms.setTable(aUri, aSheet.getSheetName());
         dtms.setFileFormat("XLSX", null);
+        // Text in an XLSX package is UTF-8 XML (E4, owner ruling 2026-10-07).
+        dtms.setEncoding(StandardCharsets.UTF_8.name(),
+                DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
         dtms.setDatasetSize(aUri);
 
         int colCount = headRow.getColumnCount();

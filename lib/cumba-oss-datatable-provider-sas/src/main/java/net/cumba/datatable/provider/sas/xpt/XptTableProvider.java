@@ -199,6 +199,43 @@ public class XptTableProvider extends AbstractDataTableProvider
 
 
     /**
+     * The metadata-only read adopts the charset property exactly like
+     * {@link #provide(URI, FileInfo, Map)}, so it reports the charset a load would decode with (the
+     * interface default drops the properties).
+     */
+    @Override
+    public DataTableMeta provideMetaData(URI aUri, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        setCharset(resolveCharset(aProperties));
+        return provideMetaData(aUri, aFileInfo);
+    }
+
+
+    /**
+     * The metadata-only read of a library member: the member's own charset first (chosen when its
+     * library was opened), else the property — exactly like
+     * {@link #provide(ILibraryMember, FileInfo, Map)}.
+     */
+    @Override
+    public DataTableMeta provideMetaData(ILibraryMember aMember, @Nullable FileInfo aFileInfo,
+            Map<Property, String> aProperties)
+        throws IOException
+    {
+        if (aMember instanceof XptLibraryMember xptMember && xptMember.getCharset() != null)
+        {
+            setCharset(xptMember.getCharset());
+        }
+        else
+        {
+            setCharset(resolveCharset(aProperties));
+        }
+        return provideMetaData(aMember, aFileInfo);
+    }
+
+
+    /**
      * {@inheritDoc}
      */
     @Override
@@ -547,6 +584,11 @@ public class XptTableProvider extends AbstractDataTableProvider
 
     protected void applyTableMetaData(DataTableMetaSupport aSupport, DatasetXpt aDataSet)
     {
+        // XPT records no encoding (E3): the charset decoded with, CONFIGURED when it is not the
+        // property's default.
+        Charset effective = getCharset();
+        aSupport.setEncoding(effective.name(), DataTableMetaSupport
+                .requestedCharsetSource(effective, Charset.forName(PROP_CHARSET.defaultValue())));
         DataTableMetaBuilder b = aSupport.getTableMeta();
 
         if (aDataSet.getCreated() != null)

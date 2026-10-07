@@ -400,4 +400,85 @@ class XptTableProviderPathsTest
                 : loopback.getHostAddress();
         return URI.create("http://" + host + ":" + server.getAddress().getPort() + aPath);
     }
+
+
+    /**
+     * E3 (PLAN-provider-encoding-metadata): XPT records no encoding, so the pair names the charset
+     * the provider decoded with and whether a non-default one was requested — the same answer on
+     * the load and on the metadata-only read, which until this plan ignored the property.
+     */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', nullValues = "<none>", value =
+    {
+            "<none>|UTF-8|DEFAULT", //
+            "UTF-8|UTF-8|DEFAULT", //
+            "no-such-charset|UTF-8|DEFAULT", //
+            "ISO-8859-1|ISO-8859-1|CONFIGURED"
+    })
+    void theEncodingPairNamesTheCharsetTheLoadAndTheMetadataReadDecodedWith(String aRequested,
+            String aEncoding, String aSource, @TempDir Path aTmp)
+        throws IOException
+    {
+        File file = copyOf(SINGLE, aTmp);
+        Map<Property, String> props = aRequested == null ? Map.of()
+                : Map.of(XptTableProvider.PROP_CHARSET, aRequested);
+        for (DataTableMeta meta : List.of(
+                new NoDownloadProvider().provide(file.toURI(), NO_FILE_INFO, props).getMetaData(),
+                new NoDownloadProvider().provideMetaData(file.toURI(), NO_FILE_INFO, props)))
+        {
+            assertEquals(aEncoding, meta.getMetaData("Encoding"), aRequested);
+            assertEquals(aSource, meta.getMetaData("EncodingSource"), aRequested);
+        }
+    }
+
+
+    @Test
+    void aLibraryMembersCharsetIsReportedOnTheLoadAndTheMetadataRead(@TempDir Path aTmp)
+        throws IOException
+    {
+        // The member's charset (chosen when its library was opened) wins over the property on
+        // both paths; the metadata-only read used to drop both.
+        File file = copyOf(SINGLE, aTmp);
+        XptLibraryMember member = XptLibraryMember.builder().name("ADSL").uri(file.toURI())
+                .charset(StandardCharsets.ISO_8859_1).build();
+        Map<Property, String> props = Map.of(XptTableProvider.PROP_CHARSET, "windows-1252");
+        for (DataTableMeta meta : List.of(
+                new NoDownloadProvider().provide(member, null, props).getMetaData(),
+                new NoDownloadProvider().provideMetaData(member, null, props)))
+        {
+            assertEquals("ISO-8859-1", meta.getMetaData("Encoding"));
+            assertEquals("CONFIGURED", meta.getMetaData("EncodingSource"));
+        }
+    }
+
+
+    @Test
+    void aLibraryMemberWithoutACharsetReportsTheProperty(@TempDir Path aTmp) throws IOException
+    {
+        File file = copyOf(SINGLE, aTmp);
+        XptLibraryMember member = XptLibraryMember.builder().name("ADSL").uri(file.toURI()).build();
+        Map<Property, String> props = Map.of(XptTableProvider.PROP_CHARSET, "windows-1252");
+        for (DataTableMeta meta : List.of(
+                new NoDownloadProvider().provide(member, null, props).getMetaData(),
+                new NoDownloadProvider().provideMetaData(member, null, props)))
+        {
+            assertEquals("windows-1252", meta.getMetaData("Encoding"));
+            assertEquals("CONFIGURED", meta.getMetaData("EncodingSource"));
+        }
+    }
+
+
+    @Test
+    void aLibraryMemberCarryingTheDefaultCharsetReportsDefault(@TempDir Path aTmp)
+        throws IOException
+    {
+        // The library was opened with the default (the data browser fills every property with its
+        // default): the member then reads exactly like a file nobody configured.
+        File file = copyOf(SINGLE, aTmp);
+        XptLibraryMember member = XptLibraryMember.builder().name("ADSL").uri(file.toURI())
+                .charset(StandardCharsets.UTF_8).build();
+        DataTableMeta meta = new NoDownloadProvider().provideMetaData(member, null, Map.of());
+        assertEquals("UTF-8", meta.getMetaData("Encoding"));
+        assertEquals("DEFAULT", meta.getMetaData("EncodingSource"));
+    }
 }

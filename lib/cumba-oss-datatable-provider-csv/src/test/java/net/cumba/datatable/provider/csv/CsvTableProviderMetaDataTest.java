@@ -113,4 +113,50 @@ class CsvTableProviderMetaDataTest
         assertEquals("CODE", meta.getColumn(2).getName());
     }
 
+
+    /**
+     * E3 (PLAN-provider-encoding-metadata): CSV declares no charset, so the pair names the charset
+     * the provider decoded with and whether a non-default one was requested. Absent, blank, the
+     * default itself or an unusable name all read the default UTF-8 as {@code DEFAULT}.
+     */
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', nullValues = "<none>", value =
+    {
+            "<none>|UTF-8|DEFAULT", //
+            "UTF-8|UTF-8|DEFAULT", //
+            "utf8|UTF-8|DEFAULT", //
+            "' '|UTF-8|DEFAULT", //
+            "no-such-charset|UTF-8|DEFAULT", //
+            "ISO-8859-1|ISO-8859-1|CONFIGURED", //
+            "windows-1252|windows-1252|CONFIGURED"
+    })
+    void theEncodingPairNamesTheCharsetTheProviderDecodedWith(String aRequested, String aEncoding,
+            String aSource)
+        throws Exception
+    {
+        URI uri = writeTempCsv("NAME\nAlice\n");
+        java.util.Map<net.cumba.datatable.io.Property, String> props = new java.util.HashMap<>();
+        if (aRequested != null)
+        {
+            props.put(CsvTableProvider.PROP_CHARSET, aRequested);
+        }
+        for (DataTableMeta meta : java.util.List.of(
+                new CsvTableProvider().provideMetaData(uri, CsvProviderSupplier.FI_CSV, props),
+                new CsvTableProvider().provide(uri, CsvProviderSupplier.FI_CSV, props)
+                        .getMetaData()))
+        {
+            assertEquals(aEncoding, meta.getMetaData("Encoding"), aRequested);
+            assertEquals(aSource, meta.getMetaData("EncodingSource"), aRequested);
+        }
+    }
+
+
+    @Test
+    void withoutPropertiesTheEncodingIsTheDefault() throws Exception
+    {
+        URI uri = writeTempCsv("NAME\nAlice\n");
+        DataTableMeta meta = provider.provideMetaData(uri, CsvProviderSupplier.FI_CSV);
+        assertEquals("UTF-8", meta.getMetaData("Encoding"));
+        assertEquals("DEFAULT", meta.getMetaData("EncodingSource"));
+    }
 }

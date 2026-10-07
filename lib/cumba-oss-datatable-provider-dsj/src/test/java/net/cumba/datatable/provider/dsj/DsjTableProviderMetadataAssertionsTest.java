@@ -287,4 +287,18 @@ class DsjTableProviderMetadataAssertionsTest
                 "targetDataType=decimal must resolve the column's stored type to DOUBLE");
     }
 
+
+    @Test
+    void bothPathsReportTheFormatFixedUtf8(@TempDir Path tmp) throws IOException
+    {
+        // Dataset-JSON mandates UTF-8; the pair says the format fixed it.
+        URI uri = writeJson(tmp, "enc.json", BASE.formatted("ENC Table"));
+        for (DataTableMeta meta : java.util.List.of(
+                new DsjTableProvider().provide(uri, DsjProviderSupplier.FI_DSJ_JSON).getMetaData(),
+                new DsjTableProvider().provideMetaData(uri, DsjProviderSupplier.FI_DSJ_JSON)))
+        {
+            assertEquals("UTF-8", meta.getMetaData(DataTableMetaSupport.META_KEY_ENCODING));
+            assertEquals("FORMAT", meta.getMetaData("EncodingSource"));
+        }
+    }
 }

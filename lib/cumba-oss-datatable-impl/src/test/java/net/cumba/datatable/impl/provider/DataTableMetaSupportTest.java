@@ -6,9 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.net.URI;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import net.cumba.datatable.DataTableColumnMeta;
+import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.DataTableMeta.DataTableMetaBuilder;
 import net.cumba.datatable.values.DataValueType;
 import org.junit.jupiter.api.Test;
@@ -482,5 +485,41 @@ class DataTableMetaSupportTest
     {
         DataTableMetaSupport s = new DataTableMetaSupport(null);
         assertThrows(IllegalStateException.class, () -> s.setDatasetSize(42L));
+    }
+
+
+    @Test
+    void setEncoding_recordsBothKeysAsOneUnit()
+    {
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        s.setTable(URI.create("file:/test"), "t");
+        s.setEncoding("ISO-8859-1", DataTableMetaSupport.ENCODING_SOURCE_DECLARED);
+
+        DataTableMeta meta = s.getTableMeta().build();
+        assertEquals("ISO-8859-1", meta.getMetaData(DataTableMetaSupport.META_KEY_ENCODING));
+        assertEquals("DECLARED", meta.getMetaData(DataTableMetaSupport.META_KEY_ENCODING_SOURCE));
+    }
+
+
+    @Test
+    void setEncoding_beforeSetTableThrows()
+    {
+        DataTableMetaSupport s = new DataTableMetaSupport(null);
+        assertThrows(IllegalStateException.class,
+                () -> s.setEncoding("UTF-8", DataTableMetaSupport.ENCODING_SOURCE_FORMAT));
+    }
+
+
+    @Test
+    void requestedCharsetSource_isConfiguredOnlyForANonDefaultCharset()
+    {
+        // E3: equal to the default (whether requested or defaulted) is DEFAULT; anything else is
+        // CONFIGURED. An unusable request resolves to the default before this is asked.
+        assertEquals(DataTableMetaSupport.ENCODING_SOURCE_DEFAULT, DataTableMetaSupport
+                .requestedCharsetSource(StandardCharsets.UTF_8, StandardCharsets.UTF_8));
+        assertEquals(DataTableMetaSupport.ENCODING_SOURCE_CONFIGURED, DataTableMetaSupport
+                .requestedCharsetSource(StandardCharsets.ISO_8859_1, StandardCharsets.UTF_8));
+        assertEquals(DataTableMetaSupport.ENCODING_SOURCE_DEFAULT, DataTableMetaSupport
+                .requestedCharsetSource(Charset.forName("utf8"), StandardCharsets.UTF_8));
     }
 }

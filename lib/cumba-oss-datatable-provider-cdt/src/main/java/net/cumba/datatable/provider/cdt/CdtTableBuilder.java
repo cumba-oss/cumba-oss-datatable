@@ -1,6 +1,12 @@
 package net.cumba.datatable.provider.cdt;
 
+import static net.cumba.datatable.impl.provider.DataTableMetaSupport.ENCODING_SOURCE_DECLARED;
+import static net.cumba.datatable.impl.provider.DataTableMetaSupport.ENCODING_SOURCE_FORMAT;
+import static net.cumba.datatable.impl.provider.DataTableMetaSupport.META_KEY_ENCODING;
+import static net.cumba.datatable.impl.provider.DataTableMetaSupport.META_KEY_ENCODING_SOURCE;
+
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -98,9 +104,33 @@ public final class CdtTableBuilder
         }
         b.columns(metaCols);
 
-        // Propagate extra dataset-level attributes (class, etc.) to table-level metadata.
-        for (Map.Entry<String, String> e : aDataset.getAttrs().entrySet())
+        // The decode charset (PLAN-provider-encoding-metadata, E7). A .cdt file is UTF-8 by the
+        // format, but a declared Encoding attribute wins: that is how a scenario simulates another
+        // format's decode. The two keys are one unit, so a declared source without an encoding is
+        // dropped. Added before the attribute copy, which then skips both keys (first-wins lookup
+        // would otherwise show a duplicate row).
+        Map<String, String> attrs = aDataset.getAttrs();
+        String declaredEncoding = attrs.get(META_KEY_ENCODING);
+        if (declaredEncoding != null)
         {
+            String declaredSource = attrs.get(META_KEY_ENCODING_SOURCE);
+            b.addMetaData(META_KEY_ENCODING, declaredEncoding);
+            b.addMetaData(META_KEY_ENCODING_SOURCE,
+                    declaredSource != null ? declaredSource : ENCODING_SOURCE_DECLARED);
+        }
+        else
+        {
+            b.addMetaData(META_KEY_ENCODING, StandardCharsets.UTF_8.name());
+            b.addMetaData(META_KEY_ENCODING_SOURCE, ENCODING_SOURCE_FORMAT);
+        }
+
+        // Propagate extra dataset-level attributes (class, etc.) to table-level metadata.
+        for (Map.Entry<String, String> e : attrs.entrySet())
+        {
+            if (META_KEY_ENCODING.equals(e.getKey()) || META_KEY_ENCODING_SOURCE.equals(e.getKey()))
+            {
+                continue;
+            }
             b.addMetaData(e.getKey(), e.getValue());
         }
 

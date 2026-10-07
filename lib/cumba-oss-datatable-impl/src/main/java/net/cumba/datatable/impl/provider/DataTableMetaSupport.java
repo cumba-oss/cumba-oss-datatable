@@ -2,6 +2,7 @@ package net.cumba.datatable.impl.provider;
 
 import java.io.File;
 import java.net.URI;
+import java.nio.charset.Charset;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -77,7 +78,42 @@ public class DataTableMetaSupport
 
     public static final String META_KEY_MODIFIED = "Modified";
 
+    /**
+     * The charset the provider decoded the table's text with: its canonical name
+     * ({@code Charset.name()}), or {@value #ENCODING_MIXED} when the strings of one table decoded
+     * with more than one (an RDS file whose R encoding marks differ). It describes the decode,
+     * never the file's claim: a declared charset the reader could not use is reported as the
+     * fallback it decoded with. Always published together with {@value #META_KEY_ENCODING_SOURCE}
+     * ({@link #setEncoding(String, String)}); the rule engine reads it as
+     * {@code extract_metadata("encoding")}.
+     */
     public static final String META_KEY_ENCODING = "Encoding";
+
+    /**
+     * Where {@value #META_KEY_ENCODING} came from: {@value #ENCODING_SOURCE_DECLARED},
+     * {@value #ENCODING_SOURCE_FORMAT}, {@value #ENCODING_SOURCE_CONFIGURED} or
+     * {@value #ENCODING_SOURCE_DEFAULT}. Read by the rule engine as
+     * {@code extract_metadata("encoding_source")}.
+     */
+    public static final String META_KEY_ENCODING_SOURCE = "EncodingSource";
+
+    /** The {@value #META_KEY_ENCODING} of a table whose strings decoded with several charsets. */
+    public static final String ENCODING_MIXED = "MIXED";
+
+    /** The file declares the charset (a sas7bdat header byte, R's string marks or RDS header). */
+    public static final String ENCODING_SOURCE_DECLARED = "DECLARED";
+
+    /** The format fixes the charset (CDT, Dataset-JSON, Parquet, XLSX, a JSON API, Delta). */
+    public static final String ENCODING_SOURCE_FORMAT = "FORMAT";
+
+    /** A charset other than the default was requested through the provider's charset property. */
+    public static final String ENCODING_SOURCE_CONFIGURED = "CONFIGURED";
+
+    /**
+     * The provider's default charset: nothing declared or requested one, or what was declared or
+     * requested could not be used and the reader fell back.
+     */
+    public static final String ENCODING_SOURCE_DEFAULT = "DEFAULT";
 
     /**
      * The physical source format the provider parsed the table from (CX-2). Lower-case key: it is
@@ -264,6 +300,47 @@ public class DataTableMetaSupport
         {
             tableMetaBuilder.addMetaData(META_KEY_TRANSPORT_VERSION, aTransportVersion);
         }
+    }
+
+
+    /**
+     * Records the charset the table's text was decoded with, as the {@value #META_KEY_ENCODING} and
+     * {@value #META_KEY_ENCODING_SOURCE} table-metadata keys — always both. Call after
+     * {@link #setTable(URI, String)}.
+     *
+     * @param aEncoding
+     *            the canonical charset name ({@code Charset.name()}) or {@value #ENCODING_MIXED}.
+     * @param aSource
+     *            one of the {@code ENCODING_SOURCE_*} values.
+     */
+    public void setEncoding(String aEncoding, String aSource)
+    {
+        if (tableMetaBuilder == null)
+        {
+            throw new IllegalStateException("setTable() must be called before setEncoding()");
+        }
+        tableMetaBuilder.addMetaData(META_KEY_ENCODING, aEncoding);
+        tableMetaBuilder.addMetaData(META_KEY_ENCODING_SOURCE, aSource);
+    }
+
+
+    /**
+     * The {@value #META_KEY_ENCODING_SOURCE} of a charset taken from a provider's charset property:
+     * {@value #ENCODING_SOURCE_CONFIGURED} when it differs from the property's default, else
+     * {@value #ENCODING_SOURCE_DEFAULT}. Comparing with the default — not asking whether a value
+     * was supplied — makes the answer a property of the request rather than of the caller (the data
+     * browser fills every property with its default; the CLI supplies none); an absent, blank or
+     * unusable request resolves to the default, so it reads {@value #ENCODING_SOURCE_DEFAULT}.
+     *
+     * @param aEffective
+     *            the charset the provider decodes with.
+     * @param aDefault
+     *            the charset property's default.
+     * @return the source constant.
+     */
+    public static String requestedCharsetSource(Charset aEffective, Charset aDefault)
+    {
+        return aEffective.equals(aDefault) ? ENCODING_SOURCE_DEFAULT : ENCODING_SOURCE_CONFIGURED;
     }
 
 

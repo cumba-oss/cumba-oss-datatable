@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import net.cumba.datatable.DataTableColumnMeta.DataTableColumnMetaBuilder;
 import net.cumba.datatable.DataTableMeta.DataTableMetaBuilder;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -57,6 +58,20 @@ final class ParquetMetadataCodec
 
 
     /**
+     * Whether a table-meta key describes the charset a source table was decoded with
+     * ({@code Encoding} / {@code EncodingSource}, PLAN-provider-encoding-metadata E8). Such a key
+     * says nothing about a Parquet file — its strings are UTF-8 by the format, which the provider
+     * reports itself — so it is not taken back from a footer (one written by an exporter that still
+     * wrote the pair, or a foreign writer's raw key).
+     */
+    static boolean isDecodeCharsetKey(@Nullable String aKey)
+    {
+        return DataTableMetaSupport.META_KEY_ENCODING.equals(aKey)
+                || DataTableMetaSupport.META_KEY_ENCODING_SOURCE.equals(aKey);
+    }
+
+
+    /**
      * Apply the table-level fields (label, custom metadata) from a parsed blob.
      */
     static void applyTable(@Nullable JsonNode aRoot, DataTableMetaBuilder aBuilder)
@@ -75,7 +90,7 @@ final class ParquetMetadataCodec
         {
             for (Map.Entry<String, JsonNode> e : tableMeta.properties())
             {
-                if (e.getValue().isValueNode())
+                if (e.getValue().isValueNode() && !isDecodeCharsetKey(e.getKey()))
                 {
                     aBuilder.addMetaData(e.getKey(), e.getValue().asText());
                 }

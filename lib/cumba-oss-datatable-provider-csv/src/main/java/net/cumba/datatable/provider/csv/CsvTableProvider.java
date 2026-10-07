@@ -160,6 +160,19 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
 
     /**
+     * Records the charset this provider decodes with (E3, PLAN-provider-encoding-metadata): CSV
+     * declares none, so it is {@code CONFIGURED} when it differs from the {@link #PROP_CHARSET}
+     * default, else {@code DEFAULT} (an absent, blank or unusable request resolves to the default).
+     */
+    private void setEncodingOf(DataTableMetaSupport aSupport)
+    {
+        Charset effective = getCharset();
+        aSupport.setEncoding(effective.name(), DataTableMetaSupport
+                .requestedCharsetSource(effective, Charset.forName(PROP_CHARSET.defaultValue())));
+    }
+
+
+    /**
      * Apply all provider properties from the given map onto this provider's state. Missing or blank
      * entries leave the corresponding field at its default (auto-detect for delimiter and line
      * separator).
@@ -368,6 +381,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
                 dtms.setTable(aURI);
                 dtms.setFileFormat("CSV", null);
+                setEncodingOf(dtms);
                 dtms.setDatasetSize(aURI);
 
                 int colCount = headRow.getColumnCount();
@@ -433,6 +447,7 @@ public class CsvTableProvider extends AbstractDataTableProvider
 
                 dtms.setTable(aURI);
                 dtms.setFileFormat("CSV", null);
+                setEncodingOf(dtms);
                 dtms.setDatasetSize(aURI);
 
                 int colCount = headRow.getColumnCount();

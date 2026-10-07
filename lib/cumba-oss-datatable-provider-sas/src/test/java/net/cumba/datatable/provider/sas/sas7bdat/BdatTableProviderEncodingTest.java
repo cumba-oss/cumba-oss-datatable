@@ -110,4 +110,17 @@ class BdatTableProviderEncodingTest
         java.nio.charset.Charset cs = BdatTableProvider.resolveCharset(0x1D);
         assertEquals(java.nio.charset.StandardCharsets.ISO_8859_1, cs);
     }
+
+
+    @Test
+    void resolveEncodingSource_isDeclaredOnlyForAMappedSupportedByte()
+    {
+        // E5: the value describes the decode. A byte the table does not map (0x00) and a mapped
+        // name the JVM cannot supply (0xA9, x-ISO2022-CN-GB) both fall back to ISO-8859-1, which
+        // the file never declared.
+        assertEquals("DECLARED", BdatTableProvider.resolveEncodingSource(0x14));
+        assertEquals("DECLARED", BdatTableProvider.resolveEncodingSource(0x1D));
+        assertEquals("DEFAULT", BdatTableProvider.resolveEncodingSource(0x00));
+        assertEquals("DEFAULT", BdatTableProvider.resolveEncodingSource(0xA9));
+    }
 }

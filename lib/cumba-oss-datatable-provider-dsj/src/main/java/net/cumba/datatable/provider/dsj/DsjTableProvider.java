@@ -11,6 +11,7 @@ import java.lang.System.Logger.Level;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -151,6 +152,9 @@ public class DsjTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport metaSup = new DataTableMetaSupport(getMetadata());
         metaSup.setTable(aURI, aTable.getName());
         metaSup.setFileFormat("DATASET-JSON", null);
+        // Dataset-JSON mandates UTF-8 (E4).
+        metaSup.setEncoding(StandardCharsets.UTF_8.name(),
+                DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
         metaSup.setDatasetSize(aURI);
         aTable.getColumnsStream().forEachOrdered(tc -> addColumn(metaSup, tc));
 
@@ -534,6 +538,9 @@ public class DsjTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport metaSup = new DataTableMetaSupport(getMetadata());
         metaSup.setTable(aURI, aTable.getName());
         metaSup.setFileFormat("DATASET-JSON", null);
+        // Dataset-JSON mandates UTF-8 (E4).
+        metaSup.setEncoding(StandardCharsets.UTF_8.name(),
+                DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
         metaSup.setDatasetSize(aURI);
         aTable.getColumnsStream().forEachOrdered(tc -> addColumn(metaSup, tc));
 

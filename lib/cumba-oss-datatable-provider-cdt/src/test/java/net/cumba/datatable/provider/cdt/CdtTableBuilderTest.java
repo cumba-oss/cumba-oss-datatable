@@ -384,4 +384,71 @@ class CdtTableBuilderTest
                 .build();
         return CdtTableBuilder.build(ds, URI.create("test:dm"));
     }
+
+    // ========== Encoding + EncodingSource (PLAN-provider-encoding-metadata, E7) ==========
+
+
+    private static DataTableMeta metaOf(String aHeader)
+    {
+        CdtDataset ds = CdtParser.parseFirst(aHeader + """
+
+                col USUBJID type=Char
+                ---
+                A
+                ---
+                """, "t");
+        return CdtTableBuilder.build(ds, URI.create("test:dm")).getMetaData();
+    }
+
+
+    private static long countKey(DataTableMeta aMeta, String aKey)
+    {
+        return aMeta.getMetaDataKeys().stream().filter(aKey::equals).count();
+    }
+
+
+    /** A .cdt file is UTF-8 by the format (CdtTableProvider reads it as UTF-8). */
+    @Test
+    void anUndeclaredEncodingIsTheFormatsUtf8()
+    {
+        DataTableMeta meta = metaOf("dataset DM");
+        assertEquals("UTF-8", meta.getMetaData("Encoding"));
+        assertEquals("FORMAT", meta.getMetaData("EncodingSource"));
+    }
+
+
+    /**
+     * A declared {@code Encoding} attribute wins — that is how a scenario simulates another
+     * format's decode (a latin1 XPT) — and is DECLARED unless the source is declared too.
+     */
+    @Test
+    void aDeclaredEncodingWinsAndDefaultsToDeclared()
+    {
+        DataTableMeta meta = metaOf("dataset DM Encoding=ISO-8859-1");
+        assertEquals("ISO-8859-1", meta.getMetaData("Encoding"));
+        assertEquals("DECLARED", meta.getMetaData("EncodingSource"));
+        assertEquals(1, countKey(meta, "Encoding"));
+        assertEquals(1, countKey(meta, "EncodingSource"));
+    }
+
+
+    @Test
+    void aDeclaredEncodingKeepsADeclaredSource()
+    {
+        DataTableMeta meta = metaOf("dataset DM Encoding=ISO-8859-1 EncodingSource=CONFIGURED");
+        assertEquals("ISO-8859-1", meta.getMetaData("Encoding"));
+        assertEquals("CONFIGURED", meta.getMetaData("EncodingSource"));
+        assertEquals(1, countKey(meta, "EncodingSource"));
+    }
+
+
+    /** The two keys are one unit: a source without an encoding is dropped, never half-applied. */
+    @Test
+    void aLoneDeclaredSourceIsDropped()
+    {
+        DataTableMeta meta = metaOf("dataset DM EncodingSource=DECLARED");
+        assertEquals("UTF-8", meta.getMetaData("Encoding"));
+        assertEquals("FORMAT", meta.getMetaData("EncodingSource"));
+        assertEquals(1, countKey(meta, "EncodingSource"));
+    }
 }

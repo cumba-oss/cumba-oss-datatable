@@ -8,6 +8,7 @@ import java.io.UncheckedIOException;
 import java.lang.System.Logger.Level;
 import java.math.BigDecimal;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -214,6 +215,10 @@ public class ParquetTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
         dtms.setTable(aURI);
         dtms.setFileFormat("PARQUET", null);
+        // Parquet STRING is UTF-8 by the format (E8); a source's Encoding in the footer says
+        // nothing about this file and is skipped below.
+        dtms.setEncoding(StandardCharsets.UTF_8.name(),
+                DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
         dtms.setDatasetSize(aFile, aURI);
 
         LocalInputFile inputFile = new LocalInputFile(aFile.toPath());
@@ -253,7 +258,8 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                 {
                     continue;
                 }
-                if (ParquetMetadataCodec.META_KEY.equals(key))
+                if (ParquetMetadataCodec.META_KEY.equals(key)
+                        || ParquetMetadataCodec.isDecodeCharsetKey(key))
                 {
                     continue;
                 }
@@ -291,6 +297,10 @@ public class ParquetTableProvider extends AbstractDataTableProvider
             DataTableMetaSupport dtms = new DataTableMetaSupport(getMetadata());
             dtms.setTable(aURI);
             dtms.setFileFormat("PARQUET", null);
+            // Parquet STRING is UTF-8 by the format (E8); a source's Encoding in the footer says
+            // nothing about this file and is skipped below.
+            dtms.setEncoding(StandardCharsets.UTF_8.name(),
+                    DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
             dtms.setDatasetSize(aFile, aURI);
 
             // Read Parquet schema metadata
@@ -334,7 +344,8 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                     {
                         continue;
                     }
-                    if (ParquetMetadataCodec.META_KEY.equals(key))
+                    if (ParquetMetadataCodec.META_KEY.equals(key)
+                            || ParquetMetadataCodec.isDecodeCharsetKey(key))
                     {
                         continue;
                     }

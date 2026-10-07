@@ -271,4 +271,23 @@ class ExcelTableProviderMetaDataTest
                 () -> provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX));
     }
 
+
+    @Test
+    void bothPathsReportTheFormatFixedUtf8() throws Exception
+    {
+        // XLSX stores text as UTF-8 XML (owner ruling 2026-10-07: UTF-8 / FORMAT).
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("NAME");
+            s.createRow(1).createCell(0).setCellValue("M\u00fcller");
+        });
+        for (DataTableMeta meta : java.util.List.of(
+                provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX),
+                new ExcelTableProvider().provide(uri, ExcelProviderSupplier.FI_XLSX).getMetaData()))
+        {
+            assertEquals("UTF-8", meta.getMetaData("Encoding"));
+            assertEquals("FORMAT", meta.getMetaData("EncodingSource"));
+        }
+    }
 }

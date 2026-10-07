@@ -182,9 +182,12 @@ public final class CdtWriter
         // datasetJSONVersion — Dataset-JSON document identifiers, not presentation. The first
         // character separates them from what the filter is actually aimed at: every presentation
         // key in the stack is PascalCase or spaced (Comment, Structure, Purpose, Standard, Class,
-        // SASDatasetName, Compression, "Row Length"), while every engine-read key is snake_case
-        // (file_format, dataset_size, transport_version) and the round-trip identifiers are
-        // camelCase.
+        // SASDatasetName, Compression, "Row Length"), and the engine-read keys are snake_case
+        // (file_format, dataset_size, transport_version) or reach the engine under a snake-case
+        // name (Encoding / EncodingSource as extract_metadata("encoding") / ("encoding_source")),
+        // and the round-trip identifiers are camelCase. The decode-charset pair MUST stay skipped:
+        // CdtTableBuilder lets a declared Encoding attribute win, so writing it would make a
+        // sas7bdat exported to CDT claim windows-1252 when read back (CdtWriterEncodingKeysTest).
         for (String key : aMeta.getMetaDataKeys())
         {
             if (key == null || "class".equals(key) || "label".equals(key)
