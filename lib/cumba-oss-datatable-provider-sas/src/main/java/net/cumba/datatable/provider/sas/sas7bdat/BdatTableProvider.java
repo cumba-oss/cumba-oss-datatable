@@ -356,7 +356,7 @@ public class BdatTableProvider extends AbstractDataTableProvider
         // as agreement. buildMeta() reads no observations, so it cannot count them; it can however
         // subtract the count the header itself declares, which is exactly the figure provide()
         // then delivers. Before this, provideMetaData() over-reported by the deleted-row count and
-        // a metadata-only consumer (the library browser's row-count column, a preview, the P21
+        // a metadata-only consumer (the library browser's row-count column, a preview, the report
         // metadata) disagreed with the table the user went on to open.
         long liveRows = clampExpectedRows(requireRowCount(aDataSet),
                 deletedObservationCount(aDataSet));
