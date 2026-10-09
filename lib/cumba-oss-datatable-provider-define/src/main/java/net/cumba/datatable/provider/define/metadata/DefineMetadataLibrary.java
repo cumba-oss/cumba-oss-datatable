@@ -32,6 +32,7 @@ import net.cumba.cdisc.define.Standard;
 import net.cumba.cdisc.define.Standards;
 import net.cumba.cdisc.define.Study;
 import net.cumba.cdisc.define.TranslatedText;
+import net.cumba.datatable.formats.CodelistFormatNames;
 import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.metadata.ICodeList;
@@ -757,15 +758,11 @@ public class DefineMetadataLibrary implements IMetadataLibrary
                 CodeList cdl = define.getCodeListByOid(clr.getCodeListOID()).orElse(null);
                 if (cdl != null)
                 {
-                    DataValueType type = getType();
-                    if (type == DataValueType.STRING)
-                    {
-                        return "$" + cdl.getName() + ".";
-                    }
-                    else
-                    {
-                        return cdl.getName() + ".";
-                    }
+                    // "$" + Name + "." for a text codelist, Name + "." otherwise: the codelist's
+                    // own type decides, as on the catalog side (PLAN-define-format-name-lookup
+                    // FN4); the SASFormatName is a catalog alias only, never the display format
+                    // (FN2b: a define opened as a library knows no SASFormatName).
+                    return codelistFormatName(cdl) + ".";
                 }
             }
             return itemDef.getDisplayFormat();
@@ -818,12 +815,7 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         {
             codelist = aCodelist;
 
-            String n = aCodelist.getName();
-            if ("text".equals(aCodelist.getDataType()))
-            {
-                n = "$" + n;
-            }
-            name = n;
+            name = codelistFormatName(aCodelist);
         }
 
 
@@ -837,7 +829,7 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         @Override
         public DataValueType getValueType()
         {
-            if ("text".equals(codelist.getDataType()))
+            if (isTextCodelist(codelist))
             {
                 return DataValueType.STRING;
             }
@@ -1007,6 +999,25 @@ public class DefineMetadataLibrary implements IMetadataLibrary
     }
 
     // ==================== Helpers ====================
+
+    /** Whether a codelist is text: its own {@code DataType} decides the {@code $}. */
+    private static boolean isTextCodelist(CodeList aCodelist)
+    {
+        return "text".equals(aCodelist.getDataType());
+    }
+
+
+    /**
+     * The name of a codelist's format -- the column's display format without its dot, the
+     * {@link DefineCodeList} name and the format catalog's primary key alike. A nameless codelist
+     * (a schema violation) keeps its legacy name {@code "$null"} / {@code "null"}.
+     */
+    private static String codelistFormatName(CodeList aCodelist)
+    {
+        return CodelistFormatNames.codelistFormatName(Objects.toString(aCodelist.getName()),
+                isTextCodelist(aCodelist));
+    }
+
 
     private static DataValueType mapDataType(String aDataType)
     {

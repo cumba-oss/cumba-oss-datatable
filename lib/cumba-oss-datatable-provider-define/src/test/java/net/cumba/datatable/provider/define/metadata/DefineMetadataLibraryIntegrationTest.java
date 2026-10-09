@@ -41,6 +41,7 @@ import net.cumba.datatable.metadata.IColumnMetadata;
 import net.cumba.datatable.metadata.IDataTableMetadata;
 import net.cumba.datatable.metadata.IMetadataLibrary;
 import net.cumba.datatable.values.DataValueType;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -645,6 +646,70 @@ class DefineMetadataLibraryIntegrationTest
 
         IColumnMetadata col = lib.getDataTable("DM").orElseThrow().getColumns().get(0);
         assertEquals("YN.", col.getDisplayFormat());
+    }
+
+
+    private static IColumnMetadata codelistColumn(String aColumnType, CodeList aCodeList)
+    {
+        ItemDef def = ItemDef.builder().oid("I.C").name("C").dataType(aColumnType)
+                .codeListRef(CodeListRef.builder().codeListOID(aCodeList.getOid()).build()).build();
+        ItemRef ref = ItemRef.builder().itemOID("I.C").orderNumber(1).build();
+        ItemGroupDef ig = ItemGroupDef.builder().oid("IG.D").name("D").itemRefs(List.of(ref))
+                .build();
+        MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1")
+                .itemGroupDefs(List.of(ig)).itemDefs(List.of(def)).codeLists(List.of(aCodeList))
+                .build();
+        return buildLibrary(mdv, null).getDataTable("D").orElseThrow().getColumns().get(0);
+    }
+
+
+    private static CodeList codelist(String aName, String aDataType, @Nullable String aSasName)
+    {
+        return CodeList.builder().oid("CL.1").name(aName).dataType(aDataType)
+                .sasFormatName(aSasName)
+                .codeListItems(List
+                        .of(CodeListItem.builder().codedValue("1").decode(decode("One")).build()))
+                .build();
+    }
+
+
+    @Test
+    void column_displayFormat_dottedCodelistName_keptAsItIs()
+    {
+        // phuse: CodeList Name="QS.QSTESTCD" -- the display format is "$" + Name + "."
+        IColumnMetadata col = codelistColumn("text", codelist("QS.QSTESTCD", "text", null));
+        assertEquals("$QS.QSTESTCD.", col.getDisplayFormat());
+        assertEquals("QS.QSTESTCD", col.getCodelist());
+        IColumnMetadata dotEnd = codelistColumn("text",
+                codelist("Relation to Reference Period, subset used for AE and CM.", "text", null));
+        assertEquals("$Relation to Reference Period, subset used for AE and CM..",
+                dotEnd.getDisplayFormat());
+    }
+
+
+    @Test
+    void column_displayFormat_theCodelistTypeDecidesTheDollar()
+    {
+        // FN4: the codelist's DataType decides the "$", as on the catalog side
+        assertEquals("$TXT.",
+                codelistColumn("integer", codelist("TXT", "text", null)).getDisplayFormat());
+        assertEquals("$TXT.",
+                codelistColumn("date", codelist("TXT", "text", null)).getDisplayFormat());
+        assertEquals("NUM.",
+                codelistColumn("text", codelist("NUM", "integer", null)).getDisplayFormat());
+        assertEquals("FLT.",
+                codelistColumn("float", codelist("FLT", "float", null)).getDisplayFormat());
+    }
+
+
+    @Test
+    void column_displayFormat_ignoresTheSasFormatName()
+    {
+        // FN2b: the SASFormatName is a catalog alias only, never the column's display format
+        IColumnMetadata col = codelistColumn("text",
+                codelist("Action Taken with Study Treatment", "text", "$FMT1"));
+        assertEquals("$Action Taken with Study Treatment.", col.getDisplayFormat());
+        assertEquals("Action Taken with Study Treatment", col.getCodelist());
     }
 
 
