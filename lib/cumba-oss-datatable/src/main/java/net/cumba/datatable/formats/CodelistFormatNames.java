@@ -123,10 +123,7 @@ public final class CodelistFormatNames
         {
             return false;
         }
-        if (aSasFormatName.startsWith("$") != aText)
-        {
-            return false;
-        }
-        return SAS_FORMAT_NAME.matcher(aSasFormatName).matches();
+        return aSasFormatName.startsWith("$") == aText
+                && SAS_FORMAT_NAME.matcher(aSasFormatName).matches();
     }
 }
