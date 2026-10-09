@@ -1,5 +1,7 @@
 package net.cumba.cdisc.define;
 
+// OSS-IDENTITY cdisc-define-codelist: byte-identical in cumba-cdisc and cumba-oss-datatable.
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
@@ -33,6 +35,14 @@ public class CodeList implements IDescribedElement, INamedElement
 
     @JacksonXmlProperty(isAttribute = true, localName = "CommentOID")
     String commentOID;
+
+    /**
+     * {@code def:IsNonStandard="Yes"} (Define-XML 2.1 §5.3.13): a sponsor-defined codelist, one
+     * that is neither CDISC Controlled Terminology nor bound to a {@code def:Standard}. The schema
+     * allows only {@code "Yes"} (odm:YesOnly); absent means standard.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "IsNonStandard")
+    String isNonStandard;
 
     @JacksonXmlProperty(localName = "Description")
     Description description;
