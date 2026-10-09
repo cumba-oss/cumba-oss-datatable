@@ -47,8 +47,10 @@ on:
 # pass is the long pole, so without this two runs compete for a runner.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Never cancel a tag run — it publishes a release. Branch runs supersede.
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  # Only a pull_request run is superseded. A push to main publishes (snapshot / image) and a
+  # tag cuts a release: cancelling either mid-publish leaves a half-published state, so
+  # those runs queue instead (review G1).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -336,7 +338,8 @@ jobs:
   # until a release has gone through cleanly.
   publish-central:
     needs: build
-    if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
+    # Fork guard (review G2): a fork has no Central credentials and must never publish.
+    if: ${{ github.repository_owner == 'cumba-oss' && (startsWith(github.ref, 'refs/tags/') || (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
