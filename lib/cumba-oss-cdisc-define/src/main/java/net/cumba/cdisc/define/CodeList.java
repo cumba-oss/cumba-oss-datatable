@@ -12,7 +12,7 @@ import lombok.extern.jackson.Jacksonized;
 
 // CodeList
 @Value
-@Builder
+@Builder(toBuilder = true)
 @Jacksonized
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class CodeList implements IDescribedElement, INamedElement

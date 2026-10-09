@@ -1,5 +1,7 @@
 package net.cumba.cdisc.define;
 
+// OSS-IDENTITY cdisc-define-codelist: byte-identical in cumba-cdisc and cumba-oss-datatable.
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
@@ -10,7 +12,7 @@ import lombok.extern.jackson.Jacksonized;
 
 // ItemDef (Variable)
 @Value
-@Builder
+@Builder(toBuilder = true)
 @Jacksonized
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ItemDef implements IDescribedElement, INamedElement

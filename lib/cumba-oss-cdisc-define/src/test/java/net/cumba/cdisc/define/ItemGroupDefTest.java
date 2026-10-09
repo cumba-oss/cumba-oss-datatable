@@ -1,5 +1,7 @@
 package net.cumba.cdisc.define;
 
+// OSS-IDENTITY cdisc-define-codelist: byte-identical in cumba-cdisc and cumba-oss-datatable.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -69,6 +71,26 @@ class ItemGroupDefTest
             assertEquals("Test comment", itemGroupDef.getComment());
             assertNotNull(itemGroupDef.getLeaf());
             assertEquals("LEAF001", itemGroupDef.getLeaf().getId());
+        }
+
+
+        @Test
+        void testIsNonStandardAndToBuilder()
+        {
+            // def:IsNonStandard (Define-XML 2.1 rule 122): the custom-domain alternative to
+            // def:StandardOID; absent by default. toBuilder copies every field.
+            ItemGroupDef custom = ItemGroupDef.builder().oid("IG.XX").name("XX")
+                    .isNonStandard("Yes").build();
+            assertEquals("Yes", custom.getIsNonStandard());
+            assertNull(custom.getStandardOID());
+            assertNull(ItemGroupDef.builder().oid("IG.DM").name("DM").build().getIsNonStandard());
+
+            ItemGroupDef bound = custom.toBuilder().standardOID("STD.SDTMIG.3.4").build();
+            assertEquals("IG.XX", bound.getOid());
+            assertEquals("XX", bound.getName());
+            assertEquals("STD.SDTMIG.3.4", bound.getStandardOID());
+            assertEquals("Yes", bound.getIsNonStandard(), "toBuilder keeps what is not reset");
+            assertEquals("Yes", custom.getIsNonStandard(), "the source is immutable");
         }
 
 
@@ -356,6 +378,16 @@ class ItemGroupDefTest
     @Nested
     class ItemRefTests
     {
+
+        @Test
+        void testIsNonStandard()
+        {
+            // def:IsNonStandard on an ItemRef (Define-XML 2.1 §4.2.2): a sponsor-added variable.
+            ItemRef added = ItemRef.builder().itemOID("IT.XX.XXTEST").isNonStandard("Yes").build();
+            assertEquals("Yes", added.getIsNonStandard());
+            assertNull(ItemRef.builder().itemOID("IT.DM.SEX").build().getIsNonStandard());
+        }
+
 
         @Test
         void testBuilderWithAllFields()

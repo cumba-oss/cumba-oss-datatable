@@ -1,5 +1,7 @@
 package net.cumba.cdisc.define;
 
+// OSS-IDENTITY cdisc-define-codelist: byte-identical in cumba-cdisc and cumba-oss-datatable.
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
@@ -11,7 +13,7 @@ import org.jspecify.annotations.Nullable;
 
 // ItemGroupDef (Dataset)
 @Value
-@Builder
+@Builder(toBuilder = true)
 @Jacksonized
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ItemGroupDef implements IDescribedElement, INamedElement
@@ -77,6 +79,14 @@ public class ItemGroupDef implements IDescribedElement, INamedElement
 
     @JacksonXmlProperty(isAttribute = true, localName = "StandardOID")
     String standardOID;
+
+    /**
+     * {@code def:IsNonStandard="Yes"} (Define-XML 2.1 §4.1, rule 122): a dataset that follows no
+     * declared {@code def:Standard} — a custom domain. The schema allows only {@code "Yes"}
+     * (odm:YesOnly); absent means standard, and the spec expects {@code def:StandardOID} then.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "IsNonStandard")
+    String isNonStandard;
 
     @JacksonXmlProperty(localName = "Description")
     Description description;

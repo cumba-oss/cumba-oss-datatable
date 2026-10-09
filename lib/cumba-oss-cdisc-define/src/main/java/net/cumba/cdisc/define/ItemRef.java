@@ -1,5 +1,7 @@
 package net.cumba.cdisc.define;
 
+// OSS-IDENTITY cdisc-define-codelist: byte-identical in cumba-cdisc and cumba-oss-datatable.
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
@@ -39,6 +41,14 @@ public class ItemRef
 
     @JacksonXmlProperty(isAttribute = true, localName = "HasNoData")
     String hasNoData;
+
+    /**
+     * {@code def:IsNonStandard="Yes"} (Define-XML 2.1 §4.2.2): a variable that is not part of the
+     * dataset's definition in the declared standard — a sponsor-added variable. The schema allows
+     * only {@code "Yes"} (odm:YesOnly); absent means standard.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "IsNonStandard")
+    String isNonStandard;
 
     @JacksonXmlProperty(localName = "WhereClauseRef")
     @JacksonXmlElementWrapper(useWrapping = false)
