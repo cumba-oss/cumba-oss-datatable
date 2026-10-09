@@ -714,6 +714,37 @@ class DefineMetadataLibraryIntegrationTest
 
 
     @Test
+    void namelessCodelist_namesNoCodelistAndNoDisplayFormat()
+    {
+        // a codelist without a Name (a schema violation) is skipped: no codelist "null" /
+        // "$null", and a column bound to it keeps the ItemDef's display format, never "null."
+        for (String type : List.of("text", "integer"))
+        {
+            CodeList nameless = CodeList.builder().oid("CL.1").dataType(type)
+                    .codeListItems(List.of(
+                            CodeListItem.builder().codedValue("1").decode(decode("One")).build()))
+                    .build();
+            ItemDef def = ItemDef.builder().oid("I.C").name("C").dataType(type).displayFormat("8.")
+                    .codeListRef(CodeListRef.builder().codeListOID("CL.1").build()).build();
+            ItemRef ref = ItemRef.builder().itemOID("I.C").orderNumber(1).build();
+            ItemGroupDef ig = ItemGroupDef.builder().oid("IG.D").name("D").itemRefs(List.of(ref))
+                    .build();
+            MetaDataVersion mdv = MetaDataVersion.builder().oid("M.1").name("V1")
+                    .itemGroupDefs(List.of(ig)).itemDefs(List.of(def)).codeLists(List.of(nameless))
+                    .build();
+            IMetadataLibrary lib = buildLibrary(mdv, null);
+
+            assertTrue(lib.getCodelists().isEmpty(), type);
+            assertFalse(lib.getCodelist("null").isPresent(), type);
+            assertFalse(lib.getCodelist("$null").isPresent(), type);
+            IColumnMetadata col = lib.getDataTable("D").orElseThrow().getColumns().get(0);
+            assertEquals("8.", col.getDisplayFormat(), type);
+            assertNull(col.getCodelist(), type);
+        }
+    }
+
+
+    @Test
     void column_displayFormat_fallsBackToItemDefDisplayFormat()
     {
         ItemDef def = ItemDef.builder().oid("I.X").name("X").dataType("integer")

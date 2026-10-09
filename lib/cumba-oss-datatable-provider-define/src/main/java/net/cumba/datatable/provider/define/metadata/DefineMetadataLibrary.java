@@ -258,9 +258,17 @@ public class DefineMetadataLibrary implements IMetadataLibrary
     {
         if (codelists == null)
         {
-            codelists = define.getCodeLists()//
-                    .map(cl -> (ICodeList) new DefineCodeList(cl))//
-                    .toList();
+            // A nameless codelist (a schema violation) is skipped: no codelist named "null".
+            List<ICodeList> named = new ArrayList<>();
+            define.getCodeLists().forEach(cl ->
+            {
+                String clName = cl.getName();
+                if (clName != null)
+                {
+                    named.add(new DefineCodeList(cl, clName));
+                }
+            });
+            codelists = List.copyOf(named);
         }
         return codelists;
     }
@@ -756,13 +764,16 @@ public class DefineMetadataLibrary implements IMetadataLibrary
             if (clr != null && clr.getCodeListOID() != null)
             {
                 CodeList cdl = define.getCodeListByOid(clr.getCodeListOID()).orElse(null);
-                if (cdl != null)
+                String clName = cdl != null ? cdl.getName() : null;
+                // A nameless codelist (a schema violation) names no format: the ItemDef's own
+                // display format stands, never "null." / "$null.".
+                if (cdl != null && clName != null)
                 {
                     // "$" + Name + "." for a text codelist, Name + "." otherwise: the codelist's
                     // own type decides, as on the catalog side (PLAN-define-format-name-lookup
                     // FN4); the SASFormatName is a catalog alias only, never the display format
                     // (FN2b: a define opened as a library knows no SASFormatName).
-                    return codelistFormatName(cdl) + ".";
+                    return codelistFormatName(clName, cdl) + ".";
                 }
             }
             return itemDef.getDisplayFormat();
@@ -811,11 +822,11 @@ public class DefineMetadataLibrary implements IMetadataLibrary
 
         private @Nullable List<ICodelistEntry> entries;
 
-        DefineCodeList(CodeList aCodelist)
+        DefineCodeList(CodeList aCodelist, String aName)
         {
             codelist = aCodelist;
 
-            name = codelistFormatName(aCodelist);
+            name = codelistFormatName(aName, aCodelist);
         }
 
 
@@ -1010,12 +1021,11 @@ public class DefineMetadataLibrary implements IMetadataLibrary
     /**
      * The name of a codelist's format -- the column's display format without its dot, the
      * {@link DefineCodeList} name and the format catalog's primary key alike. A nameless codelist
-     * (a schema violation) keeps its legacy name {@code "$null"} / {@code "null"}.
+     * (a schema violation) has none: its callers skip it.
      */
-    private static String codelistFormatName(CodeList aCodelist)
+    private static String codelistFormatName(String aName, CodeList aCodelist)
     {
-        return CodelistFormatNames.codelistFormatName(Objects.toString(aCodelist.getName()),
-                isTextCodelist(aCodelist));
+        return CodelistFormatNames.codelistFormatName(aName, isTextCodelist(aCodelist));
     }
 
 
