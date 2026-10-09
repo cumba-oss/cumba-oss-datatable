@@ -1,12 +1,16 @@
 package net.cumba.datatable.provider.define.metadata;
 
+// OSS-IDENTITY provider-define: byte-identical in cumba-datatable-cdisc and cumba-oss-datatable.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import net.cumba.cdisc.define.Alias;
 import net.cumba.cdisc.define.CodeList;
 import net.cumba.cdisc.define.CodeListItem;
 import net.cumba.cdisc.define.Decode;
@@ -301,14 +305,84 @@ class DefineMetadataLibraryCodeListTest
 
 
     @Test
-    void getMetaKeys_isEmptyWhenNoDescription()
+    void getMetaKeys_withoutDescription_hasNoLabelAndOnlyFormatKeys()
     {
         CodeList cl = CodeList.builder().oid("CL.NL").name("NL").dataType("text").build();
         IMetadataLibrary lib = buildLibrary(List.of(cl));
 
         ICodeList found = lib.getCodelist("$NL").orElseThrow();
-        assertEquals(0, found.getMetaKeys().size());
+        assertFalse(found.getMetaKeys().contains("label"));
         assertTrue(found.getMetaValue("label").isEmpty());
+        // OID, Name and DataType always yield format-level keys (PLAN-define-format-metadata)
+        assertFalse(found.getMetaKeys().isEmpty());
+        for (String key : found.getMetaKeys())
+        {
+            assertTrue(key.startsWith(DefineCodelistMetadata.PREFIX), key);
+        }
+    }
+
+
+    @Test
+    void formatKeys_followTheLabelInBuilderOrder()
+    {
+        CodeList cl = CodeList.builder().oid("CL.O").name("O").dataType("text").sasFormatName("$O")
+                .description(description("Ordered")).build();
+        IMetadataLibrary lib = buildLibrary(List.of(cl));
+
+        ICodeList found = lib.getCodelist("$O").orElseThrow();
+        List<String> keys = List.copyOf(found.getMetaKeys());
+        assertEquals(List.of("label", "format." + DefineCodelistMetadata.DISPLAY_NAME,
+                "format." + DefineCodelistMetadata.OID,
+                "format." + DefineCodelistMetadata.DATA_TYPE,
+                "format." + DefineCodelistMetadata.SAS_FORMAT_NAME), keys);
+        assertEquals("O",
+                found.getMetaValue("format." + DefineCodelistMetadata.DISPLAY_NAME).orElseThrow());
+        assertEquals("CL.O",
+                found.getMetaValue("format." + DefineCodelistMetadata.OID).orElseThrow());
+    }
+
+
+    @Test
+    void formatKeys_neverNameAnEngineKey()
+    {
+        CodeList cl = CodeList.builder().oid("CL.E").name("E").dataType("text")
+                .description(description("E"))
+                .aliases(List.of(Alias.builder().context("nci:ExtCodeID").name("C12345").build()))
+                .build();
+        IMetadataLibrary lib = buildLibrary(List.of(cl));
+
+        ICodeList found = lib.getCodelist("$E").orElseThrow();
+        for (String engineKey : List.of("CodelistConceptId", "CodelistSubmissionValue",
+                "CodelistPreferredTerm"))
+        {
+            assertFalse(found.getMetaKeys().contains(engineKey), engineKey);
+            assertTrue(found.getMetaValue(engineKey).isEmpty(), engineKey);
+        }
+        assertEquals("C12345",
+                found.getMetaValue("format." + DefineCodelistMetadata.NCI_CODE).orElseThrow());
+    }
+
+
+    @Test
+    void engineKeyLookup_doesNotBuildTheFormatMap_andTheMapIsBuiltOnce()
+    {
+        CodeList cl = CodeList.builder().oid("CL.B").name("B").dataType("text")
+                .description(description("B")).build();
+        IMetadataLibrary lib = buildLibrary(List.of(cl));
+        ICodeList found = lib.getCodelist("$B").orElseThrow();
+
+        long before = DefineCodelistMetadata.builds();
+        assertTrue(found.getMetaValue("CodelistConceptId").isEmpty());
+        assertTrue(found.getMetaValue("CodelistSubmissionValue").isEmpty());
+        assertEquals("B", found.getMetaValue("label").orElseThrow());
+        assertEquals(before, DefineCodelistMetadata.builds(),
+                "an engine key or the label never builds the format-level map (review L3)");
+
+        assertTrue(found.getMetaValue("format." + DefineCodelistMetadata.OID).isPresent());
+        assertEquals(before + 1, DefineCodelistMetadata.builds(), "built on first format. key");
+        found.getMetaKeys();
+        found.getMetaValue("format." + DefineCodelistMetadata.DISPLAY_NAME);
+        assertEquals(before + 1, DefineCodelistMetadata.builds(), "built once per codelist");
     }
 
 

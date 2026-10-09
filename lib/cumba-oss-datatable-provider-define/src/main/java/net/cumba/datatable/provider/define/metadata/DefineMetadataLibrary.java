@@ -7,12 +7,14 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import lombok.NonNull;
 import net.cumba.cdisc.define.CodeList;
 import net.cumba.cdisc.define.CodeListItem;
@@ -67,6 +69,9 @@ public class DefineMetadataLibrary implements IMetadataLibrary
     private @Nullable List<IDataTableMetadata> dataTables;
 
     private @Nullable List<ICodeList> codelists;
+
+    /** The one builder of the codelists' format-level metadata, built on first use. */
+    private @Nullable DefineCodelistMetadata codelistMetadata;
 
     private DefineMetadataLibrary(@NonNull DefineSupport aDefine)
     {
@@ -265,7 +270,7 @@ public class DefineMetadataLibrary implements IMetadataLibrary
                 String clName = cl.getName();
                 if (clName != null)
                 {
-                    named.add(new DefineCodeList(cl, clName));
+                    named.add(new DefineCodeList(cl, clName, this::codelistMetadata));
                 }
             });
             codelists = List.copyOf(named);
@@ -280,6 +285,16 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         return getCodelists().stream()//
                 .filter(cl -> Objects.equals(cl.getName(), aName))//
                 .findFirst();
+    }
+
+
+    private DefineCodelistMetadata codelistMetadata()
+    {
+        if (codelistMetadata == null)
+        {
+            codelistMetadata = DefineCodelistMetadata.of(define);
+        }
+        return codelistMetadata;
     }
 
 
@@ -811,7 +826,13 @@ public class DefineMetadataLibrary implements IMetadataLibrary
 
 
     /**
-     * Wraps a {@link CodeList} as {@link ICodeList}.
+     * Wraps a {@link CodeList} as {@link ICodeList}. Its metadata is {@code label} (the
+     * description, when present) and the {@code format.}-prefixed format-level keys of
+     * {@link DefineCodelistMetadata} (PLAN-define-format-metadata FM3 (a)), in that order. The
+     * engine reads a codelist's metadata by its own key names and never enumerates the keys, so
+     * {@link #getMetaValue} answers any other key empty <b>before</b> building anything, and the
+     * format-level map is built lazily, once per codelist (review L3: the engine's codelist lookup
+     * asks every codelist per miss).
      */
     private static class DefineCodeList implements ICodeList
     {
@@ -820,11 +841,16 @@ public class DefineMetadataLibrary implements IMetadataLibrary
 
         private final String name;
 
+        private final Supplier<DefineCodelistMetadata> metadata;
+
         private @Nullable List<ICodelistEntry> entries;
 
-        DefineCodeList(CodeList aCodelist, String aName)
+        private @Nullable Map<String, String> formatMeta;
+
+        DefineCodeList(CodeList aCodelist, String aName, Supplier<DefineCodelistMetadata> aMetadata)
         {
             codelist = aCodelist;
+            metadata = aMetadata;
 
             name = codelistFormatName(aName, aCodelist);
         }
@@ -879,12 +905,13 @@ public class DefineMetadataLibrary implements IMetadataLibrary
         @Override
         public Set<String> getMetaKeys()
         {
-            String desc = DefineSupport.getDescriptionString(codelist);
-            if (desc != null)
+            Set<String> keys = new LinkedHashSet<>();
+            if (DefineSupport.getDescriptionString(codelist) != null)
             {
-                return Set.of("label");
+                keys.add("label");
             }
-            return Collections.emptySet();
+            keys.addAll(formatMeta().keySet());
+            return Collections.unmodifiableSet(keys);
         }
 
 
@@ -895,7 +922,21 @@ public class DefineMetadataLibrary implements IMetadataLibrary
             {
                 return Optional.ofNullable(DefineSupport.getDescriptionString(codelist));
             }
+            if (aKey.startsWith(DefineCodelistMetadata.PREFIX))
+            {
+                return Optional.ofNullable(formatMeta().get(aKey));
+            }
             return Optional.empty();
+        }
+
+
+        private Map<String, String> formatMeta()
+        {
+            if (formatMeta == null)
+            {
+                formatMeta = metadata.get().prefixed(codelist);
+            }
+            return formatMeta;
         }
 
 
