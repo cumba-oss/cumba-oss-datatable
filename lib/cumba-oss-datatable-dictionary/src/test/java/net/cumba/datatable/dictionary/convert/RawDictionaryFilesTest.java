@@ -156,6 +156,59 @@ class RawDictionaryFilesTest
                 "the next conversion starts from zero");
     }
 
+    // ------------------------------------------------------------------
+    // The read record (OQ4 (b), confirmation look LOW-4): digests of the bytes read
+    // ------------------------------------------------------------------
+
+
+    /**
+     * A reader closed after its first line records the digest of the WHOLE file as it delivered it,
+     * once however often it is closed; the same content read twice keeps that digest; a reader
+     * still open has no digest yet; reset forgets everything.
+     */
+    @Test
+    void theReadRecordDigestsTheBytesTheReaderDelivered(@TempDir Path dir) throws Exception
+    {
+        Path file = dir.resolve("data.txt");
+        Files.writeString(file, "first\nsecond\n");
+        String expected = java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                .getInstance("SHA-256").digest(Files.readAllBytes(file)));
+        Path key = file.toAbsolutePath().normalize();
+        RawDictionaryFiles.resetReadFiles();
+        try (BufferedReader open = RawDictionaryFiles.reader(file))
+        {
+            assertEquals("first", open.readLine());
+            IOException unclosed = org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
+                    RawDictionaryFiles::readDigests);
+            org.junit.jupiter.api.Assertions.assertTrue(
+                    String.valueOf(unclosed.getMessage()).contains("still open"),
+                    unclosed.getMessage());
+            open.close(); // closed twice: here and by the try — recorded once
+        }
+        assertEquals(java.util.Map.of(key, expected), RawDictionaryFiles.readDigests(),
+                "the unread rest is drained into the digest");
+        try (BufferedReader again = RawDictionaryFiles.reader(file))
+        {
+            assertEquals("first", again.readLine());
+        }
+        assertEquals(java.util.Map.of(key, expected), RawDictionaryFiles.readDigests(),
+                "an identical second read keeps the digest");
+
+        Files.writeString(file, "first\nchanged\n");
+        try (BufferedReader changed = RawDictionaryFiles.reader(file))
+        {
+            assertEquals("first", changed.readLine());
+        }
+        IOException differs = org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
+                RawDictionaryFiles::readDigests);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                String.valueOf(differs.getMessage()).contains("changed while"),
+                differs.getMessage());
+
+        RawDictionaryFiles.resetReadFiles();
+        assertEquals(java.util.Map.of(), RawDictionaryFiles.readDigests());
+    }
+
 
     private static Path write(Path aDir, int[] aBytes) throws IOException
     {

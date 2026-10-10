@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.BufferedReader;
 import java.io.FilterReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.CharsetDecoder;
@@ -15,12 +16,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.DigestInputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
+import java.util.Collections;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jspecify.annotations.Nullable;
 
@@ -61,12 +66,23 @@ final class RawDictionaryFiles
 
     /**
      * Every file {@link #reader} opened on the current thread since the last
-     * {@link #resetReadFiles()}, absolute and normalised, in first-read order — what a
-     * {@link LocalDictionarySource} fingerprints into {@code SOURCES.md} (owner ruling OQ4 (b)).
-     * Thread-confined for the same reason as {@link #REPLACEMENTS}.
+     * {@link #resetReadFiles()}, absolute and normalised, in first-read order, mapped to the
+     * SHA-256 of the bytes that reader delivered — what a {@link LocalDictionarySource}
+     * fingerprints into {@code SOURCES.md} (owner ruling OQ4 (b)). The digest is taken from the
+     * stream itself and completed when the reader is closed, the unread rest drained first
+     * (confirmation look LOW-4): it describes what was converted, not the file as it lies in the
+     * folder afterwards. {@link #UNCLOSED} until the reader is closed, {@link #CHANGED} once two
+     * readers of one file delivered different bytes. Thread-confined for the same reason as
+     * {@link #REPLACEMENTS}.
      */
-    private static final ThreadLocal<Set<Path>> READ_FILES = ThreadLocal
-            .withInitial(LinkedHashSet::new);
+    private static final ThreadLocal<Map<Path, String>> READ_FILES = ThreadLocal
+            .withInitial(LinkedHashMap::new);
+
+    /** {@link #READ_FILES}' value for a file whose reader is still open. */
+    private static final String UNCLOSED = "";
+
+    /** {@link #READ_FILES}' value for a file two readers saw with different content. */
+    private static final String CHANGED = "changed";
 
     private RawDictionaryFiles()
     {
@@ -102,12 +118,15 @@ final class RawDictionaryFiles
      */
     static BufferedReader reader(Path aFile) throws IOException
     {
-        READ_FILES.get().add(aFile.toAbsolutePath().normalize());
+        Path file = aFile.toAbsolutePath().normalize();
+        Map<Path, String> readFiles = READ_FILES.get();
+        readFiles.putIfAbsent(file, UNCLOSED);
         CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPLACE)
                 .onUnmappableCharacter(CodingErrorAction.REPLACE);
-        BufferedReader in = new BufferedReader(new ReplacementCountingReader(
-                new InputStreamReader(Files.newInputStream(aFile), decoder), REPLACEMENTS.get()));
+        BufferedReader in = new BufferedReader(new ReplacementCountingReader(new InputStreamReader(
+                new FingerprintingStream(Files.newInputStream(aFile), file, readFiles), decoder),
+                REPLACEMENTS.get()));
         in.mark(1);
         if (in.read() != BOM)
         {
@@ -125,13 +144,32 @@ final class RawDictionaryFiles
 
 
     /**
-     * The files {@link #reader} opened on this thread since the last {@link #resetReadFiles()}.
+     * The files {@link #reader} opened on this thread since the last {@link #resetReadFiles()},
+     * each with the SHA-256 of the bytes its reader delivered (confirmation look LOW-4).
      *
-     * @return absolute, normalised paths in first-read order; a copy.
+     * @return absolute, normalised paths in first-read order to lower-case hex digests; a copy.
+     * @throws IOException
+     *             when a reader is still open (its digest is incomplete), or when two readers of
+     *             one file delivered different bytes — the file changed while the install read it,
+     *             so no single fingerprint describes what was converted
      */
-    static List<Path> readFiles()
+    static Map<Path, String> readDigests() throws IOException
     {
-        return List.copyOf(READ_FILES.get());
+        Map<Path, String> out = new LinkedHashMap<>(READ_FILES.get());
+        for (Map.Entry<Path, String> e : out.entrySet())
+        {
+            if (UNCLOSED.equals(e.getValue()))
+            {
+                throw new IOException(e.getKey() + " is still open: its fingerprint is incomplete");
+            }
+            if (CHANGED.equals(e.getValue()))
+            {
+                throw new IOException(e.getKey() + " changed while the install read it: two reads"
+                        + " delivered different bytes, so the conversion is inconsistent —"
+                        + " NOT installed. Leave the distribution folder alone while it installs.");
+            }
+        }
+        return Collections.unmodifiableMap(out);
     }
 
 
@@ -213,6 +251,71 @@ final class RawDictionaryFiles
                 }
             }
             return n;
+        }
+    }
+
+
+    /**
+     * Digests every byte read through it, and on {@link #close()} drains the unread rest so the
+     * digest covers the whole file as this stream saw it, then records it for {@link #readDigests}
+     * — once, however often it is closed.
+     */
+    private static final class FingerprintingStream extends DigestInputStream
+    {
+
+        private final Path file;
+
+        private final Map<Path, String> record;
+
+        private boolean closed;
+
+        FingerprintingStream(InputStream aIn, Path aFile, Map<Path, String> aRecord)
+        {
+            super(aIn, sha256());
+            file = aFile;
+            record = aRecord;
+        }
+
+
+        @Override
+        public void close() throws IOException
+        {
+            if (closed)
+            {
+                return;
+            }
+            closed = true;
+            try (InputStream underlying = in)
+            {
+                // the unread rest, straight from the file into the digest
+                MessageDigest digestOfAll = getMessageDigest();
+                byte[] rest = new byte[1 << 16];
+                int n = underlying.read(rest, 0, rest.length);
+                while (n >= 0)
+                {
+                    digestOfAll.update(rest, 0, n);
+                    n = underlying.read(rest, 0, rest.length);
+                }
+                String digest = HexFormat.of().formatHex(digestOfAll.digest());
+                String earlier = record.get(file);
+                record.put(file,
+                        earlier == null || UNCLOSED.equals(earlier) || earlier.equals(digest)
+                                ? digest
+                                : CHANGED);
+            }
+        }
+
+
+        private static MessageDigest sha256()
+        {
+            try
+            {
+                return MessageDigest.getInstance("SHA-256");
+            }
+            catch (NoSuchAlgorithmException e)
+            {
+                throw new IllegalStateException("SHA-256 is a required JDK algorithm", e);
+            }
         }
     }
 

@@ -6,11 +6,13 @@ package net.cumba.datatable.dictionary.convert;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -209,6 +211,58 @@ public final class DictionaryInstaller
             @Nullable String aLicence, Map<String, String> aExtraLicenceFiles, Selection aSelection)
         throws IOException
     {
+        return install(aSource, aConverter, aLicence, aExtraLicenceFiles, aSelection, null);
+    }
+
+
+    /**
+     * Installs one dictionary that must declare an expected version — a re-install offered for an
+     * installed version from its recorded source (owner ruling OQ4 (a)). The check is this
+     * install's own version read, so nothing can change between the check and the conversion
+     * (confirmation look LOW-1).
+     *
+     * @param aSource
+     *            where the raw distribution comes from; closed by this method
+     * @param aConverter
+     *            the vendor-format reader for this dictionary type
+     * @param aLicence
+     *            the licence or terms-of-use text, or {@code null}
+     * @param aExtraLicenceFiles
+     *            further documents to write into the {@code LICENSES} directory
+     * @param aSelection
+     *            what happens to an existing manifest entry for this type
+     * @param aExpectedVersion
+     *            the version the distribution must declare, else nothing is read further or written
+     *            and the refusal is reported as skipped; {@code null} expects none
+     * @return the installed version, or {@code null} when nothing was written
+     * @throws IOException
+     *             when the store cannot be written
+     */
+    public @Nullable String install(DictionarySource aSource, DictionaryConverter aConverter,
+            @Nullable String aLicence, Map<String, String> aExtraLicenceFiles, Selection aSelection,
+            @Nullable String aExpectedVersion)
+        throws IOException
+    {
+        try
+        {
+            return installChecked(aSource, aConverter, aLicence, aExtraLicenceFiles, aSelection,
+                    aExpectedVersion);
+        }
+        finally
+        {
+            // confirmation look LOW-4: the read record serves this install only — never left on a
+            // long-lived thread
+            RawDictionaryFiles.resetReadFiles();
+        }
+    }
+
+
+    private @Nullable String installChecked(DictionarySource aSource,
+            DictionaryConverter aConverter, @Nullable String aLicence,
+            Map<String, String> aExtraLicenceFiles, Selection aSelection,
+            @Nullable String aExpectedVersion)
+        throws IOException
+    {
         String type = aConverter.type().toLowerCase(Locale.ROOT);
         try (DictionarySource source = aSource)
         {
@@ -222,6 +276,16 @@ public final class DictionaryInstaller
             // fingerprints into SOURCES.md
             RawDictionaryFiles.resetReadFiles();
             String version = aConverter.versionOf(raw);
+            if (aExpectedVersion != null && !aExpectedVersion.equals(version))
+            {
+                report.skipped(type + ": NOT re-installed: the folder " + source.provenance()
+                        + " now declares "
+                        + (version.isBlank() ? "no readable version" : "version " + version)
+                        + ", not " + aExpectedVersion
+                        + ", the installed version this re-install was offered for — nothing was"
+                        + " written. Choose the folder again to install what it holds.");
+                return null;
+            }
             if (version.isBlank())
             {
                 report.skipped(type + ": the distribution declares no version, so it cannot be "
@@ -390,16 +454,17 @@ public final class DictionaryInstaller
         byte[] json = MAPPER.writeValueAsBytes(aDoc);
         if (json.length > GZIP_THRESHOLD_BYTES)
         {
-            try (OutputStream out = new GZIPOutputStream(
-                    Files.newOutputStream(dir.resolve(aType + ".json.gz"))))
+            ByteArrayOutputStream gz = new ByteArrayOutputStream(json.length / 8);
+            try (OutputStream out = new GZIPOutputStream(gz))
             {
                 out.write(json);
             }
+            writeAtomically(dir, aType + ".json.gz", gz.toByteArray());
             Files.deleteIfExists(dir.resolve(aType + ".json"));
         }
         else
         {
-            Files.write(dir.resolve(aType + ".json"), json);
+            writeAtomically(dir, aType + ".json", json);
             Files.deleteIfExists(dir.resolve(aType + ".json.gz"));
         }
         Path licences = Files.createDirectories(dir.resolve("LICENSES"));
@@ -422,6 +487,36 @@ public final class DictionaryInstaller
                         "an extra licence file must be a plain file name: " + fileName);
             }
             Files.writeString(licences.resolve(fileName), extra.getValue(), StandardCharsets.UTF_8);
+        }
+    }
+
+
+    /**
+     * Writes {@code aBytes} to {@code <aName>.tmp} beside the target and moves it into place
+     * atomically (confirmation look LOW-3): a write that fails or is killed leaves the previous
+     * file intact — a truncated file would otherwise read as house format 2, its header coming
+     * first — and a failed temporary file is removed.
+     */
+    private static void writeAtomically(Path aDir, String aName, byte[] aBytes) throws IOException
+    {
+        Path tmp = aDir.resolve(aName + ".tmp");
+        try
+        {
+            Files.write(tmp, aBytes);
+            Files.move(tmp, aDir.resolve(aName), StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
+        }
+        catch (IOException | RuntimeException e)
+        {
+            try
+            {
+                Files.deleteIfExists(tmp);
+            }
+            catch (IOException suppressed)
+            {
+                e.addSuppressed(suppressed);
+            }
+            throw e;
         }
     }
 

@@ -492,12 +492,208 @@ class DictionaryInstallerTest
     }
 
 
+    /**
+     * Confirmation look LOW-4: the recorded SHA-256 describes the bytes the converter READ — a file
+     * replaced after it was read (here: after its first line, so the digest also covers the unread
+     * rest) keeps the fingerprint of what was converted, not of what lies in the folder afterwards.
+     * And the per-thread record is cleared when the install ends, so nothing of it lingers on a
+     * long-lived thread.
+     */
+    @Test
+    void aLocalInstallHashesTheBytesTheConverterRead_notTheFileAfterwards(@TempDir Path dir)
+        throws IOException
+    {
+        Path raw = Files.createDirectories(dir.resolve("raw"));
+        Path data = raw.resolve("data.txt");
+        Files.writeString(data, "first line\nsecond line\n");
+        byte[] original = Files.readAllBytes(data);
+        String json = medrtJson("A", "N1");
+        DictionaryConverter converter = new DictionaryConverter()
+        {
+
+            @Override
+            public String type()
+            {
+                return "medrt";
+            }
+
+
+            @Override
+            public ObjectNode convert(Path aRawDir) throws IOException
+            {
+                try (var in = RawDictionaryFiles.reader(data))
+                {
+                    assertEquals("first line", in.readLine());
+                }
+                Files.writeString(data, "replaced after the read\n");
+                return (ObjectNode) MAPPER.readTree(json);
+            }
+
+
+            @Override
+            public String versionOf(Path aRawDir)
+            {
+                return "2026.07.06";
+            }
+        };
+        Path store = dir.resolve("store");
+
+        assertEquals("2026.07.06", new DictionaryInstaller(store)
+                .install(new LocalDictionarySource(raw), converter, "licence", false));
+
+        String sources = Files.readString(store.resolve(DictionaryInstaller.SOURCES_FILE));
+        assertTrue(sources.contains("- Artefact: data.txt — SHA-256 " + sha256(original) + " — "),
+                sources);
+        assertEquals(java.util.List.of(), new LocalDictionarySource(raw).artefacts(),
+                "the read record is cleared when the install ends");
+    }
+
+
+    /**
+     * Confirmation look LOW-4: a file whose content differs between two reads of the same install
+     * makes the conversion inconsistent — the install fails and writes nothing rather than record a
+     * fingerprint of either version.
+     */
+    @Test
+    void aFileThatChangesBetweenTwoReadsFailsTheInstall(@TempDir Path dir) throws IOException
+    {
+        Path raw = Files.createDirectories(dir.resolve("raw"));
+        Path data = raw.resolve("data.txt");
+        Files.writeString(data, "2026.07.06\n");
+        String json = medrtJson("A", "N1");
+        DictionaryConverter converter = new DictionaryConverter()
+        {
+
+            @Override
+            public String type()
+            {
+                return "medrt";
+            }
+
+
+            @Override
+            public ObjectNode convert(Path aRawDir) throws IOException
+            {
+                Files.writeString(data, "2026.08.03\n");
+                try (var in = RawDictionaryFiles.reader(data))
+                {
+                    assertEquals("2026.08.03", in.readLine());
+                }
+                return (ObjectNode) MAPPER.readTree(json);
+            }
+
+
+            @Override
+            public String versionOf(Path aRawDir) throws IOException
+            {
+                try (var in = RawDictionaryFiles.reader(data))
+                {
+                    return in.readLine();
+                }
+            }
+        };
+        Path store = dir.resolve("store");
+
+        RuntimeException thrown = org.junit.jupiter.api.Assertions
+                .assertThrows(RuntimeException.class, () -> new DictionaryInstaller(store)
+                        .install(new LocalDictionarySource(raw), converter, "licence", false));
+        assertTrue(String.valueOf(thrown.getMessage()).contains("changed while"),
+                String.valueOf(thrown.getMessage()));
+        assertFalse(Files.exists(store.resolve("medrt")), "nothing written");
+    }
+
+
+    /**
+     * Confirmation look LOW-3: the dictionary file is written to a sibling {@code .tmp} and moved
+     * into place, so a write that fails leaves the previous file intact — a truncated file would
+     * read as house format 2 since the header comes first.
+     */
+    @Test
+    void aFailedWriteLeavesThePreviousFileIntact(@TempDir Path dir) throws IOException
+    {
+        install(dir, "medrt", "2026.07.06", false);
+        Path versionDir = dir.resolve("medrt").resolve("2026.07.06");
+        Path written = versionDir.resolve("medrt.json");
+        byte[] before = Files.readAllBytes(written);
+        // the temporary file's name is taken by a directory: the write fails before the move
+        Files.createDirectory(versionDir.resolve("medrt.json.tmp"));
+
+        DictionaryInstaller again = new DictionaryInstaller(dir);
+        org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
+                () -> again.install(source(dir),
+                        converter("medrt", "2026.07.06", medrtJson("Changed", "N1")), "licence",
+                        false));
+
+        assertTrue(java.util.Arrays.equals(before, Files.readAllBytes(written)),
+                "the previous file is untouched");
+        assertFalse(Files.exists(versionDir.resolve("medrt.json.tmp")),
+                "the failed temporary file is removed");
+    }
+
+
+    /**
+     * Confirmation look LOW-1: an expected version is checked against the installer's own version
+     * read — a mismatch (or no version at all) is refused before conversion and writes nothing; the
+     * declared expected version installs as usual.
+     */
+    @Test
+    void anExpectedVersionIsCheckedAgainstTheInstallersOwnRead(@TempDir Path dir) throws IOException
+    {
+        DictionaryInstaller other = new DictionaryInstaller(dir);
+        assertNull(other.install(source(dir),
+                converter("medrt", "2026.08.03", medrtJson("A", "N1")), "licence", Map.of(),
+                DictionaryInstaller.Selection.NEW_VERSION, "2026.07.06"));
+        String why = String.join(" | ", other.getReport().getSkipped());
+        assertTrue(
+                why.contains("NOT re-installed")
+                        && why.contains("now declares version " + "2026.08.03, not 2026.07.06"),
+                why);
+        assertFalse(Files.exists(dir.resolve("medrt")), "nothing written");
+        assertFalse(Files.exists(dir.resolve(DictionaryStore.MANIFEST)), "no manifest touched");
+
+        DictionaryInstaller none = new DictionaryInstaller(dir);
+        assertNull(none.install(source(dir), converter("medrt", "", medrtJson("A", "N1")),
+                "licence", Map.of(), DictionaryInstaller.Selection.NEW_VERSION, "2026.07.06"));
+        assertTrue(
+                String.join(" | ", none.getReport().getSkipped())
+                        .contains("now declares no readable version, not 2026.07.06"),
+                none.getReport().getSkipped().toString());
+
+        DictionaryInstaller same = new DictionaryInstaller(dir);
+        assertEquals("2026.07.06",
+                same.install(source(dir), converter("medrt", "2026.07.06", medrtJson("A", "N1")),
+                        "licence", Map.of(), DictionaryInstaller.Selection.NEW_VERSION,
+                        "2026.07.06"));
+        assertEquals(java.util.List.of(), same.getReport().getSkipped());
+    }
+
+
+    /** Confirmation look LOW-3: a successful write leaves no temporary file behind. */
+    @Test
+    void aSuccessfulWriteLeavesNoTemporaryFile(@TempDir Path dir) throws IOException
+    {
+        install(dir, "medrt", "2026.07.06", false);
+        install(dir, "medrt", "2026.07.06", false);
+        try (var listing = Files.list(dir.resolve("medrt").resolve("2026.07.06")))
+        {
+            assertEquals(java.util.List.of("LICENSES", "medrt.json"),
+                    listing.map(p -> p.getFileName().toString()).sorted().toList());
+        }
+    }
+
+
     private static String sha256(Path aFile) throws IOException
+    {
+        return sha256(Files.readAllBytes(aFile));
+    }
+
+
+    private static String sha256(byte[] aBytes)
     {
         try
         {
-            return java.util.HexFormat.of().formatHex(java.security.MessageDigest
-                    .getInstance("SHA-256").digest(Files.readAllBytes(aFile)));
+            return java.util.HexFormat.of()
+                    .formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(aBytes));
         }
         catch (java.security.NoSuchAlgorithmException e)
         {
