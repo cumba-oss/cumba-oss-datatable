@@ -32,3 +32,18 @@ code levels of MedDRA (`LLTCD` … `SOCCD`) and WHODrug (`ATCCD`, and the drug c
 `DRUGCD` level) their names. It lies outside `pairs` and `attributes`, so the pair lookups of the
 rule functions cannot see it and no rule verdict depends on the format version. A reader of house
 format 1 ignores the field and the section.
+
+Installer behaviour (`convert.DictionaryInstaller`):
+
+- The header is written **first** — `type`, `version`, `source`, `retrieved`, `house_format` — so a
+  header read stops after those five fields.
+- A `decodes` entry is **not content**: a file holding only `decodes` is treated as not loaded and
+  its rules SKIP.
+- Each house file is written to `<name>.tmp` and moved into place atomically; a failed write leaves
+  the previous file intact.
+- `DictionaryInstaller.Selection`: `KEEP` (default) leaves an existing `selected-versions.json`
+  entry alone, `NEW_VERSION` rebinds only to a version not yet in the store, `ALWAYS` rebinds also
+  to one already installed (the CLI's `--set-default`). The first install of a type always binds.
+- An install may name the version it expects; the installer refuses, writing nothing, when its own
+  version read of the distribution disagrees.
+- A local distribution's files are digested as they are read; `SOURCES.md` records their SHA-256.
