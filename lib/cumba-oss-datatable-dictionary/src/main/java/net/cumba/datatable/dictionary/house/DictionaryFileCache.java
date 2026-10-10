@@ -60,14 +60,19 @@ import org.jspecify.annotations.Nullable;
  * </p>
  *
  * <p>
- * <b>One cache, two load profiles</b> (PLAN-dictionary-backed-formats B1, plan D-B0-2). Since the
- * engine's dictionary code moved into this module, the conformance engine and the data browser's
- * dictionary formats share this cache. An entry remembers the {@link ValueMapDictionary.Profile} it
- * was parsed with: a {@link ValueMapDictionary.Profile#FULL FULL} entry serves a
- * {@link ValueMapDictionary.Profile#FORMAT FORMAT} request too (it answers the format-path read API
- * identically), so a CORE check followed by a table open parses a file once; a {@code FORMAT} entry
- * never serves a {@code FULL} request — the engine's request re-parses the file in full and
- * replaces the entry (an open table keeps the subset copy it already holds until it is closed).
+ * <b>One cache, three load profiles</b> (PLAN-dictionary-backed-formats B1, plan D-B0-2;
+ * LANE-dictionary-followup). Since the engine's dictionary code moved into this module, the
+ * conformance engine ({@link ValueMapDictionary.Profile#ENGINE ENGINE}: no {@code decodes}) and the
+ * data browser's dictionary formats ({@link ValueMapDictionary.Profile#FORMAT FORMAT}) share this
+ * cache. An entry remembers the profile it was parsed with and serves a request only when its
+ * profile {@link ValueMapDictionary.Profile#serves serves} the requested one — never a stronger
+ * one: a {@link ValueMapDictionary.Profile#FULL FULL} entry serves all three, an {@code ENGINE} or
+ * {@code FORMAT} entry only its own. A request the fresh entry does not serve re-parses the file
+ * once in the {@link ValueMapDictionary.Profile#join join} of the two profiles — {@code FULL} for
+ * an {@code ENGINE} entry and a {@code FORMAT} request or the reverse — and replaces the entry, so
+ * a process using both paths holds one {@code FULL} parse and never alternates between subsets (an
+ * open table keeps the copy it already holds until it is closed). A process that only validates
+ * (the coreJ CLI / REST service, dictionary formats off) holds {@code ENGINE} parses only.
  * </p>
  */
 public final class DictionaryFileCache
@@ -94,6 +99,13 @@ public final class DictionaryFileCache
             mtime = aMtime;
             dict = aDict;
         }
+
+
+        /** Whether this parse is of the file the attributes describe (size and mtime unchanged). */
+        boolean matches(BasicFileAttributes aAttrs)
+        {
+            return size == aAttrs.size() && mtime.equals(aAttrs.lastModifiedTime());
+        }
     }
 
     private static final ConcurrentHashMap<Path, Entry> CACHE = new ConcurrentHashMap<>();
@@ -110,26 +122,28 @@ public final class DictionaryFileCache
 
 
     /**
-     * The parsed dictionary for {@code aFile} — the cached instance while the file's size and mtime
-     * are unchanged, else a fresh parse ({@link ValueMapDictionary.Profile#FULL}, the engine's).
+     * The parsed dictionary for {@code aFile} in the engine's profile — the cached instance while
+     * the file's size and mtime are unchanged and it serves
+     * {@link ValueMapDictionary.Profile#ENGINE}, else a fresh parse.
      */
     static ValueMapDictionary load(Path aFile) throws IOException
     {
-        return load(aFile, ValueMapDictionary.Profile.FULL);
+        return load(aFile, ValueMapDictionary.Profile.ENGINE);
     }
 
 
     /**
      * The parsed dictionary of the file in at least the requested profile: the cached instance
      * while the file's size and mtime are unchanged and its profile serves the request (a
-     * {@code FULL} entry serves either), else a fresh parse in the requested profile.
+     * {@code FULL} entry serves any), else a fresh parse — in the requested profile, or in the join
+     * of it and a fresh entry's profile, which then replaces that entry.
      *
      * @param aFile
      *            the house-format file.
      * @param aProfile
      *            the profile the caller needs.
-     * @return the dictionary; its {@link ValueMapDictionary#getProfile()} is {@code aProfile} or
-     *         {@code FULL}.
+     * @return the dictionary; its {@link ValueMapDictionary#getProfile()} serves {@code aProfile}
+     *         ({@code aProfile} itself or {@code FULL}).
      * @throws IOException
      *             when the file cannot be read or parsed.
      */
@@ -156,9 +170,14 @@ public final class DictionaryFileCache
             {
                 return hit.dict;
             }
+            // A fresh entry in another profile: parse the union once, so the process does not
+            // alternate between two subsets of one file (each request evicting the other's).
+            Entry current = CACHE.get(key);
+            ValueMapDictionary.Profile parse = current != null && current.matches(attrs)
+                    ? current.dict.getProfile().join(aProfile)
+                    : aProfile;
             entry = new Entry(attrs.size(), attrs.lastModifiedTime(),
-                    aProfile == ValueMapDictionary.Profile.FULL ? ValueMapDictionary.load(key)
-                            : HouseDictionaryReader.read(key));
+                    ValueMapDictionary.load(key, parse));
             entry.lastUsed = CLOCK.incrementAndGet();
             CACHE.put(key, entry);
         }
@@ -183,8 +202,8 @@ public final class DictionaryFileCache
     public static HouseDictionaryReader.Header header(Path aFile) throws IOException
     {
         Path key = aFile.toAbsolutePath().normalize();
-        Entry hit = freshEntry(key, Files.readAttributes(key, BasicFileAttributes.class),
-                ValueMapDictionary.Profile.FORMAT);
+        // every profile holds the header
+        Entry hit = freshEntry(key, Files.readAttributes(key, BasicFileAttributes.class), null);
         if (hit != null)
         {
             ValueMapDictionary d = hit.dict;
@@ -217,17 +236,15 @@ public final class DictionaryFileCache
 
 
     /**
-     * The cached entry when it matches the just-read attributes and its profile serves the request,
-     * touched for LRU; else null.
+     * The cached entry when it matches the just-read attributes and its profile serves the request
+     * ({@code null}: any profile), touched for LRU; else null.
      */
     private static @Nullable Entry freshEntry(Path aKey, BasicFileAttributes aAttrs,
-            ValueMapDictionary.Profile aProfile)
+            ValueMapDictionary.@Nullable Profile aProfile)
     {
         Entry entry = CACHE.get(aKey);
-        if (entry != null && entry.size == aAttrs.size()
-                && entry.mtime.equals(aAttrs.lastModifiedTime())
-                && (entry.dict.getProfile() == ValueMapDictionary.Profile.FULL
-                        || aProfile == ValueMapDictionary.Profile.FORMAT))
+        if (entry != null && entry.matches(aAttrs)
+                && (aProfile == null || entry.dict.getProfile().serves(aProfile)))
         {
             entry.lastUsed = CLOCK.incrementAndGet();
             return entry;

@@ -135,6 +135,38 @@ class DictionaryLoadGuardTest
 
 
     /**
+     * LANE-dictionary-followup: the engine's load ({@code ENGINE}, no {@code decodes}) judges
+     * content exactly as the full load — on every shape above, so its SKIP arm is unchanged.
+     */
+    @Test
+    void theEngineLoadJudgesContentAsTheFullLoad(@TempDir Path dir) throws IOException
+    {
+        List<String> shapes = List.of("{\"type\":\"unii\"}",
+                "{\"type\":\"unii\",\"levels\":{\"UNII\":{}}}", "{\"type\":\"unii\",\"levels\":[]}",
+                "{\"type\":\"meddra\",\"hierarchy\":{\"X\":[]}}",
+                "{\"type\":\"unii\",\"levels\":{\"UNII\":{\"X\":\"X\"}}}",
+                "{\"type\":\"m\",\"hierarchy\":{\"A\":[\"B\"]}}",
+                "{\"type\":\"m\",\"pairs\":{\"m\":{\"C\":\"D\"}}}",
+                "{\"type\":\"neoplasm\",\"attributes\":{\"neoplasm\":{\"A\":\"BENIGN\"}}}",
+                "{\"type\":\"meddra\",\"hierarchy_by_level\":{\"PT\":{\"X\":{\"SOC\":[\"Y\"]}}}}",
+                "{\"type\":\"meddra\",\"house_format\":2,\"levels\":{},"
+                        + "\"decodes\":{\"PTCD\":{\"10019211\":\"Headache\"}}}");
+        int positives = 0;
+        for (String json : shapes)
+        {
+            Path file = dir.resolve("d.json");
+            Files.writeString(file, json);
+            boolean full = ValueMapDictionary.load(file).hasContent();
+            assertEquals(full,
+                    ValueMapDictionary.load(file, ValueMapDictionary.Profile.ENGINE).hasContent(),
+                    json);
+            positives += full ? 1 : 0;
+        }
+        assertEquals(5, positives, "both arms are exercised");
+    }
+
+
+    /**
      * Batch B2 — an UNREADABLE file (a truncated {@code .json.gz} that is not valid gzip, a JSON
      * parse error) degrades exactly like a contentless one: per file, with the right diagnosis, and
      * never by discarding the healthy siblings. Before this guard the {@link IOException}

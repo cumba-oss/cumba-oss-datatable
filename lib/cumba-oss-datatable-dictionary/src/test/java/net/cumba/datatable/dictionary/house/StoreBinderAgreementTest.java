@@ -89,6 +89,10 @@ class StoreBinderAgreementTest
             assertEquals(engine.versionOf(aType), format.version(), what);
             assertNotNull(format.dictionary());
             assertEquals(engineDict.getType(), format.dictionary().getType(), what);
+            // LANE-dictionary-followup: each binder loads its own profile (or the union)
+            assertTrue(engineDict.getProfile().serves(ValueMapDictionary.Profile.ENGINE), what);
+            assertTrue(format.dictionary().getProfile().serves(ValueMapDictionary.Profile.FORMAT),
+                    what);
         }
     }
 

@@ -87,10 +87,11 @@ public final class RuntimeDictionaryProvider
      *            (case-insensitive); a type absent from both maps reads as not installed
      *            ({@link #notInstalledDetail()})
      * @throws IllegalArgumentException
-     *             when a dictionary is not a {@link ValueMapDictionary.Profile#FULL FULL} load: the
-     *             engine reads every section, and a FORMAT load would answer membership and then
-     *             throw on the first pair or hierarchy rule mid-run (B-T review lane 1 LOW-7) — so
-     *             it is refused here, at bind time
+     *             when a dictionary does not serve the {@link ValueMapDictionary.Profile#ENGINE
+     *             ENGINE} profile (it is a {@code FORMAT} load): the engine reads every section but
+     *             {@code decodes}, and a FORMAT load would answer membership and then throw on the
+     *             first pair or hierarchy rule mid-run (B-T review lane 1 LOW-7) — so it is refused
+     *             here, at bind time
      */
     public RuntimeDictionaryProvider(Map<String, ValueMapDictionary> byType,
             Map<String, Unavailability> unavailable)
@@ -98,10 +99,10 @@ public final class RuntimeDictionaryProvider
         Map<String, ValueMapDictionary> normalized = new LinkedHashMap<>();
         for (Map.Entry<String, ValueMapDictionary> e : byType.entrySet())
         {
-            if (e.getValue().getProfile() != ValueMapDictionary.Profile.FULL)
+            if (!e.getValue().getProfile().serves(ValueMapDictionary.Profile.ENGINE))
             {
-                throw new IllegalArgumentException("the engine's provider needs FULL loads; "
-                        + e.getKey() + " is " + e.getValue());
+                throw new IllegalArgumentException("the engine's provider needs ENGINE or FULL "
+                        + "loads; " + e.getKey() + " is " + e.getValue());
             }
             normalized.put(e.getKey().toLowerCase(Locale.ROOT), e.getValue());
         }
@@ -156,7 +157,8 @@ public final class RuntimeDictionaryProvider
                 {
                     // D8: the parse is cached per file, validated against size+mtime, so a
                     // per-request caller (the REST service) does not re-decompress and re-parse
-                    // a multi-MB store on every run while an install is still picked up.
+                    // a multi-MB store on every run while an install is still picked up. The
+                    // ENGINE profile: no `decodes` (LANE-dictionary-followup).
                     ValueMapDictionary dict;
                     try
                     {

@@ -60,9 +60,39 @@ final class HouseFormatEquivalence
      */
     static Set<String> differences(ObjectNode aV2, long[] aProbes)
     {
-        ValueMapDictionary v2 = ValueMapDictionary.parse(aV2);
         ObjectNode twin = v1Twin(aV2);
-        ValueMapDictionary v1 = ValueMapDictionary.parse(twin);
+        return differences(ValueMapDictionary.parse(twin), ValueMapDictionary.parse(aV2), aV2, twin,
+                aProbes);
+    }
+
+
+    /**
+     * LANE-dictionary-followup: every engine lookup that differs between the document read FULL and
+     * read in the engine's profile ({@code ENGINE}, no {@code decodes}) — the same probes as
+     * {@link #differences(ObjectNode, long[])}, at every level of the document ({@code DRUGCD}
+     * included).
+     *
+     * @param aV2
+     *            the house-format-2 document.
+     * @param aProbes
+     *            receives the number of probes compared (index 0).
+     * @return {@code "lookup(args)"} per differing probe.
+     */
+    static Set<String> engineDifferences(ObjectNode aV2, long[] aProbes)
+    {
+        return differences(ValueMapDictionary.parse(aV2),
+                ValueMapDictionary.parse(aV2, ValueMapDictionary.Profile.ENGINE), aV2, aV2,
+                aProbes);
+    }
+
+
+    /**
+     * The probes of {@link #differences(ObjectNode, long[])}: {@code aV1} and {@code aV2} read, the
+     * terms drawn from {@code aV2}, the levels from {@code twin}.
+     */
+    private static Set<String> differences(ValueMapDictionary v1, ValueMapDictionary v2,
+            ObjectNode aV2, ObjectNode twin, long[] aProbes)
+    {
         Set<String> out = new LinkedHashSet<>();
         long probes = 0;
         List<String> v1Levels = new ArrayList<>();

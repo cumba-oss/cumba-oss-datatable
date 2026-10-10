@@ -354,6 +354,10 @@ class WhoDrugConverterTest
         assertEquals(new java.util.TreeSet<>(expected),
                 new java.util.TreeSet<>(HouseFormatEquivalence.differences(doc, probes)));
         assertTrue(probes[0] > 300, "probes: " + probes[0]);
+        // LANE-dictionary-followup: the engine's load (no decodes, DRUGCD kept) answers as the
+        // full one at every level, DRUGCD included
+        assertEquals(java.util.Set.of(), HouseFormatEquivalence.engineDifferences(doc, probes));
+        assertTrue(probes[0] > 300, "probes: " + probes[0]);
     }
 
 

@@ -556,7 +556,7 @@ public final class DictionaryInstaller
         else
         {
             lines = new ArrayList<>(List.of("# Dictionary sources", "",
-                    "Written by the coreJ dictionary installer: one section per installed",
+                    "Written by the dictionary installer: one section per installed",
                     "dictionary type, rewritten on that type's next install and otherwise",
                     "left untouched.", ""));
         }

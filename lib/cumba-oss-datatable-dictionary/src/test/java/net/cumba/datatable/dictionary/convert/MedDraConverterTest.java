@@ -503,6 +503,9 @@ class MedDraConverterTest
             assertTrue(doc.path(ValueMapDictionary.DECODES).size() == 5, "the v2 sections exist");
             assertEquals(java.util.Set.of(), HouseFormatEquivalence.differences(doc, probes));
             total += probes[0];
+            // LANE-dictionary-followup: the engine's load (no decodes) answers as the full one
+            assertEquals(java.util.Set.of(), HouseFormatEquivalence.engineDifferences(doc, probes));
+            total += probes[0];
         }
         assertTrue(total > 400, "probes: " + total);
     }

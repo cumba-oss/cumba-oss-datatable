@@ -17,7 +17,7 @@ import java.util.TreeMap;
  *
  * <p>
  * This is the only source available for the licensed dictionaries, and it is what makes the
- * commercial ones installable at all without coreJ ever handling their data.
+ * commercial ones installable at all without the dictionary installer ever fetching their data.
  * </p>
  */
 public final class LocalDictionarySource implements DictionarySource

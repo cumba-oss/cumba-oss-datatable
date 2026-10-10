@@ -49,10 +49,12 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * <b>Readers of this format.</b> This class — moved here from the conformance engine
  * ({@code cumba-corej-core}, PLAN-dictionary-backed-formats B1, DF26) and shared by the engine and
- * the dictionary formats of the data browser — in two load {@link Profile profiles}:
+ * the dictionary formats of the data browser — in three load {@link Profile profiles}:
  * {@link Profile#FULL} parses the whole file as a tree ({@link #load}, {@link #parse});
- * {@link Profile#FORMAT} is streamed by {@link HouseDictionaryReader} and holds only what the
- * format path reads (DF25 as amended by owner ruling OQ2, 2026-10-10). Besides, the engine's
+ * {@link Profile#ENGINE} parses it the same way but skips the {@value #DECODES} section no engine
+ * lookup reads (LANE-dictionary-followup, owner 2026-10-10); {@link Profile#FORMAT} is streamed by
+ * {@link HouseDictionaryReader} and holds only what the format path reads (DF25 as amended by owner
+ * ruling OQ2, 2026-10-10). Besides, the engine's
  * {@code DictionaryValidationTest.caseContractViolations} walks the same four sections
  * independently to audit the preferred-case contract of the engine's dummy files.
  * </p>
@@ -60,12 +62,14 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * <b>Format-path read API</b> (Phase A's, taken over by this class in B1 — D1: the engine's class
  * is the survivor): {@link #isMember}, {@link #decode}, {@link #hasLevel}, {@link #decodes},
- * {@link #houseFormat}, {@link #getRetrieved} — answered identically in both profiles. A code level
- * decodes from its own source only: house format 1 a fixed level → {@code pairs} registry table
- * ({@code LOINC → pairs.loinc}, {@code UNII → pairs.unii}, {@code SNOMEDCD → pairs.snomed},
- * {@code MEDRTCD → pairs.medrt}), house format 2 the {@code decodes} section — <b>never</b> the
- * fall-through scan of {@link #codeDecodePair} / {@link #hasDecode}, never {@code medrt-base}; no
- * section is enumerated (DF11).
+ * {@link #houseFormat}, {@link #getRetrieved} — answered identically by {@link Profile#FULL} and
+ * {@link Profile#FORMAT} ({@link Profile#ENGINE} answers the membership half and refuses
+ * {@code decode} / {@code decodes}). A code level decodes from its own source only: house format 1
+ * a fixed level → {@code pairs} registry table ({@code LOINC → pairs.loinc},
+ * {@code UNII → pairs.unii}, {@code SNOMEDCD → pairs.snomed}, {@code MEDRTCD → pairs.medrt}), house
+ * format 2 the {@code decodes} section — <b>never</b> the fall-through scan of
+ * {@link #codeDecodePair} / {@link #hasDecode}, never {@code medrt-base}; no section is enumerated
+ * (DF11).
  * </p>
  *
  * <p>
@@ -118,15 +122,29 @@ public final class ValueMapDictionary
     static final Set<String> V1_REGISTRY_NAMES = Set.copyOf(V1_DECODE_REGISTRIES.values());
 
     /**
-     * What a load holds (plan D-B0-2: one model class, two load profiles, one cache).
+     * What a load holds (plan D-B0-2: one model class, load profiles, one cache). {@link #FULL} is
+     * the union of {@link #ENGINE} and {@link #FORMAT}: the one load serving both, which
+     * {@link DictionaryFileCache} builds when the engine and the format path share a file.
      */
     public enum Profile
     {
+
         /**
          * Every section, with the case-folded twins the rule functions' {@code case_sensitive:
-         * false} needs — the conformance engine's load.
+         * false} needs — {@link #ENGINE} and {@link #FORMAT} together. Answers every lookup.
          */
         FULL,
+
+        /**
+         * The conformance engine's load (LANE-dictionary-followup, owner 2026-10-10): every section
+         * of {@link #FULL} with its folded twins, <b>except</b> {@value #DECODES} — read by no
+         * engine lookup ({@code decodes} are no content either, so {@link #hasContent} is
+         * unchanged). Answers every engine lookup exactly as a {@link #FULL} load does; the
+         * format-path decode API ({@link #decode}, {@link #decodes}) refuses. ⚠ Every
+         * {@code levels} entry stays — {@code levels.DRUGCD} too: a rule's
+         * {@code dictionary_term_type} names any level, and a blank one scans them all.
+         */
+        ENGINE,
 
         /**
          * The format subset (DF25 as amended by owner ruling OQ2): {@code levels}, the
@@ -134,7 +152,34 @@ public final class ValueMapDictionary
          * section reduced to the one boolean {@link #hasContent} needs. Answers the format-path
          * read API exactly as a {@link #FULL} load does; the engine-only lookups refuse.
          */
-        FORMAT
+        FORMAT;
+
+        /**
+         * Whether a load in this profile answers every lookup a load in {@code aRequested} does:
+         * {@link #FULL} serves all three, every profile serves itself, and {@link #ENGINE} and
+         * {@link #FORMAT} never serve each other.
+         *
+         * @param aRequested
+         *            the profile a caller needs.
+         * @return whether this profile serves it.
+         */
+        public boolean serves(Profile aRequested)
+        {
+            return this == FULL || this == aRequested;
+        }
+
+
+        /**
+         * The least profile serving both this one and {@code aOther}.
+         *
+         * @param aOther
+         *            the other profile.
+         * @return this profile when equal, else {@link #FULL}.
+         */
+        public Profile join(Profile aOther)
+        {
+            return this == aOther ? this : FULL;
+        }
     }
 
 
@@ -236,14 +281,14 @@ public final class ValueMapDictionary
     {
     }
 
-    /** A {@link Profile#FULL} load. */
-    private ValueMapDictionary(Header header, Map<String, Map<String, String>> levels,
-            Map<String, List<String>> hierarchy, LevelScopedHierarchy hierarchyByLevel,
-            Map<String, Map<String, String>> pairs, Map<String, Map<String, String>> attributes,
-            Map<String, Map<String, String>> decodes)
+    /** A {@link Profile#FULL} or {@link Profile#ENGINE} load (the latter with no decodes). */
+    private ValueMapDictionary(Header header, Profile profile,
+            Map<String, Map<String, String>> levels, Map<String, List<String>> hierarchy,
+            LevelScopedHierarchy hierarchyByLevel, Map<String, Map<String, String>> pairs,
+            Map<String, Map<String, String>> attributes, Map<String, Map<String, String>> decodes)
     {
         this.type = header.type();
-        this.profile = Profile.FULL;
+        this.profile = profile;
         this.registryType = header.registryType().toLowerCase(Locale.ROOT);
         this.provenance = header.provenance();
         this.source = header.source();
@@ -395,15 +440,38 @@ public final class ValueMapDictionary
 
 
     /**
-     * Loads a dictionary from a house-format JSON file on disk. A file whose name ends {@code .gz}
-     * is decompressed on the way in, so a large bundle can ship as {@code <type>.json.gz} without a
-     * separate unpack step.
+     * Loads a dictionary from a house-format JSON file on disk ({@link Profile#FULL}). A file whose
+     * name ends {@code .gz} is decompressed on the way in, so a large bundle can ship as
+     * {@code <type>.json.gz} without a separate unpack step.
      */
     public static ValueMapDictionary load(Path file) throws IOException
     {
+        return load(file, Profile.FULL);
+    }
+
+
+    /**
+     * Loads a dictionary from a house-format JSON file on disk in the given profile: a tree parse
+     * for {@link Profile#FULL} and {@link Profile#ENGINE}, the streamed subset
+     * ({@link HouseDictionaryReader#read}) for {@link Profile#FORMAT}.
+     *
+     * @param file
+     *            the house-format file ({@code .json} or {@code .json.gz}).
+     * @param aProfile
+     *            what the load holds.
+     * @return the dictionary; its {@link #getProfile()} is {@code aProfile}.
+     * @throws IOException
+     *             when the file cannot be read or parsed.
+     */
+    public static ValueMapDictionary load(Path file, Profile aProfile) throws IOException
+    {
+        if (aProfile == Profile.FORMAT)
+        {
+            return HouseDictionaryReader.read(file);
+        }
         try (InputStream in = open(file))
         {
-            return parse(MAPPER.readTree(in), HouseDictionaryReader.fileStem(file));
+            return parse(MAPPER.readTree(in), HouseDictionaryReader.fileStem(file), aProfile);
         }
     }
 
@@ -436,11 +504,37 @@ public final class ValueMapDictionary
      */
     public static ValueMapDictionary parse(JsonNode root)
     {
-        return parse(root, "");
+        return parse(root, "", Profile.FULL);
     }
 
 
-    private static ValueMapDictionary parse(JsonNode root, String fileStem)
+    /**
+     * Parses a dictionary from an already-read house-format JSON document in a tree profile.
+     *
+     * @param root
+     *            the document.
+     * @param aProfile
+     *            {@link Profile#FULL} or {@link Profile#ENGINE}.
+     * @return the dictionary.
+     * @throws IllegalArgumentException
+     *             for {@link Profile#FORMAT}: that load is streamed from the file
+     *             ({@link HouseDictionaryReader#read}), never built from a tree.
+     */
+    public static ValueMapDictionary parse(JsonNode root, Profile aProfile)
+    {
+        if (aProfile == Profile.FORMAT)
+        {
+            throw new IllegalArgumentException("a FORMAT load is streamed from the file");
+        }
+        return parse(root, "", aProfile);
+    }
+
+
+    /**
+     * {@link Profile#FULL}: every section; {@link Profile#ENGINE}: the {@value #DECODES} section is
+     * never read (it is the last one read, so the interning of the others is unchanged).
+     */
+    private static ValueMapDictionary parse(JsonNode root, String fileStem, Profile aProfile)
     {
         // a blank type is no type, as the streaming reader reads it (B-T lane 1 LOW-4)
         String t = root.hasNonNull("type") && !root.get("type").isContainerNode()
@@ -454,12 +548,12 @@ public final class ValueMapDictionary
         Header header = new Header(t, t.isEmpty() ? fileStem : t, readProvenance(root),
                 text(root, "source"), text(root, "retrieved"),
                 readHouseFormat(root.get(HOUSE_FORMAT)));
-        return new ValueMapDictionary(header, readLevels(root.get("levels"), canonical),
+        return new ValueMapDictionary(header, aProfile, readLevels(root.get("levels"), canonical),
                 readNestedStringList(root.get("hierarchy")),
                 LevelScopedHierarchy.read(root.get(HIERARCHY_BY_LEVEL), canonical),
                 readNestedStringMap(root.get("pairs"), canonical),
                 readNestedStringMap(root.get("attributes"), canonical),
-                readDecodes(root.get(DECODES), canonical));
+                aProfile == Profile.ENGINE ? Map.of() : readDecodes(root.get(DECODES), canonical));
     }
 
 
@@ -761,6 +855,7 @@ public final class ValueMapDictionary
      */
     public boolean decodes(String aLevel)
     {
+        requireDecodes("decodes");
         Map<String, String> v2 = decodes.get(aLevel);
         if (v2 != null && !v2.isEmpty())
         {
@@ -784,6 +879,7 @@ public final class ValueMapDictionary
      */
     public @Nullable String decode(String aLevel, String aCode)
     {
+        requireDecodes("decode");
         if (!isMember(aLevel, aCode))
         {
             return null;
@@ -812,12 +908,26 @@ public final class ValueMapDictionary
      * Refuses an engine-only lookup on a {@link Profile#FORMAT} load: its sections are not held,
      * and an empty answer would read as "not on the path" / "no decode" — a silent false verdict.
      */
-    private void requireFull(String aLookup)
+    private void requireEngineSections(String aLookup)
     {
-        if (profile != Profile.FULL)
+        if (!profile.serves(Profile.ENGINE))
         {
-            throw new IllegalStateException(aLookup + " needs a FULL load; " + this
+            throw new IllegalStateException(aLookup + " needs a FULL or ENGINE load; " + this
                     + " was loaded with the FORMAT profile (no hierarchy, attributes or other pairs)");
+        }
+    }
+
+
+    /**
+     * Refuses the format-path decode API on an {@link Profile#ENGINE} load: it holds no
+     * {@value #DECODES}, and an empty answer would read as "no decode" — a silent wrong label.
+     */
+    private void requireDecodes(String aLookup)
+    {
+        if (!profile.serves(Profile.FORMAT))
+        {
+            throw new IllegalStateException(aLookup + " needs a FULL or FORMAT load; " + this
+                    + " was loaded with the ENGINE profile (no decodes)");
         }
     }
 
@@ -890,7 +1000,7 @@ public final class ValueMapDictionary
      */
     public boolean hasHierarchyByLevel()
     {
-        requireFull("hasHierarchyByLevel");
+        requireEngineSections("hasHierarchyByLevel");
         return !hierarchyByLevel.isEmpty();
     }
 
@@ -908,7 +1018,7 @@ public final class ValueMapDictionary
      */
     public boolean answersHierarchyAt(String childLevel)
     {
-        requireFull("answersHierarchyAt");
+        requireEngineSections("answersHierarchyAt");
         return hierarchyByLevel.hasLevel(childLevel);
     }
 
@@ -936,7 +1046,7 @@ public final class ValueMapDictionary
     public boolean onHierarchyPathAsBefore(@Nullable String termLevel, @Nullable String term,
             @Nullable String parentLevel, @Nullable String parent, boolean caseSensitive)
     {
-        requireFull("onHierarchyPathAsBefore");
+        requireEngineSections("onHierarchyPathAsBefore");
         if (termLevel != null && parentLevel != null && hierarchyByLevel.hasLevel(termLevel))
         {
             return onHierarchyPath(termLevel, term, parentLevel, parent, caseSensitive);
@@ -963,7 +1073,7 @@ public final class ValueMapDictionary
     public boolean onHierarchyPath(@Nullable String termLevel, @Nullable String term,
             @Nullable String parentLevel, @Nullable String parent, boolean caseSensitive)
     {
-        requireFull("onHierarchyPath");
+        requireEngineSections("onHierarchyPath");
         return termLevel != null && parentLevel != null && term != null && parent != null
                 && hierarchyByLevel.onPath(termLevel, term, parentLevel, parent, caseSensitive);
     }
@@ -980,7 +1090,7 @@ public final class ValueMapDictionary
     public boolean codeDecodePair(@Nullable String reg, @Nullable String code,
             @Nullable String decode, boolean caseSensitive)
     {
-        requireFull("codeDecodePair");
+        requireEngineSections("codeDecodePair");
         if (code == null || decode == null)
         {
             return false;
@@ -1034,7 +1144,7 @@ public final class ValueMapDictionary
      */
     public boolean hasDecode(@Nullable String reg, @Nullable String code, boolean caseSensitive)
     {
-        requireFull("hasDecode");
+        requireEngineSections("hasDecode");
         if (code == null)
         {
             return false;
