@@ -54,6 +54,31 @@ public class LocalDataTableManager implements IDataTableManager
         this.libraryLoadSupport = new LibraryLoadSupport(cacheSupport);
     }
 
+
+    /**
+     * The internal manager's dictionary-formats switch, for source compatibility of the code both
+     * builds share (the coreJ CLI and REST construct their manager with it off): this manager
+     * resolves no dictionary formats, so the switch changes nothing here.
+     *
+     * @param aResolveDictionaryFormats
+     *            whether dictionary formats would be resolved — ignored, none ever are.
+     */
+    public LocalDataTableManager(boolean aResolveDictionaryFormats)
+    {
+        this();
+    }
+
+
+    /**
+     * Whether the catalogs this manager serves resolve dictionary formats.
+     *
+     * @return always {@code false}: this manager resolves none.
+     */
+    public boolean isResolvingDictionaryFormats()
+    {
+        return false;
+    }
+
     // ------------------------------------------------------------------
     // Ref unwrapping
     // ------------------------------------------------------------------
