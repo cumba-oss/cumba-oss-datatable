@@ -395,20 +395,27 @@ class DictionaryInstallerTest
 
 
     /**
-     * B-T review lane 2 MED-1 (DF19): a RE-install of a version already in the store never moves
-     * the selection, whatever {@code setDefault} says — the dialog ticks "Make each newly installed
-     * version the default" by default, and the house-format-1 note invites exactly this re-install,
-     * so with the old rule every run binding through {@code selected-versions.json} silently
-     * changed release.
+     * B-T review lane 2 MED-1 (DF19): under {@link DictionaryInstaller.Selection#NEW_VERSION} —
+     * what the dictionary manager's "make each newly installed version the default" box asks for,
+     * ticked by default — a RE-install of a version already in the store never moves the selection;
+     * the house-format-1 note invites exactly that re-install, and with the old rule every run
+     * binding through {@code selected-versions.json} silently changed release. The CLI's explicit
+     * {@code --set-default} ({@code ALWAYS}) still rebinds to an installed version deliberately —
+     * its only way to bind one installed earlier without the flag.
      */
     @Test
-    void aReinstallNeverChangesTheSelectedVersion(@TempDir Path dir) throws IOException
+    void aReinstallNeverChangesTheSelectedVersion_underNewVersion(@TempDir Path dir)
+        throws IOException
     {
         install(dir, "medrt", "2026.07.06", false);
-        install(dir, "medrt", "2026.08.03", true);
-        assertEquals("2026.08.03", manifest(dir).get("medrt"), "a NEW version rebinds with it");
+        DictionaryInstaller newer = new DictionaryInstaller(dir);
+        newer.install(source(dir), converter("medrt", "2026.08.03", medrtJson("A", "N1")),
+                "licence", Map.of(), DictionaryInstaller.Selection.NEW_VERSION);
+        assertEquals("2026.08.03", manifest(dir).get("medrt"), "a NEW version rebinds");
 
-        DictionaryInstaller reinstall = install(dir, "medrt", "2026.07.06", true);
+        DictionaryInstaller reinstall = new DictionaryInstaller(dir);
+        reinstall.install(source(dir), converter("medrt", "2026.07.06", medrtJson("A", "N1")),
+                "licence", Map.of(), DictionaryInstaller.Selection.NEW_VERSION);
 
         assertEquals("2026.08.03", manifest(dir).get("medrt"),
                 "the re-installed older version did not take the selection");
@@ -427,6 +434,10 @@ class DictionaryInstallerTest
                         .noneMatch(w -> w.contains("kept the existing selection")),
                 "re-installing the selected version is no 'not bound' case: "
                         + selectedAgain.getReport().getWarnings());
+
+        install(dir, "medrt", "2026.07.06", true);
+        assertEquals("2026.07.06", manifest(dir).get("medrt"),
+                "ALWAYS (the CLI's --set-default) rebinds to an installed version deliberately");
     }
 
 

@@ -153,11 +153,60 @@ public final class DictionaryInstaller
      *            file name — e.g. LOINC's verbatim required notice, which must ship as its own file
      *            rather than folded into the main notice
      * @param aSetDefault
-     *            overwrite an existing manifest entry for this type
+     *            overwrite an existing manifest entry for this type — {@link Selection#ALWAYS}, the
+     *            CLI's deliberate {@code --set-default} (also for a version already installed);
+     *            {@code false} is {@link Selection#KEEP}
      * @return the installed version, or {@code null} when nothing was written
      */
     public @Nullable String install(DictionarySource aSource, DictionaryConverter aConverter,
             @Nullable String aLicence, Map<String, String> aExtraLicenceFiles, boolean aSetDefault)
+        throws IOException
+    {
+        return install(aSource, aConverter, aLicence, aExtraLicenceFiles,
+                aSetDefault ? Selection.ALWAYS : Selection.KEEP);
+    }
+
+    /**
+     * What an install does to an existing {@code selected-versions.json} entry of its type (a type
+     * without one is always bound to the version installed).
+     */
+    public enum Selection
+    {
+        /** Leave an existing entry alone (the default). */
+        KEEP,
+
+        /**
+         * Rebind to the version installed when the store did not hold it yet; a RE-install of a
+         * version already in the store never moves the selection (B-T review lane 2 MED-1, DF19):
+         * the dictionary manager's "make each newly installed version the default" box is ticked by
+         * default, and its house-format-1 note invites exactly such a re-install.
+         */
+        NEW_VERSION,
+
+        /** Rebind to the version installed, whether or not it was installed before. */
+        ALWAYS
+    }
+
+    /**
+     * Installs one dictionary, with additional licence documents beside the main notice and an
+     * explicit {@link Selection}.
+     *
+     * @param aSource
+     *            where the raw distribution comes from; closed by this method
+     * @param aConverter
+     *            the vendor-format reader for this dictionary type
+     * @param aLicence
+     *            the licence or terms-of-use text, or {@code null}
+     * @param aExtraLicenceFiles
+     *            further documents to write into the {@code LICENSES} directory
+     * @param aSelection
+     *            what happens to an existing manifest entry for this type
+     * @return the installed version, or {@code null} when nothing was written
+     * @throws IOException
+     *             when the store cannot be written
+     */
+    public @Nullable String install(DictionarySource aSource, DictionaryConverter aConverter,
+            @Nullable String aLicence, Map<String, String> aExtraLicenceFiles, Selection aSelection)
         throws IOException
     {
         String type = aConverter.type().toLowerCase(Locale.ROOT);
@@ -255,14 +304,16 @@ public final class DictionaryInstaller
             }
             if (!dryRun)
             {
-                // B-T review lane 2 MED-1 (DF19): a RE-install of a version the store already holds
-                // never moves the selection — only a newly installed version may take it
-                boolean reinstall = alreadyInstalled(type, version);
+                // B-T review lane 2 MED-1 (DF19): under NEW_VERSION a RE-install of a version the
+                // store already holds never moves the selection
+                boolean rebind = aSelection == Selection.ALWAYS
+                        || (aSelection == Selection.NEW_VERSION
+                                && !alreadyInstalled(type, version));
                 // fingerprinted BEFORE anything is written: a local source hashes the files the
                 // converter read, and a failure there must leave the store untouched
                 List<DictionarySource.Artefact> artefacts = source.artefacts();
                 write(type, version, doc, aLicence, aExtraLicenceFiles);
-                recordSelection(type, version, aSetDefault, reinstall);
+                recordSelection(type, version, rebind, aSelection == Selection.NEW_VERSION);
                 recordSource(type, version, source, artefacts, doc);
             }
             report.installed(type, version);
@@ -476,13 +527,14 @@ public final class DictionaryInstaller
 
     /**
      * Adds this type to the selection manifest, leaving an existing entry alone unless
-     * {@code aSetDefault} — and always for a re-install of a version the store already held
-     * ({@code aReinstall}, DF19): re-installing an older release from its distribution folder (the
-     * house-format-1 migration the dictionary manager invites, with "make each newly installed
-     * version the default" ticked) must not silently change the release every run binds.
+     * {@code aRebind}; {@code aNewVersionOnly} words the kept selection for a re-install under
+     * {@link Selection#NEW_VERSION} (DF19: re-installing an older release from its distribution
+     * folder — the house-format-1 migration the dictionary manager invites, with "make each newly
+     * installed version the default" ticked — must not silently change the release every run
+     * binds).
      */
-    private void recordSelection(String aType, String aVersion, boolean aSetDefault,
-            boolean aReinstall)
+    private void recordSelection(String aType, String aVersion, boolean aRebind,
+            boolean aNewVersionOnly)
         throws IOException
     {
         Path file = storeDir.resolve(DictionaryStore.MANIFEST);
@@ -503,13 +555,13 @@ public final class DictionaryInstaller
         {
             return;
         }
-        if (existing != null && aReinstall)
+        if (existing != null && !aRebind && aNewVersionOnly)
         {
             report.warning(aType + ": re-installed " + aVersion + "; the selection stays "
                     + existing + " (a re-install never changes the selected version).");
             return;
         }
-        if (existing != null && !aSetDefault)
+        if (existing != null && !aRebind)
         {
             report.warning(aType + ": kept the existing selection " + existing + "; " + aVersion
                     + " is installed but not bound. Pass --set-default to change it.");
