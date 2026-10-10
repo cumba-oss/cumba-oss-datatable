@@ -16,9 +16,11 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jspecify.annotations.Nullable;
 
@@ -57,6 +59,15 @@ final class RawDictionaryFiles
      */
     private static final ThreadLocal<AtomicLong> DROPPED = ThreadLocal.withInitial(AtomicLong::new);
 
+    /**
+     * Every file {@link #reader} opened on the current thread since the last
+     * {@link #resetReadFiles()}, absolute and normalised, in first-read order — what a
+     * {@link LocalDictionarySource} fingerprints into {@code SOURCES.md} (owner ruling OQ4 (b)).
+     * Thread-confined for the same reason as {@link #REPLACEMENTS}.
+     */
+    private static final ThreadLocal<Set<Path>> READ_FILES = ThreadLocal
+            .withInitial(LinkedHashSet::new);
+
     private RawDictionaryFiles()
     {
     }
@@ -91,6 +102,7 @@ final class RawDictionaryFiles
      */
     static BufferedReader reader(Path aFile) throws IOException
     {
+        READ_FILES.get().add(aFile.toAbsolutePath().normalize());
         CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPLACE)
                 .onUnmappableCharacter(CodingErrorAction.REPLACE);
@@ -102,6 +114,24 @@ final class RawDictionaryFiles
             in.reset();
         }
         return in;
+    }
+
+
+    /** Starts a fresh record of the files read on the current thread — one per install. */
+    static void resetReadFiles()
+    {
+        READ_FILES.get().clear();
+    }
+
+
+    /**
+     * The files {@link #reader} opened on this thread since the last {@link #resetReadFiles()}.
+     *
+     * @return absolute, normalised paths in first-read order; a copy.
+     */
+    static List<Path> readFiles()
+    {
+        return List.copyOf(READ_FILES.get());
     }
 
 

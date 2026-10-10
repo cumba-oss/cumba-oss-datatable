@@ -282,15 +282,16 @@ class HouseDictionaryReaderTest
     {
         List<TestStore.House> withContent = List.of(
                 TestStore.House.of("meddra").version("a").hierarchyByLevel("PT", "Headache",
-                        Map.of()),
+                        Map.of("SOC", List.of("Nervous system disorders"))),
                 TestStore.House.of("meddra").version("b").attributes("x", Map.of("k", "v")),
                 TestStore.House.of("whodrug").version("c").pairs("whodrug", Map.of("r", "PT")),
                 TestStore.House.of("medrt").version("d").pairs("medrt-base", Map.of("N1", "n")));
         for (int i = 0; i < withContent.size(); i++)
         {
             TestStore.House h = withContent.get(i);
-            assertTrue(HouseDictionaryReader.read(TestStore.versioned(dir, "t", "with" + i, h))
-                    .hasContent(), h.json());
+            Path file = TestStore.versioned(dir, "t", "with" + i, h);
+            assertTrue(HouseDictionaryReader.read(file).hasContent(), h.json());
+            assertTrue(ValueMapDictionary.load(file).hasContent(), "the FULL load agrees");
         }
         List<TestStore.House> without = List.of(
                 TestStore.House.of("meddra").version("e").raw("hierarchy_by_level",
@@ -298,12 +299,17 @@ class HouseDictionaryReaderTest
                 TestStore.House.of("meddra").version("f").raw("attributes",
                         Map.of("x", Map.of("nested", Map.of("k", "v")))),
                 TestStore.House.of("whodrug").version("g").raw("pairs",
-                        Map.of("whodrug", Map.of())));
+                        Map.of("whodrug", Map.of())),
+                // B-T lane 1 LOW-4: a term naming no ancestor is no entry — the FULL load never
+                // kept it, and the streaming reader counted it (the fixture above pinned that)
+                TestStore.House.of("meddra").version("h").hierarchyByLevel("PT", "Headache",
+                        Map.of()));
         for (int i = 0; i < without.size(); i++)
         {
             TestStore.House h = without.get(i);
-            assertFalse(HouseDictionaryReader.read(TestStore.versioned(dir, "t", "without" + i, h))
-                    .hasContent(), h.json());
+            Path file = TestStore.versioned(dir, "t", "without" + i, h);
+            assertFalse(HouseDictionaryReader.read(file).hasContent(), h.json());
+            assertFalse(ValueMapDictionary.load(file).hasContent(), "the FULL load agrees");
         }
     }
 
@@ -363,6 +369,42 @@ class HouseDictionaryReaderTest
         assertThrows(IOException.class, () -> HouseDictionaryReader.read(garbage));
         assertThrows(IOException.class,
                 () -> HouseDictionaryReader.read(dir.resolve("missing.json")));
+    }
+
+
+    /**
+     * B-T review lane 2 MED-2: the installer writes the five header fields first, so a header read
+     * stops once it has seen all five and never walks the sections — measured 0.7 s (MedDRA) and
+     * 1.4 s (WHODrug) per file on the EDT before. The proof: a file whose sections are TRUNCATED
+     * after a complete header reads its header, while the full read fails. A file without all five
+     * (house format 1: no {@code house_format}; or the header after the sections) still reads to
+     * the end, as before.
+     */
+    @Test
+    void aHeaderReadStopsAfterTheFiveHeaderFields() throws IOException
+    {
+        String header = "{\"type\":\"meddra\",\"version\":\"27.0\",\"source\":\"/dist/27\","
+                + "\"retrieved\":\"2026-10-10\",\"house_format\":2,";
+        Path truncated = TestStore.text(dir.resolve("t.json"),
+                header + "\"levels\":{\"PT\":{\"HEADACHE\":\"Head");
+        HouseDictionaryReader.Header h = HouseDictionaryReader.readHeader(truncated);
+        assertEquals(
+                new HouseDictionaryReader.Header("meddra", "27.0", "2026-10-10", 2, "/dist/27"), h);
+        assertThrows(IOException.class, () -> HouseDictionaryReader.read(truncated),
+                "the sections ARE truncated: only the early stop read past them");
+
+        // planted shape: without house_format (house format 1) the read must reach the end
+        Path v1 = TestStore.text(dir.resolve("v1.json"),
+                "{\"type\":\"meddra\",\"version\":\"26.0\",\"source\":\"/d\",\"retrieved\":\"x\","
+                        + "\"levels\":{\"PT\":{\"HEADACHE\":\"Head");
+        assertThrows(IOException.class, () -> HouseDictionaryReader.readHeader(v1),
+                "four header fields are not all five: the read goes on and meets the truncation");
+        // the header at the end (an older v2 install) is still found
+        Path late = TestStore.text(dir.resolve("late.json"),
+                "{\"levels\":{\"PT\":{\"HEADACHE\":\"Headache\"}},\"type\":\"meddra\","
+                        + "\"version\":\"27.1\",\"source\":\"/s\",\"retrieved\":\"r\",\"house_format\":2}");
+        assertEquals(new HouseDictionaryReader.Header("meddra", "27.1", "r", 2, "/s"),
+                HouseDictionaryReader.readHeader(late));
     }
 
 

@@ -185,6 +185,27 @@ class ValueMapDictionaryTest
     }
 
 
+    /**
+     * B-T review lane 1 LOW-7: the provider is the engine's, and the engine needs every section — a
+     * FORMAT load (no hierarchy, attributes or other pairs) would answer membership and then throw
+     * mid-run on the first pair or hierarchy rule. It is refused at bind time instead.
+     */
+    @Test
+    void theProviderRefusesAFormatLoad(@TempDir Path dir) throws Exception
+    {
+        Path file = dir.resolve("meddra.json");
+        Files.writeString(file, "{\"type\":\"meddra\",\"levels\":{\"PT\":{\"A\":\"A\"}}}",
+                StandardCharsets.UTF_8);
+        ValueMapDictionary format = HouseDictionaryReader.read(file);
+        IllegalArgumentException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> new RuntimeDictionaryProvider(Map.of("meddra", format)));
+        assertTrue(ex.getMessage().contains("FORMAT"), ex.getMessage());
+        assertTrue(new RuntimeDictionaryProvider(Map.of("meddra", ValueMapDictionary.load(file)))
+                .isAvailable("meddra"), "positive control: the FULL load binds");
+    }
+
+
     @Test
     void noLevelAndNullProbeEdgeBranches() throws Exception
     {

@@ -12,9 +12,11 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.zip.GZIPInputStream;
 import org.jspecify.annotations.Nullable;
 
@@ -48,6 +50,12 @@ public final class HouseDictionaryReader
     private static final JsonFactory FACTORY = new JsonFactory();
 
     private static final int BUFFER = 1 << 16;
+
+    /** The header fields the installer writes before the sections. */
+    private static final Set<String> HEADER_FIELD_NAMES = Set.of("type", "version", "source",
+            "retrieved", ValueMapDictionary.HOUSE_FORMAT);
+
+    private static final int HEADER_FIELDS = HEADER_FIELD_NAMES.size();
 
     /**
      * The header fields of a house file, as {@link #read} reads them.
@@ -115,9 +123,13 @@ public final class HouseDictionaryReader
             String retrieved = null;
             String source = null;
             int houseFormat = ValueMapDictionary.HOUSE_FORMAT_1;
-            // the installer appends the header after the sections, and a file of house format 1
-            // has no house_format field at all: read to the end, skipping every section unread
-            while (p.nextToken() == JsonToken.FIELD_NAME)
+            // Since the B-T fold the installer writes the five header fields FIRST, so the read
+            // stops once all five have been seen (B-T review lane 2 MED-2: a whole-file walk took
+            // 0.7 s for MedDRA, 1.4 s for WHODrug). A file of house format 1 has no house_format
+            // field, and an earlier format-2 install appended the header after the sections: those
+            // are read to the end, skipping every section unread — the same values either way.
+            Set<String> seen = new HashSet<>();
+            while (seen.size() < HEADER_FIELDS && p.nextToken() == JsonToken.FIELD_NAME)
             {
                 String field = p.currentName();
                 JsonToken value = p.nextToken();
@@ -129,6 +141,10 @@ public final class HouseDictionaryReader
                 case "source" -> source = textOrNull(p, value);
                 case ValueMapDictionary.HOUSE_FORMAT -> houseFormat = houseFormat(p, value);
                 default -> p.skipChildren();
+                }
+                if (HEADER_FIELD_NAMES.contains(field))
+                {
+                    seen.add(field);
                 }
             }
             return new Header(type != null ? type : "", version, retrieved, houseFormat, source);
@@ -463,8 +479,9 @@ public final class HouseDictionaryReader
     /**
      * Skips {@code level → term → ancestor level → [ancestor, …]} unread.
      *
-     * @return whether some level object names a term (the engine's non-empty level, whatever the
-     *         term's value).
+     * @return whether some term names an ancestor level with at least one scalar ancestor — the
+     *         entry {@code LevelScopedHierarchy.read} keeps (B-T lane 1 LOW-4: a term mapping to an
+     *         empty object, or to lists of containers only, is no entry in either profile).
      */
     private static boolean skipByLevel(JsonParser aParser, JsonToken aToken) throws IOException
     {
@@ -484,8 +501,41 @@ public final class HouseDictionaryReader
             }
             while (aParser.nextToken() == JsonToken.FIELD_NAME)
             {
+                JsonToken termToken = aParser.nextToken();
+                if (termToken != JsonToken.START_OBJECT)
+                {
+                    skipValue(aParser, termToken);
+                    continue;
+                }
+                while (aParser.nextToken() == JsonToken.FIELD_NAME)
+                {
+                    content |= skipScalarList(aParser, aParser.nextToken());
+                }
+            }
+        }
+        return content;
+    }
+
+
+    /** Skips one value; whether it is an array holding a scalar element. */
+    private static boolean skipScalarList(JsonParser aParser, JsonToken aToken) throws IOException
+    {
+        if (aToken != JsonToken.START_ARRAY)
+        {
+            skipValue(aParser, aToken);
+            return false;
+        }
+        boolean content = false;
+        JsonToken t;
+        while ((t = aParser.nextToken()) != JsonToken.END_ARRAY)
+        {
+            if (t.isStructStart())
+            {
+                aParser.skipChildren();
+            }
+            else
+            {
                 content = true;
-                skipValue(aParser, aParser.nextToken());
             }
         }
         return content;

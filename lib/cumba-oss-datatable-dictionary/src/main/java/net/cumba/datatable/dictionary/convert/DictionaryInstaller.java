@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.zip.GZIPOutputStream;
 import net.cumba.datatable.dictionary.house.DictionaryStore;
+import net.cumba.datatable.dictionary.house.DictionaryStoreReader;
 import net.cumba.datatable.dictionary.house.HouseFormatValidator;
 import net.cumba.datatable.dictionary.house.ValueMapDictionary;
 import org.jspecify.annotations.Nullable;
@@ -60,17 +61,6 @@ public final class DictionaryInstaller
 
     /** Above this many bytes the document is written gzipped rather than plain. */
     private static final long GZIP_THRESHOLD_BYTES = 1_000_000L;
-
-    /**
-     * The shape a version must have to become a store path segment and manifest key. Conservative
-     * by design: the six vendor version vocabularies ({@code 27.0}, {@code SEP_2020},
-     * {@code 2026.07.06}, {@code 4Aug2026}, {@code 2.80}, {@code 20240901}) all fit, while
-     * everything a converter can be fooled into returning by a malformed vendor file — a whole
-     * prose line, a BOM, spaces, parentheses, path separators, {@code ..} — is rejected with a
-     * message instead of becoming an untypeable (or traversing) directory name.
-     */
-    private static final java.util.regex.Pattern VERSION_TOKEN = java.util.regex.Pattern
-            .compile("[A-Za-z0-9._-]{1,64}");
 
     private final Path storeDir;
 
@@ -179,6 +169,9 @@ public final class DictionaryInstaller
             // and conversion are both covered. The dropped-term tally follows the same shape.
             RawDictionaryFiles.resetReplacementCount();
             RawDictionaryFiles.resetDroppedTermCount();
+            // owner ruling OQ4 (b): the files read from here on are what a local source
+            // fingerprints into SOURCES.md
+            RawDictionaryFiles.resetReadFiles();
             String version = aConverter.versionOf(raw);
             if (version.isBlank())
             {
@@ -190,7 +183,8 @@ public final class DictionaryInstaller
             {
                 report.skipped(type + ": the distribution declares the version '" + version
                         + "', which is not a usable store version token (allowed: "
-                        + VERSION_TOKEN.pattern() + ", and neither '.' nor '..'); it would become "
+                        + DictionaryStoreReader.VERSION_TOKEN_SHAPE
+                        + ", and neither '.' nor '..'); it would become "
                         + "a directory name and manifest key that cannot be typed back or, worse, "
                         + "escapes the store — NOT installed. Fix the raw distribution's version "
                         + "declaration.");
@@ -226,15 +220,7 @@ public final class DictionaryInstaller
                         + "term; each refused spelling is absent from its name level and pairs "
                         + "registry, so submitted data carrying it will be flagged as invalid.");
             }
-            doc.put("type", type);
-            doc.put("version", version);
-            doc.put("source", source.provenance());
-            // UTC, not the machine's zone: a provenance record must mean the same thing
-            // wherever it is read back.
-            doc.put("retrieved", LocalDate.now(ZoneOffset.UTC).toString());
-            // house format 2 (PLAN-dictionary-backed-formats B2): every file this installer writes
-            // may carry the decodes section; a reader of format 1 ignores the field and the section
-            doc.put(ValueMapDictionary.HOUSE_FORMAT, ValueMapDictionary.HOUSE_FORMAT_2);
+            doc = withHeaderFirst(doc, type, version, source.provenance());
 
             List<String> violations = HouseFormatValidator.validate(type, doc);
             if (!violations.isEmpty())
@@ -269,9 +255,15 @@ public final class DictionaryInstaller
             }
             if (!dryRun)
             {
+                // B-T review lane 2 MED-1 (DF19): a RE-install of a version the store already holds
+                // never moves the selection — only a newly installed version may take it
+                boolean reinstall = alreadyInstalled(type, version);
+                // fingerprinted BEFORE anything is written: a local source hashes the files the
+                // converter read, and a failure there must leave the store untouched
+                List<DictionarySource.Artefact> artefacts = source.artefacts();
                 write(type, version, doc, aLicence, aExtraLicenceFiles);
-                recordSelection(type, version, aSetDefault);
-                recordSource(type, version, source, doc);
+                recordSelection(type, version, aSetDefault, reinstall);
+                recordSource(type, version, source, artefacts, doc);
             }
             report.installed(type, version);
             return version;
@@ -280,15 +272,48 @@ public final class DictionaryInstaller
 
 
     /**
-     * Whether {@code aVersion} may become a store path segment and manifest key — see
-     * {@link #VERSION_TOKEN}. Public so the <em>select</em> side ({@code DictionaryStore}) can
-     * apply the same test to a requested version, which may come from a define.xml — i.e. from
-     * study data — before resolving it against the store's directory tree.
+     * Whether {@code aVersion} may become a store path segment and manifest key. Conservative by
+     * design: the six vendor version vocabularies ({@code 27.0}, {@code SEP_2020},
+     * {@code 2026.07.06}, {@code 4Aug2026}, {@code 2.80}, {@code 20240901}) all fit, while
+     * everything a converter can be fooled into returning by a malformed vendor file — a whole
+     * prose line, a BOM, spaces, parentheses, path separators, {@code ..} — is rejected with a
+     * message instead of becoming an untypeable (or traversing) directory name. The one definition
+     * is {@link DictionaryStoreReader#isValidVersionToken}, which the <em>select</em> side applies
+     * to a requested version (it may come from a define.xml, i.e. from study data); this delegates
+     * (B-T review lane 1 LOW-3: the {@code house} package no longer imports {@code convert}).
      */
     public static boolean isValidVersionToken(String aVersion)
     {
-        return VERSION_TOKEN.matcher(aVersion).matches() && !".".equals(aVersion)
-                && !"..".equals(aVersion);
+        return DictionaryStoreReader.isValidVersionToken(aVersion);
+    }
+
+
+    /**
+     * The converted document with the header fields in front of the sections: {@code type},
+     * {@code version}, {@code source}, {@code retrieved} (UTC, not the machine's zone: a provenance
+     * record must mean the same thing wherever it is read back) and {@code house_format} 2
+     * (PLAN-dictionary-backed-formats B2: every file this installer writes may carry the decodes
+     * section; a reader of format 1 ignores the field and the section). Header first since the B-T
+     * fold (review lane 2 MED-2): a header read then stops after the five fields instead of walking
+     * a multi-MB file to its end.
+     */
+    private static ObjectNode withHeaderFirst(ObjectNode aDoc, String aType, String aVersion,
+            String aSource)
+    {
+        ObjectNode out = MAPPER.createObjectNode();
+        out.put("type", aType);
+        out.put("version", aVersion);
+        out.put("source", aSource);
+        out.put("retrieved", LocalDate.now(ZoneOffset.UTC).toString());
+        out.put(ValueMapDictionary.HOUSE_FORMAT, ValueMapDictionary.HOUSE_FORMAT_2);
+        for (Map.Entry<String, JsonNode> e : aDoc.properties())
+        {
+            if (!out.has(e.getKey()))
+            {
+                out.set(e.getKey(), e.getValue());
+            }
+        }
+        return out;
     }
 
 
@@ -356,7 +381,7 @@ public final class DictionaryInstaller
      * source is still open, which is why this runs inside {@code install}'s try-with-resources.
      */
     private void recordSource(String aType, String aVersion, DictionarySource aSource,
-            ObjectNode aDoc)
+            List<DictionarySource.Artefact> aArtefacts, ObjectNode aDoc)
         throws IOException
     {
         Path file = storeDir.resolve(SOURCES_FILE);
@@ -371,7 +396,7 @@ public final class DictionaryInstaller
         // UTC, not the machine's zone: a provenance record must mean the same thing wherever it
         // is read back.
         section.add("- Retrieved: " + LocalDate.now(ZoneOffset.UTC) + " (UTC)");
-        for (DictionarySource.Artefact artefact : aSource.artefacts())
+        for (DictionarySource.Artefact artefact : aArtefacts)
         {
             section.add("- Artefact: " + artefact.name() + " — SHA-256 " + artefact.sha256() + " — "
                     + artefact.url());
@@ -451,9 +476,13 @@ public final class DictionaryInstaller
 
     /**
      * Adds this type to the selection manifest, leaving an existing entry alone unless
-     * {@code aSetDefault}.
+     * {@code aSetDefault} — and always for a re-install of a version the store already held
+     * ({@code aReinstall}, DF19): re-installing an older release from its distribution folder (the
+     * house-format-1 migration the dictionary manager invites, with "make each newly installed
+     * version the default" ticked) must not silently change the release every run binds.
      */
-    private void recordSelection(String aType, String aVersion, boolean aSetDefault)
+    private void recordSelection(String aType, String aVersion, boolean aSetDefault,
+            boolean aReinstall)
         throws IOException
     {
         Path file = storeDir.resolve(DictionaryStore.MANIFEST);
@@ -470,6 +499,16 @@ public final class DictionaryInstaller
             }
         }
         String existing = selections.get(aType);
+        if (existing != null && existing.equals(aVersion))
+        {
+            return;
+        }
+        if (existing != null && aReinstall)
+        {
+            report.warning(aType + ": re-installed " + aVersion + "; the selection stays "
+                    + existing + " (a re-install never changes the selected version).");
+            return;
+        }
         if (existing != null && !aSetDefault)
         {
             report.warning(aType + ": kept the existing selection " + existing + "; " + aVersion

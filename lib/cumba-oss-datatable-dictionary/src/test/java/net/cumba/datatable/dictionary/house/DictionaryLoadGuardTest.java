@@ -107,6 +107,34 @@ class DictionaryLoadGuardTest
 
 
     /**
+     * B-T review lane 1 MED-1: a {@code decodes} section with no level behind it answers nothing
+     * ({@code decode} asks {@code isMember} first, and no engine lookup reads {@code decodes}), so
+     * it is no content — a decodes-only file (a converter bug, a partly written file) is not loaded
+     * and its rules SKIP instead of the membership rules firing on every row. Positive control: the
+     * same decodes beside one level term load.
+     */
+    @Test
+    void aDecodesOnlyFileIsNotAvailable_itsRulesSkip(@TempDir Path dir) throws IOException
+    {
+        String decodes = "\"decodes\":{\"PTCD\":{\"10019211\":\"Headache\"}}";
+        Files.writeString(dir.resolve("meddra.json"),
+                "{\"type\":\"meddra\",\"house_format\":2,\"levels\":{}," + decodes + "}");
+        assertFalse(parse("{\"type\":\"meddra\",\"levels\":{}," + decodes + "}").hasContent(),
+                "FULL: decodes alone are no content");
+        assertFalse(HouseDictionaryReader.read(dir.resolve("meddra.json")).hasContent(),
+                "FORMAT: decodes alone are no content");
+
+        RuntimeDictionaryProvider p = RuntimeDictionaryProvider.loadDirectory(dir);
+        assertFalse(p.isAvailable("meddra"), "a decodes-only file must not bypass the SKIP arm");
+
+        Files.writeString(dir.resolve("meddra.json"), "{\"type\":\"meddra\",\"house_format\":2,"
+                + "\"levels\":{\"PTCD\":{\"10019211\":\"10019211\"}}," + decodes + "}");
+        assertTrue(RuntimeDictionaryProvider.loadDirectory(dir).isAvailable("meddra"),
+                "positive control: one level term is content");
+    }
+
+
+    /**
      * Batch B2 — an UNREADABLE file (a truncated {@code .json.gz} that is not valid gzip, a JSON
      * parse error) degrades exactly like a contentless one: per file, with the right diagnosis, and
      * never by discarding the healthy siblings. Before this guard the {@link IOException}

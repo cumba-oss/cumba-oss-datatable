@@ -35,8 +35,9 @@ public interface DictionarySource extends AutoCloseable
 
     /**
      * The raw artefacts this source materialised, for the store's {@code SOURCES.md} provenance
-     * record — populated by {@link #resolve()}, so empty before it has run, and empty for a local
-     * directory the operator supplied (there is no single artefact to fingerprint there).
+     * record — for a download populated by {@link #resolve()}, so empty before it has run; for a
+     * local directory the operator supplied, the files the converter read from it (owner ruling OQ4
+     * (b), {@link LocalDictionarySource#artefacts()}), so asked for after the conversion.
      */
     default List<Artefact> artefacts()
     {

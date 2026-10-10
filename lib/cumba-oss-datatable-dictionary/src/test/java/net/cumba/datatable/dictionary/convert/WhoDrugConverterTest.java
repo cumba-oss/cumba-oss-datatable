@@ -326,6 +326,38 @@ class WhoDrugConverterTest
 
 
     /**
+     * Plan B2 / B-T review lane 1 MED-2: the v2 file answers every pre-v2 engine lookup exactly as
+     * its v1 twin (no {@code decodes}, {@code house_format} or {@code levels.DRUGCD}) — with ONE
+     * expected difference: a blank {@code dictionary_term_type} means "any level"
+     * ({@code DictionaryFunctions.typeOf} gives {@code ""}), and {@code levels.DRUGCD} is a new
+     * level, so {@code isValidTerm("", <drug code>)} is now true. The B0 census found no corpus
+     * call that omits the term type, so no rule can reach it today.
+     */
+    @Test
+    void aV2FileAnswersEveryPreV2LookupAsItsV1Twin_butABlankLevelSeesTheDrugCodes()
+        throws IOException
+    {
+        writeDistribution();
+        ObjectNode doc = converter.convert(raw);
+        doc.put("type", "whodrug");
+        doc.put(ValueMapDictionary.HOUSE_FORMAT, ValueMapDictionary.HOUSE_FORMAT_2);
+        JsonNode drugCodes = doc.path("levels").path("DRUGCD");
+        assertTrue(drugCodes.size() >= 4, "levels.DRUGCD: " + drugCodes);
+        java.util.Set<String> expected = new java.util.LinkedHashSet<>();
+        for (java.util.Iterator<String> it = drugCodes.fieldNames(); it.hasNext();)
+        {
+            String code = it.next();
+            expected.add("isValidTerm(," + code + ")");
+            expected.add("isValidTerm(null," + code + ")");
+        }
+        long[] probes = new long[1];
+        assertEquals(new java.util.TreeSet<>(expected),
+                new java.util.TreeSet<>(HouseFormatEquivalence.differences(doc, probes)));
+        assertTrue(probes[0] > 300, "probes: " + probes[0]);
+    }
+
+
+    /**
      * A miniature B3 distribution: two drug records with preferred rows plus trade names — one
      * sharing the preferred row's sequence 1 at sequence 2 {@code 002}, one at sequence 1
      * {@code 02} — one record with no preferred row, the full four-code ATC index, and a

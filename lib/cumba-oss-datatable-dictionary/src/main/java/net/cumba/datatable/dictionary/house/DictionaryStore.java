@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Stream;
-import net.cumba.datatable.dictionary.convert.DictionaryInstaller;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -221,7 +220,7 @@ public final class DictionaryStore
                             + MANIFEST + ", or supply a define.xml that declares it"));
             return;
         }
-        if (!DictionaryInstaller.isValidVersionToken(requested))
+        if (!DictionaryStoreReader.isValidVersionToken(requested))
         {
             // The requested version can come from a define.xml — i.e. from STUDY DATA — so it is
             // validated with the installer's own write-side test before it may become a path

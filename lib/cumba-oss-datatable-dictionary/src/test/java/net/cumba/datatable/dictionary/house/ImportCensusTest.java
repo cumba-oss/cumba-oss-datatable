@@ -103,6 +103,52 @@ class ImportCensusTest
         assertTrue(violations.isEmpty(), String.join("\n", violations));
     }
 
+    /** The OSS identity marker every house / convert source and test carries (line 3). */
+    static final String MARKER = "// OSS-IDENTITY datatable-dictionary: byte-identical in "
+            + "cumba-datatable and cumba-oss-datatable.";
+
+    /**
+     * B-T review lane 1 LOW-1: {@code check_oss_identity.py}'s pinned set {@code
+     * datatable-dictionary} compares the files that carry the marker, so a house / convert class
+     * created WITHOUT it would never be compared and nothing would go red. Every main and test
+     * source of the two packages carries it — in both twins, since this test is one of them.
+     * Planted control: a house class without the marker line reds this test.
+     */
+    @Test
+    void everyHouseAndConvertSourceAndTestCarriesTheOssIdentityMarker() throws IOException
+    {
+        Path main = sourceRoot();
+        // <module>/src/main/java/net/cumba/datatable/dictionary -> <module>/src
+        Path src = main;
+        for (int i = 0; i < 6; i++)
+        {
+            src = src.getParent();
+        }
+        Path test = src.resolve(Path.of("test", "java", "net", "cumba", "datatable", "dictionary"));
+        List<String> unmarked = new ArrayList<>();
+        int checked = 0;
+        for (Path root : List.of(main, test))
+        {
+            for (String pkg : List.of("house", "convert"))
+            {
+                try (Stream<Path> files = Files.list(root.resolve(pkg)))
+                {
+                    for (Path file : files.filter(p -> p.toString().endsWith(".java")).sorted()
+                            .toList())
+                    {
+                        checked++;
+                        if (!Files.readAllLines(file).contains(MARKER))
+                        {
+                            unmarked.add(root.relativize(file).toString());
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(checked >= 54, "the census read every house / convert file: " + checked);
+        assertTrue(unmarked.isEmpty(), "without the OSS identity marker: " + unmarked);
+    }
+
 
     @Test
     void theFormatPackageIsTheOnlyOneTouchingTheDatatableApi() throws IOException

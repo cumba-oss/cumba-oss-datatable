@@ -141,7 +141,10 @@ final class LevelScopedHierarchy
                 {
                     for (JsonNode term : parent.getValue())
                     {
-                        terms.add(canonical(aCanonical, term.asText()));
+                        if (!term.isContainerNode())
+                        {
+                            terms.add(canonical(aCanonical, term.asText()));
+                        }
                     }
                 }
                 if (!terms.isEmpty())

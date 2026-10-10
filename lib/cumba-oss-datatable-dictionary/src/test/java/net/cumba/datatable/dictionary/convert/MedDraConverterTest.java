@@ -475,6 +475,40 @@ class MedDraConverterTest
 
 
     /**
+     * Plan B2 / B-T review lane 1 MED-2: the v2 file answers every pre-v2 engine lookup exactly as
+     * its v1 twin (no {@code decodes}, no {@code house_format}) — on both synthetic distributions,
+     * the colliding one included. No difference at all for MedDRA.
+     */
+    @Test
+    void aV2FileAnswersEveryPreV2LookupAsItsV1Twin() throws IOException
+    {
+        long[] probes = new long[1];
+        long total = 0;
+        for (boolean colliding : new boolean[]
+        {
+                false, true
+        })
+        {
+            if (colliding)
+            {
+                writeCollidingDistribution();
+            }
+            else
+            {
+                writeDistribution();
+            }
+            ObjectNode doc = converter.convert(raw);
+            doc.put("type", "meddra");
+            doc.put(ValueMapDictionary.HOUSE_FORMAT, ValueMapDictionary.HOUSE_FORMAT_2);
+            assertTrue(doc.path(ValueMapDictionary.DECODES).size() == 5, "the v2 sections exist");
+            assertEquals(java.util.Set.of(), HouseFormatEquivalence.differences(doc, probes));
+            total += probes[0];
+        }
+        assertTrue(total > 400, "probes: " + total);
+    }
+
+
+    /**
      * DI1's synthetic distribution (MedDRA is licensed — fixtures stay synthetic): the PT
      * {@code Alpha} on two paths (primary Hlt One / Hlgt One / Soc One, secondary Hlt Two / Hlgt
      * Two / Soc Two); {@code Beta} both a PT (primary under Soc One) and an HLT (under Hlgt Two /

@@ -62,7 +62,13 @@ public final class DictionaryStoreReader
      * The shape of a usable store version token — the installer's {@code VERSION_TOKEN}: the six
      * vendor vocabularies fit, and nothing that could traverse or break a path does.
      */
-    private static final Pattern VERSION_TOKEN = Pattern.compile("[A-Za-z0-9._-]{1,64}");
+    public static final String VERSION_TOKEN_SHAPE = "[A-Za-z0-9._-]{1,64}";
+
+    /**
+     * {@link #VERSION_TOKEN_SHAPE}, compiled: the one definition — the installer delegates here
+     * (B-T review lane 1 LOW-3: {@code house} no longer imports {@code convert}).
+     */
+    private static final Pattern VERSION_TOKEN = Pattern.compile(VERSION_TOKEN_SHAPE);
 
     /** Why a type / version did not resolve, or that it did. */
     public enum Outcome

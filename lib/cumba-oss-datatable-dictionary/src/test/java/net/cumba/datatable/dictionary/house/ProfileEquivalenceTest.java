@@ -5,7 +5,6 @@ package net.cumba.datatable.dictionary.house;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -241,6 +240,157 @@ class ProfileEquivalenceTest
             }
         }
         assertTrue(checked >= 1, "decodes checked: " + checked);
+        // B-T lane 1 MED-3: interned — a PT name in levels.PT and decodes.PTCD is ONE String
+        String decoded = full.decode("PTCD", "10019211");
+        assertEquals("Headache", decoded);
+        assertSame(full.preferredForm("PT", "Headache"), decoded,
+                "the decode is the level's own instance (memory first, plan §3.7)");
+        assertSame(format.preferredForm("PT", "Headache"), format.decode("PTCD", "10019211"),
+                "the FORMAT load interns through one map too");
+    }
+
+
+    /**
+     * B-T lane 1 MED-3: the FULL load interns {@code pairs} and {@code attributes} through the same
+     * map as {@code levels} and {@code decodes} — a WHODrug trade name is a {@code decodes.DRUGCD}
+     * value and a {@code pairs.whodrug} key, and a preferred name is a {@code levels.PT} value and
+     * a {@code pairs.whodrug} value: each is held once. Equal strings, so no answer changes.
+     */
+    @Test
+    void aFullLoadInternsPairsAndAttributesWithTheLevelsAndDecodes()
+    {
+        ValueMapDictionary full = ValueMapDictionary.parse(json("""
+                {"type":"whodrug","house_format":2,
+                 "levels":{"PT":{"ASPIRIN":"Aspirin"},
+                           "DRUGCD":{"00000101001":"00000101001","00000101002":"00000101002"}},
+                 "pairs":{"whodrug":{"ASPRO CLEAR":"Aspirin"}},
+                 "attributes":{"form":{"Aspirin":"Aspirin"}},
+                 "decodes":{"DRUGCD":{"00000101001":"Aspirin","00000101002":"ASPRO CLEAR"}}}
+                """));
+        String tradeName = full.decode("DRUGCD", "00000101002");
+        assertEquals("ASPRO CLEAR", tradeName);
+        String pairKey = full.pairRegistry("whodrug").keySet().iterator().next();
+        assertEquals(tradeName, pairKey);
+        assertSame(pairKey, tradeName, "the trade name is held once (pairs key = decode)");
+        String preferred = full.preferredForm("PT", "Aspirin");
+        assertSame(preferred, full.pairRegistry("whodrug").get("ASPRO CLEAR"),
+                "a pairs value is the level's instance");
+        assertSame(preferred, full.decode("DRUGCD", "00000101001"));
+        assertSame(preferred, full.attributeMap("form").get("Aspirin"),
+                "an attribute value is the level's instance");
+        assertSame(preferred, full.attributeMap("form").keySet().iterator().next(),
+                "an attribute key too");
+        assertTrue(full.codeDecodePair("whodrug", "ASPRO CLEAR", "Aspirin", true),
+                "the pair lookup answers as before");
+    }
+
+
+    private static JsonNode json(String aText)
+    {
+        try
+        {
+            return MAPPER.readTree(aText);
+        }
+        catch (IOException e)
+        {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+
+    /**
+     * B-T lane 1 LOW-4: on malformed input the two profiles agree — a container where a scalar
+     * belongs is skipped by both (it is no term, no decode, no ancestor), and a blank {@code type}
+     * is no type in both (the file stem keys the registry). Before, FULL kept containers as
+     * {@code ""} and the blank type verbatim while FORMAT skipped them, so the browser's status
+     * depended on which profile parsed the file first.
+     */
+    @Test
+    void onMalformedInputBothProfilesAgree() throws IOException
+    {
+        List<String[]> cases = List.of(new String[]
+        {
+                "meddra", "{\"type\":\"meddra\",\"levels\":{\"PT\":{\"HEADACHE\":{}}}}"
+        }, new String[]
+        {
+                "meddra",
+                "{\"type\":\"meddra\",\"levels\":{\"PT\":{\"HEADACHE\":[\"x\"],\"A\":\"A\"}}}"
+        }, new String[]
+        {
+                "loinc", "{\"type\":\"  \",\"levels\":{\"LOINC\":{\"1-1\":\"1-1\"}},"
+                        + "\"pairs\":{\"loinc\":{\"1-1\":\"Glucose\"}}}"
+        }, new String[]
+        {
+                "loinc", "{\"type\":\"loinc\",\"levels\":{\"LOINC\":{\"1-1\":\"1-1\"}},"
+                        + "\"pairs\":{\"loinc\":{\"1-1\":{\"x\":1}}}}"
+        }, new String[]
+        {
+                "neoplasm", "{\"type\":\"neoplasm\",\"attributes\":{\"neoplasm\":{\"A\":{}}}}"
+        }, new String[]
+        {
+                "snomed", "{\"type\":\"snomed\",\"hierarchy\":{\"A\":[{}]}}"
+        }, new String[]
+        {
+                "meddra", "{\"type\":\"meddra\",\"hierarchy_by_level\":{\"PT\":{\"X\":{}}}}"
+        }, new String[]
+        {
+                "meddra",
+                "{\"type\":\"meddra\",\"hierarchy_by_level\":" + "{\"PT\":{\"X\":{\"SOC\":[{}]}}}}"
+        }, new String[]
+        {
+                "meddra", "{\"type\":\"meddra\",\"levels\":{\"PTCD\":{\"1\":\"1\"}},"
+                        + "\"decodes\":{\"PTCD\":{\"1\":{}}}}"
+        }, new String[]
+        {
+                "unii", "{\"type\":\"unii\",\"levels\":{\"UNII\":{\"A\":null}},"
+                        + "\"pairs\":{\"unii\":{\"A\":null},\"other\":{\"B\":{}}}}"
+        });
+        int compared = 0;
+        for (String[] c : cases)
+        {
+            Path named = Files.createDirectories(tmp.resolve("case" + compared))
+                    .resolve(c[0] + ".json");
+            Files.writeString(named, c[1]);
+            ValueMapDictionary full = ValueMapDictionary.load(named);
+            ValueMapDictionary format = HouseDictionaryReader.read(named);
+            String what = c[1];
+            assertEquals(full.getType(), format.getType(), what);
+            assertEquals(full.hasContent(), format.hasContent(), what);
+            assertEquals(full.toString().replace("FULL", "?"),
+                    format.toString().replace("FORMAT", "?"), what);
+            JsonNode levels = MAPPER.readTree(c[1]).path("levels");
+            for (String level : List.of("PT", "PTCD", "LOINC", "UNII", "NOPE"))
+            {
+                assertEquals(full.hasLevel(level), format.hasLevel(level), what + " " + level);
+                assertEquals(full.decodes(level), format.decodes(level), what + " " + level);
+                for (String key : List.of("HEADACHE", "A", "1-1", "1", "", "null"))
+                {
+                    assertEquals(full.isMember(level, key), format.isMember(level, key),
+                            what + " " + level + " " + key);
+                    assertEquals(full.isValidTerm(level, key),
+                            levels.path(level).path(key.toUpperCase(Locale.ROOT)).isValueNode(),
+                            "FULL membership holds only scalar terms: " + what + " " + key);
+                    assertEquals(full.decode(level, key), format.decode(level, key),
+                            what + " " + level + " " + key);
+                }
+            }
+            compared++;
+        }
+        assertEquals(cases.size(), compared);
+        // the blank type: both key the registry by the file stem, so the LOINC code decodes
+        ValueMapDictionary blankType = ValueMapDictionary
+                .load(tmp.resolve("case2").resolve("loinc.json"));
+        assertEquals("", blankType.getType());
+        assertEquals("Glucose", blankType.decode("LOINC", "1-1"));
+        // the container cases are no content in either profile
+        assertFalse(ValueMapDictionary.load(tmp.resolve("case4").resolve("neoplasm.json"))
+                .hasContent());
+        assertFalse(
+                ValueMapDictionary.load(tmp.resolve("case5").resolve("snomed.json")).hasContent());
+        assertFalse(
+                ValueMapDictionary.load(tmp.resolve("case6").resolve("meddra.json")).hasContent());
+        assertFalse(
+                ValueMapDictionary.load(tmp.resolve("case7").resolve("meddra.json")).hasContent());
     }
 
 
@@ -285,6 +435,13 @@ class ProfileEquivalenceTest
                 "one residency: the full parse serves the format path (DF12)");
         assertSame(full, DictionaryFileCache.load(file, ValueMapDictionary.Profile.FULL));
         assertTrue(DictionaryFileCache.isCached(file));
-        assertNotNull(DictionaryFileCache.header(file).version() == null ? "" : "v");
+        // B-T lane 1 LOW-5: the header served from the cached FULL parse is the file's
+        HouseDictionaryReader.Header header = DictionaryFileCache.header(file);
+        assertEquals(full.getType(), header.type());
+        assertEquals("meddra", header.type());
+        assertEquals(full.getVersion(), header.version());
+        assertEquals(full.houseFormat(), header.houseFormat());
+        assertEquals(HouseDictionaryReader.readHeader(file), header,
+                "equal to the header-only streaming read");
     }
 }

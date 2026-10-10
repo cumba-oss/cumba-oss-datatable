@@ -361,7 +361,7 @@ public final class ValueMapDictionary
 
     /**
      * Whether this dictionary carries any usable content at all — at least one term, ancestor list,
-     * pair or attribute.
+     * pair or attribute (a {@value #DECODES} entry is none: it decodes only a member of a level).
      *
      * <p>
      * <b>Why this exists.</b> Every reader below degrades a missing, {@code null}, array-shaped or
@@ -380,8 +380,10 @@ public final class ValueMapDictionary
         // The hierarchy check mirrors anyEntry: a key mapping to an empty ancestor list answers
         // no hierarchy probe, so {"hierarchy":{"X":[]}} is no more content than {"levels":{"X":{}}}
         // — counting it would register the dictionary as available and bypass the SKIP arm.
+        // ⚠ decodes do NOT count (B-T review lane 1 MED-1): decode() asks isMember first and no
+        // engine lookup reads them, so a decodes-only file answers nothing in either profile.
         return anyEntry(levels) || bareHierarchyContent || !hierarchyByLevel.isEmpty()
-                || anyEntry(pairs) || anyEntry(attributes) || anyEntry(decodes) || skippedContent;
+                || anyEntry(pairs) || anyEntry(attributes) || skippedContent;
     }
 
 
@@ -440,10 +442,14 @@ public final class ValueMapDictionary
 
     private static ValueMapDictionary parse(JsonNode root, String fileStem)
     {
-        String t = root.hasNonNull("type") ? root.get("type").asText() : "";
+        // a blank type is no type, as the streaming reader reads it (B-T lane 1 LOW-4)
+        String t = root.hasNonNull("type") && !root.get("type").isContainerNode()
+                && !root.get("type").asText().isBlank() ? root.get("type").asText() : "";
         // R5 PB-M1: ONE intern map for the term-bearing sections — a PT name is a `levels` value
         // and a hierarchy_by_level key, a SOC name recurs on every PT row; the decodes of house
-        // format 2 share it (a PT name in levels.PT and decodes.PTCD is held once)
+        // format 2 share it (a PT name in levels.PT and decodes.PTCD is held once), and so do pairs
+        // and attributes (B-T lane 1 MED-3: a WHODrug trade name is a pairs.whodrug key AND a
+        // decodes.DRUGCD value, a preferred name a levels.PT AND a pairs.whodrug value)
         Map<String, String> canonical = new HashMap<>();
         Header header = new Header(t, t.isEmpty() ? fileStem : t, readProvenance(root),
                 text(root, "source"), text(root, "retrieved"),
@@ -451,7 +457,8 @@ public final class ValueMapDictionary
         return new ValueMapDictionary(header, readLevels(root.get("levels"), canonical),
                 readNestedStringList(root.get("hierarchy")),
                 LevelScopedHierarchy.read(root.get(HIERARCHY_BY_LEVEL), canonical),
-                readNestedStringMap(root.get("pairs")), readNestedStringMap(root.get("attributes")),
+                readNestedStringMap(root.get("pairs"), canonical),
+                readNestedStringMap(root.get("attributes"), canonical),
                 readDecodes(root.get(DECODES), canonical));
     }
 
@@ -556,10 +563,14 @@ public final class ValueMapDictionary
             {
                 for (Map.Entry<String, JsonNode> e : innerNode.properties())
                 {
-                    inner.put(
-                            LevelScopedHierarchy.canonical(canonical,
-                                    e.getKey().toUpperCase(Locale.ROOT)),
-                            LevelScopedHierarchy.canonical(canonical, e.getValue().asText()));
+                    // a container is no term (B-T lane 1 LOW-4: the streaming reader skips it too)
+                    if (!e.getValue().isContainerNode())
+                    {
+                        inner.put(
+                                LevelScopedHierarchy.canonical(canonical,
+                                        e.getKey().toUpperCase(Locale.ROOT)),
+                                LevelScopedHierarchy.canonical(canonical, e.getValue().asText()));
+                    }
                 }
             }
             out.put(outer.getKey(), inner);
@@ -568,8 +579,12 @@ public final class ValueMapDictionary
     }
 
 
-    /** Nested string map read verbatim — keys and values exactly as authored in the file. */
-    private static Map<String, Map<String, String>> readNestedStringMap(@Nullable JsonNode node)
+    /**
+     * Nested string map read verbatim — keys and values exactly as authored in the file, interned
+     * through {@code canonical}; a container value is no entry (the streaming reader skips it too).
+     */
+    private static Map<String, Map<String, String>> readNestedStringMap(@Nullable JsonNode node,
+            Map<String, String> canonical)
     {
         Map<String, Map<String, String>> out = new LinkedHashMap<>();
         if (node == null || !node.isObject())
@@ -584,7 +599,11 @@ public final class ValueMapDictionary
             {
                 for (Map.Entry<String, JsonNode> e : innerNode.properties())
                 {
-                    inner.put(e.getKey(), e.getValue().asText());
+                    if (!e.getValue().isContainerNode())
+                    {
+                        inner.put(LevelScopedHierarchy.canonical(canonical, e.getKey()),
+                                LevelScopedHierarchy.canonical(canonical, e.getValue().asText()));
+                    }
                 }
             }
             out.put(outer.getKey(), inner);
@@ -608,7 +627,11 @@ public final class ValueMapDictionary
             {
                 for (JsonNode item : outer.getValue())
                 {
-                    values.add(item.asText());
+                    // a container is no ancestor (the streaming reader skips it too)
+                    if (!item.isContainerNode())
+                    {
+                        values.add(item.asText());
+                    }
                 }
             }
             out.put(outer.getKey(), values);
@@ -654,6 +677,38 @@ public final class ValueMapDictionary
     private static String upper(String s)
     {
         return s.toUpperCase(Locale.ROOT);
+    }
+
+
+    /**
+     * The stored preferred form of a term at a level — the instance the model holds (tests pin the
+     * interning with it).
+     *
+     * @param aLevel
+     *            the level.
+     * @param aTerm
+     *            the term, any case.
+     * @return the stored value, or {@code null}.
+     */
+    @Nullable
+    String preferredForm(String aLevel, String aTerm)
+    {
+        Map<String, String> m = levels.get(aLevel);
+        return m != null ? m.get(upper(aTerm)) : null;
+    }
+
+
+    /** A {@code pairs} registry as held (read-only view; tests pin the interning with it). */
+    Map<String, String> pairRegistry(String aRegistry)
+    {
+        return java.util.Collections.unmodifiableMap(pairs.getOrDefault(aRegistry, Map.of()));
+    }
+
+
+    /** An {@code attributes} map as held (read-only view; tests pin the interning with it). */
+    Map<String, String> attributeMap(String aName)
+    {
+        return java.util.Collections.unmodifiableMap(attributes.getOrDefault(aName, Map.of()));
     }
 
 

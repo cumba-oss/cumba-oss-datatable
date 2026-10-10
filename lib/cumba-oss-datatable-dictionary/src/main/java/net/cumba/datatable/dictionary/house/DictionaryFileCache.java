@@ -170,7 +170,9 @@ public final class DictionaryFileCache
     /**
      * The header of the file ({@code type}, {@code version}, {@code retrieved}): from the cached
      * parse while it is fresh, else a header-only streaming read that builds no model and caches
-     * nothing (listing and ordering the installed versions never parse a whole file).
+     * nothing (listing and ordering the installed versions never parse a whole file). Public for
+     * the dictionary manager's installation listing (B-T review lane 2 MED-2), which so reuses a
+     * fresh parse instead of re-reading the file.
      *
      * @param aFile
      *            the house-format file.
@@ -178,7 +180,7 @@ public final class DictionaryFileCache
      * @throws IOException
      *             when the file cannot be read or is not a JSON object.
      */
-    static HouseDictionaryReader.Header header(Path aFile) throws IOException
+    public static HouseDictionaryReader.Header header(Path aFile) throws IOException
     {
         Path key = aFile.toAbsolutePath().normalize();
         Entry hit = freshEntry(key, Files.readAttributes(key, BasicFileAttributes.class),

@@ -86,6 +86,11 @@ public final class RuntimeDictionaryProvider
      *            per-type diagnoses for types that could <em>not</em> be loaded, keyed by type
      *            (case-insensitive); a type absent from both maps reads as not installed
      *            ({@link #notInstalledDetail()})
+     * @throws IllegalArgumentException
+     *             when a dictionary is not a {@link ValueMapDictionary.Profile#FULL FULL} load: the
+     *             engine reads every section, and a FORMAT load would answer membership and then
+     *             throw on the first pair or hierarchy rule mid-run (B-T review lane 1 LOW-7) — so
+     *             it is refused here, at bind time
      */
     public RuntimeDictionaryProvider(Map<String, ValueMapDictionary> byType,
             Map<String, Unavailability> unavailable)
@@ -93,6 +98,11 @@ public final class RuntimeDictionaryProvider
         Map<String, ValueMapDictionary> normalized = new LinkedHashMap<>();
         for (Map.Entry<String, ValueMapDictionary> e : byType.entrySet())
         {
+            if (e.getValue().getProfile() != ValueMapDictionary.Profile.FULL)
+            {
+                throw new IllegalArgumentException("the engine's provider needs FULL loads; "
+                        + e.getKey() + " is " + e.getValue());
+            }
             normalized.put(e.getKey().toLowerCase(Locale.ROOT), e.getValue());
         }
         this.byType = Map.copyOf(normalized);

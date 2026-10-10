@@ -394,6 +394,128 @@ class DictionaryInstallerTest
     }
 
 
+    /**
+     * B-T review lane 2 MED-1 (DF19): a RE-install of a version already in the store never moves
+     * the selection, whatever {@code setDefault} says — the dialog ticks "Make each newly installed
+     * version the default" by default, and the house-format-1 note invites exactly this re-install,
+     * so with the old rule every run binding through {@code selected-versions.json} silently
+     * changed release.
+     */
+    @Test
+    void aReinstallNeverChangesTheSelectedVersion(@TempDir Path dir) throws IOException
+    {
+        install(dir, "medrt", "2026.07.06", false);
+        install(dir, "medrt", "2026.08.03", true);
+        assertEquals("2026.08.03", manifest(dir).get("medrt"), "a NEW version rebinds with it");
+
+        DictionaryInstaller reinstall = install(dir, "medrt", "2026.07.06", true);
+
+        assertEquals("2026.08.03", manifest(dir).get("medrt"),
+                "the re-installed older version did not take the selection");
+        assertTrue(
+                reinstall.getReport().getWarnings().stream()
+                        .anyMatch(w -> w.contains("re-install") && w.contains("2026.08.03")),
+                "the operator is told the selection stayed: "
+                        + reinstall.getReport().getWarnings());
+        assertEquals(Map.of("medrt", "2026.07.06"), reinstall.getReport().getInstalled(),
+                "the re-install itself happened");
+
+        DictionaryInstaller selectedAgain = install(dir, "medrt", "2026.08.03", false);
+        assertEquals("2026.08.03", manifest(dir).get("medrt"));
+        assertTrue(
+                selectedAgain.getReport().getWarnings().stream()
+                        .noneMatch(w -> w.contains("kept the existing selection")),
+                "re-installing the selected version is no 'not bound' case: "
+                        + selectedAgain.getReport().getWarnings());
+    }
+
+
+    /**
+     * B-T review lane 2 MED-2 (option 4): the installer writes the header fields before the
+     * sections, so a header read of a file it wrote stops after them instead of walking a multi-MB
+     * file to the end.
+     */
+    @Test
+    void theHeaderFieldsAreWrittenBeforeTheSections(@TempDir Path dir) throws IOException
+    {
+        install(dir, "medrt", "2026.07.06", false);
+        Path written = dir.resolve("medrt").resolve("2026.07.06").resolve("medrt.json");
+        java.util.List<String> fields = new java.util.ArrayList<>();
+        MAPPER.readTree(written.toFile()).fieldNames().forEachRemaining(fields::add);
+        assertEquals(java.util.List.of("type", "version", "source", "retrieved", "house_format"),
+                fields.subList(0, 5), "header first: " + fields);
+        assertTrue(fields.indexOf("levels") > 4, fields.toString());
+    }
+
+
+    /**
+     * Owner ruling OQ4 (b): a local distribution directory now records the SHA-256 of every file
+     * the converter read from it, in the artefact-line format downloads use, so a later migration
+     * can verify the source by hash. Before, a local directory recorded no artefact at all.
+     */
+    @Test
+    void aLocalInstallRecordsTheSha256OfEveryFileTheConverterRead(@TempDir Path dir)
+        throws IOException
+    {
+        Path raw = Files.createDirectories(dir.resolve("MedAscii"));
+        writeMedDra(raw);
+        Files.writeString(raw.resolve("unrelated-notes.txt"), "not part of the distribution");
+        Path store = dir.resolve("store");
+
+        String version = new DictionaryInstaller(store).install(new LocalDictionarySource(raw),
+                new MedDraConverter(), "licence", false);
+
+        assertEquals("27.0", version);
+        String sources = Files.readString(store.resolve(DictionaryInstaller.SOURCES_FILE));
+        java.util.List<String> artefacts = sources.lines().filter(l -> l.startsWith("- Artefact: "))
+                .toList();
+        java.util.List<String> expected = new java.util.ArrayList<>();
+        for (String name : java.util.List.of("hlgt.asc", "hlt.asc", "llt.asc", "mdhier.asc",
+                "meddra_release.asc", "pt.asc", "soc.asc"))
+        {
+            Path file = raw.resolve(name);
+            expected.add("- Artefact: " + name + " — SHA-256 " + sha256(file) + " — "
+                    + file.toAbsolutePath().normalize().toUri());
+        }
+        assertEquals(expected, artefacts, sources);
+    }
+
+
+    private static String sha256(Path aFile) throws IOException
+    {
+        try
+        {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest
+                    .getInstance("SHA-256").digest(Files.readAllBytes(aFile)));
+        }
+        catch (java.security.NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException(e);
+        }
+    }
+
+
+    /** {@code MedDraConverterTest}'s miniature {@code MedAscii} distribution. */
+    static void writeMedDra(Path aRaw) throws IOException
+    {
+        writeLines(aRaw, "llt.asc", "10019210$Cephalgia$10019211$");
+        writeLines(aRaw, "pt.asc", "10019211$Headache$$10029205$");
+        writeLines(aRaw, "hlt.asc", "10019231$Headaches NEC$");
+        writeLines(aRaw, "hlgt.asc", "10019233$Headaches$");
+        writeLines(aRaw, "soc.asc", "10029205$Nervous system disorders$N$");
+        writeLines(aRaw, "mdhier.asc", "10019211$10019231$10019233$10029205$Headache$Headaches NEC"
+                + "$Headaches$Nervous system disorders$Nerv$$10029205$Y$");
+        writeLines(aRaw, "meddra_release.asc", "27.0$English$$");
+    }
+
+
+    private static void writeLines(Path aDir, String aName, String... aLines) throws IOException
+    {
+        Files.writeString(aDir.resolve(aName), String.join("\n", aLines) + "\n",
+                java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+
     /** End to end: what the installer writes is what the store binds. */
     @Test
     void whatIsInstalledIsWhatTheStoreLoads(@TempDir Path dir) throws IOException
