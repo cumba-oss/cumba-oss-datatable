@@ -40,6 +40,7 @@ Depends on **`cumba-oss-commons`** (for `cumba-oss-help`) and **`cumba-oss-forma
 | [`cumba-oss-datatable-provider-define`](lib/cumba-oss-datatable-provider-define/README.md) | `net.cumba.datatable.provider.define` | Exposes a parsed Define-XML document as a metadata library and format catalog. |
 | [`cumba-oss-datatable-manager-local`](lib/cumba-oss-datatable-manager-local/README.md) | `net.cumba.datatable.manager.local` | Local filesystem manager — browse a directory of CDISC datasets without writing manager code. |
 | [`cumba-oss-datatable-testkit`](lib/cumba-oss-datatable-testkit/README.md) | `net.cumba.datatable.testkit` | Test helpers (`MockTable`, `TestMetadataFixtures`) for the `IDataTable` contract, published as ordinary main code. |
+| [`cumba-oss-datatable-dictionary`](lib/cumba-oss-datatable-dictionary/README.md) | `net.cumba.datatable.dictionary.{house,convert}` | External dictionaries: the house-format model and readers, the store, and the converters and installer that seed it (used by the conformance engine and its CLI). |
 
 Each module has its own `README.md` with coordinates and dependency detail.
 
@@ -48,7 +49,7 @@ Each module has its own `README.md` with coordinates and dependency detail.
 ```
 cumba-oss-commons     help · web-api · cdisc-library · bootstrap
       ▲
-cumba-oss-datatable   datatable · impl · cdisc-define · providers · manager-local · testkit
+cumba-oss-datatable   datatable · impl · cdisc-define · providers · manager-local · testkit · dictionary
       ▲
 cumba-oss-formats     sas-utils · cdisc-dsj              (independent leaf)
 ```

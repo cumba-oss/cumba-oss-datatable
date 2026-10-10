@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>cumba-oss-datatable-dictionary</artifactId>
+    <packaging>jar</packaging>
+
+    <parent>
+        <groupId>net.cumba</groupId>
+        <artifactId>cumba-oss-datatable-parent</artifactId>
+        <version>${revision}</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <inceptionYear>2026</inceptionYear>
+
+    <!--
+        REQUIRED by Maven Central, and it must be declared HERE: <name> is one
+        of the few POM elements Maven does NOT inherit from the parent.
+    -->
+    <name>Cumba OSS Datatable :: Dictionary</name>
+    <url>https://github.com/cumba-oss/cumba-oss-datatable</url>
+    <description>
+        The shared external-dictionary code of the OSS conformance engine: the house-format
+        dictionary model (one class in two load profiles), its readers and per-process file cache,
+        the dictionary store layout and version resolution, the house-format validator, and the
+        converters, installer and sources that seed a store. The twin of cumba-datatable-dictionary's
+        house and convert packages, byte-identical; its format package (dictionary formats for a
+        data table's format catalog) is withheld, because this repository carries no format
+        catalog. Depends on Jackson and JSpecify only.
+    </description>
+    <organization>
+        <name>P300</name>
+    </organization>
+
+    <properties>
+        <!-- Repo-root anchor, depth 2 (see the root pom). -->
+        <repo.root.dir>${project.basedir}/../..</repo.root.dir>
+
+        <!--
+            Floors of a new module, set from ONE COLD full-module run; never lowered. ⛔ Never pass
+            -Dpitest.mutation.threshold or -Djacoco.line.coverage on the command line.
+        -->
+        <jacoco.line.coverage>0.91</jacoco.line.coverage>
+        <pitest.mutation.target>85</pitest.mutation.target>
+        <pitest.coverage.target>90</pitest.coverage.target>
+        <pitest.test.strength.target>92</pitest.test.strength.target>
+    </properties>
+
+    <dependencies>
+
+        <!-- the format-subset reader streams (jackson-core); the full load, the validator and the
+             converters build and read trees (jackson-databind) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- JSpecify nullability annotations (NullAway). -->
+        <dependency>
+            <groupId>org.jspecify</groupId>
+            <artifactId>jspecify</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+    </dependencies>
+
+</project>

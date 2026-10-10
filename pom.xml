@@ -330,6 +330,7 @@
         <module>lib/cumba-oss-datatable-provider-define</module>
         <module>lib/cumba-oss-datatable-manager-local</module>
         <module>lib/cumba-oss-datatable-testkit</module>
+        <module>lib/cumba-oss-datatable-dictionary</module>
 
         <module>coverage</module>
     </modules>
@@ -1466,6 +1467,11 @@
                     <dependency>
                 <groupId>${project.groupId}</groupId>
                 <artifactId>cumba-oss-datatable-testkit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>cumba-oss-datatable-dictionary</artifactId>
                 <version>${project.version}</version>
             </dependency>
 </dependencies>

@@ -1,0 +1,3 @@
+{"type":"snomed","version":"20240901","retrieved":"2026-10-05",
+ "levels":{"SNOMED":{"HEADACHE":"Headache","NAUSEA":"Nausea"},"SNOMEDCD":{"25064002":"25064002","422587007":"422587007"}},
+ "hierarchy":{},"pairs":{"snomed":{"25064002":"Headache","422587007":"Nausea"}},"attributes":{}}

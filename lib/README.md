@@ -18,6 +18,7 @@ and inherit from the project parent pom (`../../pom.xml`).
 - [`cumba-oss-datatable-provider-define`](cumba-oss-datatable-provider-define/README.md) — Define-XML metadata provider
 - [`cumba-oss-datatable-manager-local`](cumba-oss-datatable-manager-local/README.md) — local filesystem manager
 - [`cumba-oss-datatable-testkit`](cumba-oss-datatable-testkit/README.md) — test helpers for the datatable contract
+- [`cumba-oss-datatable-dictionary`](cumba-oss-datatable-dictionary/README.md) — external dictionaries: model, store, converters, installer
 
 Modules are listed in the parent pom's `<modules>` in dependency order,
 though Maven's reactor derives the real build order itself.

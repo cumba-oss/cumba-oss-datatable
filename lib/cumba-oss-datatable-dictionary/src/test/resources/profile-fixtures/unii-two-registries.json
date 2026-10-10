@@ -1,0 +1,5 @@
+{"type":"unii","version":"4Aug2026","retrieved":"2026-10-04",
+ "levels":{"UNII":{"R16CO5Y76E":"R16CO5Y76E","WK2XYI10QM":"WK2XYI10QM"},"SRS":{"ASPIRIN":"ASPIRIN","IBUPROFEN":"IBUPROFEN"}},
+ "hierarchy":{},
+ "pairs":{"unii":{"R16CO5Y76E":"ASPIRIN","WK2XYI10QM":"IBUPROFEN"},"snomed":{"R16CO5Y76E":"WRONG REGISTRY"}},
+ "attributes":{}}

@@ -1,0 +1,7 @@
+{"type":"medrt","version":"2026.07.06","retrieved":"2026-10-06",
+ "levels":{"MEDRT":{"CYCLOOXYGENASE INHIBITORS":"Cyclooxygenase Inhibitors","ADRENERGIC BETA-ANTAGONISTS":"Adrenergic beta-Antagonists"},
+           "MEDRTCD":{"N0000000181":"N0000000181","N0000175553":"N0000175553","N0000009999":"N0000009999"}},
+ "hierarchy":{},
+ "pairs":{"medrt":{"N0000000181":"Cyclooxygenase Inhibitors","N0000175553":"Adrenergic beta-Antagonists"},
+          "medrt-base":{"N0000000181":"Cyclooxygenase Inhibitors [MoA] (base)","N0000009999":"Only in the base registry"}},
+ "attributes":{}}

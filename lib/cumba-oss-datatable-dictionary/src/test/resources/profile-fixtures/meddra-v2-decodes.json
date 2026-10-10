@@ -1,0 +1,4 @@
+{"type":"meddra","version":"28.0","house_format":2,
+ "levels":{"PT":{"HEADACHE":"Headache"},"PTCD":{"10019211":"10019211","10028813":"10028813"}},
+ "hierarchy":{},"pairs":{},"attributes":{},
+ "decodes":{"PTCD":{"10019211":"Headache"}}}

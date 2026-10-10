@@ -1,0 +1,3 @@
+{"type":"meddra","version":"25.0",
+ "levels":{"PT":{"HEADACHE":"Headache","NAUSEA":"Nausea"},"PTCD":{"10019211":"10019211"}},
+ "hierarchy":{"Headaches NEC":["Headaches"]},"pairs":{},"attributes":{}}

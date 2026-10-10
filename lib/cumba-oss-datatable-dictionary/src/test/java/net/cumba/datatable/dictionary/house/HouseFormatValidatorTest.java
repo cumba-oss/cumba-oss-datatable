@@ -1,0 +1,454 @@
+package net.cumba.datatable.dictionary.house;
+
+// OSS-IDENTITY datatable-dictionary: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.IOException;
+import java.util.List;
+import java.util.Locale;
+import org.junit.jupiter.api.Test;
+
+/**
+ * The two halves of house-format validation, and — the point of the class — the demonstration that
+ * they catch <b>different</b> things.
+ *
+ * <p>
+ * The case contract is a consistency audit driven by the sections a document happens to have, so an
+ * empty document passes it trivially. If only that half existed, a converter that emitted nothing
+ * would ship. These tests pin that gap and pin that completeness closes it.
+ * </p>
+ */
+class HouseFormatValidatorTest
+{
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    // ------------------------------------------------------------------
+    // The gap between the two checks — why both exist
+    // ------------------------------------------------------------------
+
+    @Test
+    void anEmptyDocumentPassesTheCaseContractButFailsCompleteness() throws IOException
+    {
+        JsonNode empty = json("{\"type\":\"unii\"}");
+
+        assertEquals(List.of(), HouseFormatValidator.caseContractViolations("unii", empty),
+                "an empty document is trivially self-consistent — this is the gap");
+        assertFalse(HouseFormatValidator.completenessViolations("unii", empty).isEmpty(),
+                "completeness is what notices there is nothing there");
+    }
+
+
+    @Test
+    void completenessNamesEveryMissingLevelAndRegistry() throws IOException
+    {
+        List<String> v = HouseFormatValidator.completenessViolations("unii",
+                json("{\"type\":\"unii\"}"));
+
+        assertEquals(3, v.size(), v.toString());
+        assertTrue(v.stream().anyMatch(s -> s.contains("levels[UNII]")), v.toString());
+        assertTrue(v.stream().anyMatch(s -> s.contains("levels[SRS]")), v.toString());
+        assertTrue(v.stream().anyMatch(s -> s.contains("pairs[unii]")), v.toString());
+    }
+
+
+    /** A level present but empty is as useless as one absent, and must read the same. */
+    @Test
+    void anEmptyLevelCountsAsMissing() throws IOException
+    {
+        List<String> v = HouseFormatValidator.completenessViolations("loinc", json(
+                "{\"type\":\"loinc\",\"levels\":{\"LOINC\":{}},\"pairs\":{\"loinc\":{\"1\":\"x\"}}}"));
+
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("levels[LOINC]"), v.get(0));
+    }
+
+
+    @Test
+    void aCompleteReleaseSizedDictionaryPassesAllThreeChecks()
+    {
+        JsonNode doc = releaseSizedMedrt(1_200);
+
+        assertEquals(List.of(), HouseFormatValidator.validate("medrt", doc));
+        assertEquals(List.of(), HouseFormatValidator.cardinalityViolations("medrt", doc),
+                "the advisory floor check is clean too");
+    }
+
+    // ------------------------------------------------------------------
+    // A5a: the population comes from the CALLER, never from the artefact
+    // ------------------------------------------------------------------
+
+
+    /**
+     * Every converter deliberately emits no {@code type} (the installer stamps it seven lines
+     * before validating). Keying the requirement off the artefact's own field made the check
+     * silently vacuous for any caller that forgot the stamp — an empty document with no
+     * {@code type} passed completeness outright.
+     */
+    @Test
+    void completenessIsKeyedOffTheCallerNotTheDocumentsOwnTypeField() throws IOException
+    {
+        List<String> v = HouseFormatValidator.completenessViolations("unii", json("{}"));
+
+        assertEquals(3, v.size(),
+                "an un-stamped empty document must fail exactly like a stamped one: " + v);
+        assertTrue(v.stream().anyMatch(s -> s.contains("levels[UNII]")), v.toString());
+    }
+
+
+    /** A {@code type} field that disagrees with the caller is a violation in its own right. */
+    @Test
+    void aTypeFieldDisagreeingWithTheCallerIsAViolation() throws IOException
+    {
+        List<String> v = HouseFormatValidator.completenessViolations("icd10",
+                json("{\"type\":\"meddra\"}"));
+
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("'meddra'"), v.get(0));
+        assertTrue(v.get(0).contains("'icd10'"), v.get(0));
+    }
+
+    // ------------------------------------------------------------------
+    // A5b: the cardinality floors — presence is not wholeness
+    // ------------------------------------------------------------------
+
+
+    /**
+     * A {@code pt.asc} truncated by an interrupted unzip satisfies every presence clause; only a
+     * floor notices. The violation carries the actual count, so the operator sees
+     * {@code attributes.neoplasm: 3} instead of hunting for the truncation.
+     */
+    @Test
+    void aTruncatedSectionFailsItsCardinalityFloorNamingTheCount() throws IOException
+    {
+        List<String> v = HouseFormatValidator.cardinalityViolations("neoplasm", json(
+                "{\"type\":\"neoplasm\",\"attributes\":{\"neoplasm\":{\"A, BENIGN\":\"BENIGN\","
+                        + "\"B, MALIGNANT\":\"MALIGNANT\",\"C, BENIGN\":\"BENIGN\"}}}"));
+
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("attributes.neoplasm: 3"), v.get(0));
+        assertTrue(v.get(0).contains("at least 250"), v.get(0));
+    }
+
+
+    @Test
+    void aSectionAtItsFloorPasses()
+    {
+        assertEquals(List.of(),
+                HouseFormatValidator.cardinalityViolations("medrt", releaseSizedMedrt(1_000)));
+        assertFalse(HouseFormatValidator.cardinalityViolations("medrt", releaseSizedMedrt(999))
+                .isEmpty(), "and one below it does not — the floor is real");
+    }
+
+
+    @Test
+    void anUnknownTypeHasNoCardinalityFloor() throws IOException
+    {
+        assertEquals(List.of(),
+                HouseFormatValidator.cardinalityViolations("icd10", json("{\"type\":\"icd10\"}")));
+    }
+
+
+    /** A valid medrt document with {@code aCodes} MEDRTCD entries (the floored section). */
+    private static JsonNode releaseSizedMedrt(int aCodes)
+    {
+        ObjectNode root = MAPPER.createObjectNode();
+        root.put("type", "medrt");
+        ObjectNode levels = root.putObject("levels");
+        ObjectNode names = levels.putObject("MEDRT");
+        ObjectNode codes = levels.putObject("MEDRTCD");
+        ObjectNode pairs = root.putObject("pairs").putObject("medrt");
+        for (int i = 0; i < aCodes; i++)
+        {
+            String name = "Concept " + i + " [EPC]";
+            String nui = "N" + String.format(Locale.ROOT, "%010d", i);
+            names.put(name.toUpperCase(Locale.ROOT), name);
+            codes.put(nui, nui);
+            pairs.put(nui, name);
+        }
+        return root;
+    }
+
+
+    /** meddra is the one type whose hierarchy is required — without it two rules can never fire. */
+    @Test
+    void meddraWithoutAHierarchyIsIncomplete() throws IOException
+    {
+        List<String> v = HouseFormatValidator.completenessViolations("meddra",
+                json("{\"type\":\"meddra\",\"levels\":{\"PT\":{\"A\":\"A\"}}}"));
+
+        assertTrue(v.stream().anyMatch(s -> s.contains("hierarchy")), v.toString());
+    }
+
+
+    /**
+     * Runbook W4 DI2 (Q3 (a)) as the W4 fold corrected it (R5 P3-D2, Q3: a file without the section
+     * "is REPORTED", its hierarchy rules SKIP — it is not refused): the hierarchy rules read
+     * {@code hierarchy_by_level} only, at the converter's levels (PT, HLT, HLGT and their codes); a
+     * meddra file without it, or without one of those levels, is no completeness violation (it
+     * installs) — the gap is the advisory {@link HouseFormatValidator#levelScopedHierarchyGaps},
+     * which the installer turns into a warning.
+     */
+    @Test
+    void meddraWithoutTheLevelScopedHierarchyIsReportedNotRefused() throws IOException
+    {
+        JsonNode bare = json("{\"type\":\"meddra\",\"levels\":{\"PT\":{\"A\":\"A\"}},"
+                + "\"hierarchy\":{\"A\":[\"S\"]}}");
+        assertFalse(
+                HouseFormatValidator.completenessViolations("meddra", bare).stream()
+                        .anyMatch(s -> s.contains("hierarchy_by_level")),
+                HouseFormatValidator.completenessViolations("meddra", bare).toString());
+        List<String> none = HouseFormatValidator.levelScopedHierarchyGaps("meddra", bare);
+        assertTrue(none.stream().anyMatch(s -> s.contains("hierarchy_by_level[PT]")),
+                none.toString());
+        JsonNode partialDoc = json("{\"type\":\"meddra\",\"levels\":{\"PT\":{\"A\":\"A\"}},"
+                + "\"hierarchy\":{\"A\":[\"S\"]},\"hierarchy_by_level\":{"
+                + "\"PT\":{\"A\":{\"SOC\":[\"S\"]}},\"PTCD\":{\"1\":{\"SOCCD\":[\"9\"]}},"
+                + "\"HLT\":{\"H\":{\"SOC\":[\"S\"]}},\"HLTCD\":{\"2\":{\"SOCCD\":[\"9\"]}},"
+                + "\"HLGTCD\":{\"3\":{\"SOCCD\":[\"9\"]}}}}");
+        List<String> partial = HouseFormatValidator.levelScopedHierarchyGaps("meddra", partialDoc);
+        assertTrue(partial.stream().anyMatch(s -> s.contains("hierarchy_by_level[HLGT]")),
+                partial.toString());
+        assertFalse(partial.stream().anyMatch(s -> s.contains("hierarchy_by_level[PT]")),
+                partial.toString());
+        // a type whose rules read no hierarchy has no such gap
+        assertEquals(List.of(), HouseFormatValidator.levelScopedHierarchyGaps("unii", bare));
+    }
+
+
+    /** neoplasm requires no levels at all — only its attribute map. */
+    @Test
+    void neoplasmNeedsOnlyItsAttributeMap() throws IOException
+    {
+        assertEquals(List.of(), HouseFormatValidator.completenessViolations("neoplasm", json(
+                "{\"type\":\"neoplasm\",\"attributes\":{\"neoplasm\":{\"ADENOMA, BENIGN\":\"BENIGN\"}}}")));
+    }
+
+
+    /** A type this build's corpus does not read is not constrained. */
+    @Test
+    void anUnknownTypeIsNotConstrained() throws IOException
+    {
+        assertEquals(List.of(),
+                HouseFormatValidator.completenessViolations("icd10", json("{\"type\":\"icd10\"}")));
+    }
+
+    // ------------------------------------------------------------------
+    // The case contract, lifted intact
+    // ------------------------------------------------------------------
+
+
+    @Test
+    void aKeyThatIsNotTheCaseFoldOfItsValueIsRejected() throws IOException
+    {
+        List<String> v = HouseFormatValidator.caseContractViolations("unii",
+                json("{\"type\":\"unii\",\"levels\":{\"SRS\":{\"Aspirin\":\"Aspirin\"}}}"));
+
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("case-fold"), v.get(0));
+    }
+
+
+    /**
+     * A4 / owner ruling — clause 1 is scoped WITHIN a level: the engine consults only the level a
+     * rule's {@code dictionary_term_type} names, so two levels disagreeing on case (WHO's own
+     * convention for drug names vs ATC texts) is the vendor's prerogative, not an inconsistency.
+     * The pre-A4 cross-level clause made every real WHODrug distribution fail validation.
+     */
+    @Test
+    void twoPreferredFormsForOneTermAcrossLevelsAreAccepted() throws IOException
+    {
+        assertEquals(List.of(),
+                HouseFormatValidator.caseContractViolations("meddra",
+                        json("{\"type\":\"meddra\",\"levels\":{\"LLT\":{\"HEADACHE\":\"Headache\"},"
+                                + "\"PT\":{\"HEADACHE\":\"HEADACHE\"}}}")),
+                "each level keeps its own preferred form");
+    }
+
+
+    /**
+     * Within one level the clause still bites. A well-formed level object cannot carry two keys
+     * with one fold, so the case arises only alongside broken keys — but a validator must not rely
+     * on one violation masking another.
+     */
+    @Test
+    void twoPreferredFormsForOneTermWithinALevelAreRejected() throws IOException
+    {
+        List<String> v = HouseFormatValidator.caseContractViolations("meddra",
+                json("{\"type\":\"meddra\",\"levels\":{\"PT\":{\"A1\":\"Headache\","
+                        + "\"A2\":\"HEADACHE\"}}}"));
+
+        assertTrue(v.stream().anyMatch(s -> s.contains("two preferred forms")), v.toString());
+        assertTrue(v.stream().anyMatch(s -> s.contains("levels[PT]")), v.toString());
+    }
+
+
+    /**
+     * When a fold has several per-level forms, a pairs/attributes value must match ONE of them — a
+     * spelling matching none is still a violation.
+     */
+    @Test
+    void aPairsValueMatchingNoLevelsFormIsStillRejected() throws IOException
+    {
+        List<String> v = HouseFormatValidator.caseContractViolations("whodrug",
+                json("{\"type\":\"whodrug\",\"levels\":{\"PT\":{\"IBUPROFEN\":\"IBUPROFEN\"},"
+                        + "\"ATC\":{\"IBUPROFEN\":\"Ibuprofen\"}},"
+                        + "\"pairs\":{\"whodrug\":{\"X\":\"ibuprofen\"}}}"));
+
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("'ibuprofen'"), v.get(0));
+    }
+
+
+    @Test
+    void anUnresolvableHierarchyAncestorIsRejected() throws IOException
+    {
+        List<String> v = HouseFormatValidator.caseContractViolations("meddra", json(
+                "{\"type\":\"meddra\",\"levels\":{\"HLT\":{\"HEADACHES NEC\":\"Headaches NEC\"}},"
+                        + "\"hierarchy\":{\"Headaches NEC\":[\"Nervous system disorders\"]}}"));
+
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("is not a term in any level"), v.get(0));
+    }
+
+
+    /**
+     * Runbook W2 DI1: {@code hierarchy_by_level} is held to its OWN levels — a key must be a term
+     * of the level it is filed under and an ancestor a term of the level it names, written as that
+     * level publishes it. A PT name filed under HLT (a term of another level only) is rejected, as
+     * is an ancestor level the document does not carry and an ancestor spelt in another case.
+     */
+    @Test
+    void theLevelScopedHierarchyIsHeldToItsOwnLevels() throws IOException
+    {
+        String levels = "\"levels\":{\"PT\":{\"HEADACHE\":\"Headache\"},"
+                + "\"HLT\":{\"HEADACHES NEC\":\"Headaches NEC\"},"
+                + "\"SOC\":{\"NERVOUS SYSTEM DISORDERS\":\"Nervous system disorders\"}}";
+        assertEquals(List.of(),
+                HouseFormatValidator.caseContractViolations("meddra",
+                        json("{\"type\":\"meddra\"," + levels + ",\"hierarchy_by_level\":{\"PT\":{"
+                                + "\"Headache\":{\"HLT\":[\"Headaches NEC\"],"
+                                + "\"SOC\":[\"Nervous system disorders\"]}}}}")));
+
+        List<String> v = HouseFormatValidator.caseContractViolations("meddra",
+                json("{\"type\":\"meddra\"," + levels + ",\"hierarchy_by_level\":{"
+                        + "\"HLT\":{\"Headache\":{\"SOC\":[\"Nervous system disorders\"]}},"
+                        + "\"PT\":{\"Headache\":{\"HLGT\":[\"Headaches\"],"
+                        + "\"SOC\":[\"NERVOUS SYSTEM DISORDERS\"]}}}}"));
+
+        assertEquals(3, v.size(), v.toString());
+        assertTrue(v.stream().anyMatch(m -> m.contains("hierarchy_by_level[HLT] key 'Headache'")),
+                v.toString());
+        assertTrue(v.stream().anyMatch(m -> m.contains("[HLGT]")), v.toString());
+        assertTrue(v.stream().anyMatch(m -> m.contains("'NERVOUS SYSTEM DISORDERS'")),
+                v.toString());
+    }
+
+
+    /** A decode that is not a term of this dictionary is unconstrained — BENIGN, a LOINC name. */
+    @Test
+    void aNonTermDecodeIsUnconstrained() throws IOException
+    {
+        assertEquals(List.of(), HouseFormatValidator.caseContractViolations("neoplasm", json(
+                "{\"type\":\"neoplasm\",\"attributes\":{\"neoplasm\":{\"ADENOMA, BENIGN\":\"BENIGN\"}}}")));
+    }
+
+    // ------------------------------------------------------------------
+    // House format 2 — the decodes contract (PLAN-dictionary-backed-formats §3.7)
+    // ------------------------------------------------------------------
+
+    private static final String MEDDRA_LEVELS = "\"levels\":{\"PT\":{\"HEADACHE\":\"Headache\"},"
+            + "\"PTCD\":{\"10019211\":\"10019211\"}}";
+
+    private static final String WHODRUG_LEVELS = "\"levels\":{\"PT\":{\"ASPIRIN\":\"ASPIRIN\"},"
+            + "\"DRUGCD\":{\"00000101001\":\"00000101001\",\"00000101002\":\"00000101002\"}}";
+
+    @Test
+    void aDecodeWrittenAsItsNameLevelPublishesItPasses() throws IOException
+    {
+        assertEquals(List.of(), HouseFormatValidator.caseContractViolations("meddra", json(
+                "{" + MEDDRA_LEVELS + ",\"decodes\":{\"PTCD\":{\"10019211\":\"Headache\"}}}")));
+        // DF24 (a): a trade-name code decodes to a name no level publishes — only non-blank
+        assertEquals(List.of(),
+                HouseFormatValidator.caseContractViolations("whodrug", json("{" + WHODRUG_LEVELS
+                        + ",\"decodes\":{\"DRUGCD\":{"
+                        + "\"00000101001\":\"ASPIRIN\",\"00000101002\":\"ASPRO CLEAR\"}}}")));
+    }
+
+
+    @Test
+    void theValidatorRefusesADecodeThatIsNotAPublishedName() throws IOException
+    {
+        List<String> v = HouseFormatValidator.caseContractViolations("meddra", json(
+                "{" + MEDDRA_LEVELS + ",\"decodes\":{\"PTCD\":{" + "\"10019211\":\"Headach\"}}}"));
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("decodes[PTCD] decode of '10019211'")
+                && v.get(0).contains("is not a term of level [PT]"), v.toString());
+
+        v = HouseFormatValidator.caseContractViolations("meddra",
+                json("{" + MEDDRA_LEVELS + ",\"decodes\":{\"PTCD\":{\"10019211\":\"HEADACHE\"}}}"));
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("preferred form 'Headache'"), v.toString());
+
+        v = HouseFormatValidator.caseContractViolations("whodrug", json("{" + WHODRUG_LEVELS
+                + ",\"decodes\":{\"DRUGCD\":{\"00000101001\":\"ASPRO CLEAR\"}}}"));
+        assertEquals(1, v.size(), "a 01001 code decodes to its preferred name: " + v);
+        assertTrue(v.get(0).contains("is not a term of level [PT]"), v.toString());
+    }
+
+
+    @Test
+    void theValidatorRefusesANonMemberCodeAndABlankDecode() throws IOException
+    {
+        List<String> v = HouseFormatValidator.caseContractViolations("meddra",
+                json("{" + MEDDRA_LEVELS + ",\"decodes\":{\"PTCD\":{"
+                        + "\"99999999\":\"Headache\",\"10019211\":\" \"},"
+                        + "\"SOCCD\":{\"1\":\"x\"}}}"));
+        assertEquals(4, v.size(), v.toString());
+        assertTrue(
+                v.stream()
+                        .anyMatch(m -> m.contains("code '99999999' is not a term of level [PTCD]")),
+                v.toString());
+        assertTrue(v.stream().anyMatch(m -> m.contains("decode of '10019211' is blank")),
+                v.toString());
+        assertTrue(v.stream().anyMatch(m -> m.contains("filed at level [SOCCD]")), v.toString());
+        assertTrue(
+                v.stream().anyMatch(
+                        m -> m.contains("decode of '1'") && m.contains("filed at level [SOC]")),
+                v.toString());
+    }
+
+
+    @Test
+    void aV2FileMissingAConverterDecodesLevelIsAnAdvisoryGap_aV1FileNever() throws IOException
+    {
+        List<String> gaps = HouseFormatValidator.decodesGaps("meddra", json("{\"house_format\":2,"
+                + MEDDRA_LEVELS + ",\"decodes\":{\"PTCD\":{\"10019211\":\"Headache\"}}}"));
+        assertEquals(4, gaps.size(), gaps.toString());
+        assertTrue(gaps.stream().anyMatch(g -> g.contains("decodes[SOCCD] is missing or empty")),
+                gaps.toString());
+        assertEquals(List.of(),
+                HouseFormatValidator.decodesGaps("meddra", json("{" + MEDDRA_LEVELS + "}")),
+                "house format 1 has no decodes by definition");
+        assertEquals(2, HouseFormatValidator
+                .decodesGaps("whodrug", json("{\"house_format\":\"2\"," + WHODRUG_LEVELS + "}"))
+                .size());
+        assertEquals(List.of(),
+                HouseFormatValidator.decodesGaps("loinc", json("{\"house_format\":2}")),
+                "LOINC decodes through pairs.loinc");
+    }
+
+
+    private static JsonNode json(String aJson) throws IOException
+    {
+        return MAPPER.readTree(aJson);
+    }
+
+}

@@ -1,0 +1,12 @@
+{"type":"meddra","version":"26.0","retrieved":"2026-10-01",
+ "levels":{"PT":{"HEADACHE":"Headache","NAUSEA":"Nausea","DIARRHOEA":"Diarrhoea"},
+           "PTCD":{"10019211":"10019211","10028813":"10028813"},
+           "LLT":{"HEADACHE":"Headache","NAUSEA":"Nausea"},
+           "LLTCD":{"10019211":"10019211"},
+           "HLT":{"HEADACHES NEC":"Headaches NEC"},"HLTCD":{"10019231":"10019231"},
+           "HLGT":{"HEADACHES":"Headaches"},"HLGTCD":{"10019233":"10019233"},
+           "SOC":{"NERVOUS SYSTEM DISORDERS":"Nervous system disorders"},"SOCCD":{"10029205":"10029205"}},
+ "hierarchy":{"Headaches NEC":["Headaches","Nervous system disorders"],"Headaches":["Nervous system disorders"]},
+ "hierarchy_by_level":{"PT":{"Headache":{"HLT":["Headaches NEC"],"HLGT":["Headaches"],"SOC":["Nervous system disorders"]}},
+                       "PTCD":{"10019211":{"HLTCD":["10019231"],"HLGTCD":["10019233"],"SOCCD":["10029205"]}}},
+ "pairs":{},"attributes":{}}
