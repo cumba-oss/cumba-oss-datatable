@@ -288,6 +288,19 @@ public class DefineMetadataLibrary implements IMetadataLibrary
     }
 
 
+    /**
+     * How many codelist maps this library's builder built (a test instrument; 0 before the builder
+     * exists).
+     *
+     * @return the count.
+     */
+    long codelistMetadataBuilds()
+    {
+        DefineCodelistMetadata md = codelistMetadata;
+        return md == null ? 0 : md.builds();
+    }
+
+
     private DefineCodelistMetadata codelistMetadata()
     {
         if (codelistMetadata == null)

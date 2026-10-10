@@ -68,7 +68,7 @@ public final class DefineCodelistMetadata
     /** The number of items with {@code def:ExtendedValue="Yes"}, when any (FM4 (a)). */
     public static final String EXTENDED_VALUES = "extendedValues";
 
-    /** The description of the resolved {@code def:CommentDef}. */
+    /** The description of the resolved {@code def:CommentDef}; the raw OID when unresolved. */
     public static final String COMMENT = "comment";
 
     /** The {@code Dictionary} of an {@code ExternalCodeList}. */
@@ -85,12 +85,15 @@ public final class DefineCodelistMetadata
             NCI_CODE, STANDARD, STANDARD_OID, NON_STANDARD, EXTENDED_VALUES, COMMENT, DICTIONARY,
             DICTIONARY_VERSION);
 
-    /** How many codelist maps were built, for the tests of the lazy, once-per-codelist build. */
-    private static final AtomicLong BUILDS = new AtomicLong();
-
     private final Map<String, Standard> standardsByOid;
 
     private final Map<String, CommentDef> commentsByOid;
+
+    /**
+     * How many codelist maps this instance built, for the tests of the lazy, once-per-codelist
+     * build (per instance, so a test never depends on JVM-wide state; review L2).
+     */
+    private final AtomicLong builds = new AtomicLong();
 
     private DefineCodelistMetadata(Map<String, Standard> aStandards,
             Map<String, CommentDef> aComments)
@@ -141,14 +144,14 @@ public final class DefineCodelistMetadata
 
 
     /**
-     * The number of codelist maps built so far by any instance (a test instrument: a build that
-     * must not happen shows here).
+     * The number of codelist maps this instance built so far (a test instrument: a build that must
+     * not happen shows here).
      *
      * @return the count.
      */
-    static long builds()
+    long builds()
     {
-        return BUILDS.get();
+        return builds.get();
     }
 
 
@@ -163,7 +166,7 @@ public final class DefineCodelistMetadata
      */
     public Map<String, String> of(CodeList aCodelist)
     {
-        BUILDS.incrementAndGet();
+        builds.incrementAndGet();
         Map<String, String> res = new LinkedHashMap<>();
         put(res, DISPLAY_NAME, aCodelist.getName());
         put(res, OID, aCodelist.getOid());
@@ -189,7 +192,9 @@ public final class DefineCodelistMetadata
         String commentOid = aCodelist.getCommentOID();
         if (!CDT.isBlankOrNull(commentOid))
         {
-            put(res, COMMENT, DefineSupport.getDescriptionString(commentsByOid.get(commentOid)));
+            CommentDef comment = commentsByOid.get(commentOid);
+            put(res, COMMENT,
+                    comment != null ? DefineSupport.getDescriptionString(comment) : commentOid);
         }
         ExternalCodeList ext = aCodelist.getExternalCodeList();
         if (ext != null)

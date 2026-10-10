@@ -3,7 +3,6 @@ package net.cumba.datatable.provider.define.metadata;
 // OSS-IDENTITY provider-define: byte-identical in cumba-datatable-cdisc and cumba-oss-datatable.
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -129,7 +128,7 @@ class DefineCodelistMetadataTest
 
 
     @Test
-    void anUnresolvedStandardIsItsRawOid_andAnUnresolvedCommentIsAbsent()
+    void anUnresolvedStandardOrCommentIsItsRawOid()
     {
         DefineCodelistMetadata md = DefineCodelistMetadata
                 .of(define(List.of(fullCodelist()), List.of(), List.of()));
@@ -138,7 +137,8 @@ class DefineCodelistMetadataTest
 
         assertEquals("STD.CT", m.get(DefineCodelistMetadata.STANDARD));
         assertEquals("STD.CT", m.get(DefineCodelistMetadata.STANDARD_OID));
-        assertFalse(m.containsKey(DefineCodelistMetadata.COMMENT));
+        assertEquals("COM.SEX", m.get(DefineCodelistMetadata.COMMENT),
+                "an unresolved CommentOID shows its raw OID, like the standard (review L4)");
     }
 
 

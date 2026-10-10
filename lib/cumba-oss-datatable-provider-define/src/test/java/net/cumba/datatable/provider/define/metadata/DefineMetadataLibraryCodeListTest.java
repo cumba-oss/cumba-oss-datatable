@@ -368,21 +368,20 @@ class DefineMetadataLibraryCodeListTest
     {
         CodeList cl = CodeList.builder().oid("CL.B").name("B").dataType("text")
                 .description(description("B")).build();
-        IMetadataLibrary lib = buildLibrary(List.of(cl));
+        DefineMetadataLibrary lib = (DefineMetadataLibrary) buildLibrary(List.of(cl));
         ICodeList found = lib.getCodelist("$B").orElseThrow();
 
-        long before = DefineCodelistMetadata.builds();
         assertTrue(found.getMetaValue("CodelistConceptId").isEmpty());
         assertTrue(found.getMetaValue("CodelistSubmissionValue").isEmpty());
         assertEquals("B", found.getMetaValue("label").orElseThrow());
-        assertEquals(before, DefineCodelistMetadata.builds(),
+        assertEquals(0, lib.codelistMetadataBuilds(),
                 "an engine key or the label never builds the format-level map (review L3)");
 
         assertTrue(found.getMetaValue("format." + DefineCodelistMetadata.OID).isPresent());
-        assertEquals(before + 1, DefineCodelistMetadata.builds(), "built on first format. key");
+        assertEquals(1, lib.codelistMetadataBuilds(), "built on first format. key");
         found.getMetaKeys();
         found.getMetaValue("format." + DefineCodelistMetadata.DISPLAY_NAME);
-        assertEquals(before + 1, DefineCodelistMetadata.builds(), "built once per codelist");
+        assertEquals(1, lib.codelistMetadataBuilds(), "built once per codelist");
     }
 
 
