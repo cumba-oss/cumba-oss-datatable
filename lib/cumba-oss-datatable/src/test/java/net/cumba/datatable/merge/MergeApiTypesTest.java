@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.text.MessageFormat;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Optional;
@@ -385,10 +386,25 @@ class MergeApiTypesTest
 
 
     @Test
+    void keyDropWarning_namesThePartnerTheKeyAsAuthoredAndTheCarrier()
+    {
+        assertEquals("VISITNUM", KeyDropWarning.keyText("VISITNUM", "VISITNUM"));
+        assertEquals("AESEQ/FASEQ", KeyDropWarning.keyText("AESEQ", "FASEQ"),
+                "two spellings of one key (sided, or qualified) read LEFT/RIGHT");
+        assertEquals("SV: key column VISITNUM is present on one side only (AE) and is ignored",
+                KeyDropWarning.format("SV", "VISITNUM", "AE"));
+        assertEquals(KeyDropWarning.format("SV", "VISITNUM", "AE"),
+                MessageFormat.format(KeyDropWarning.TEMPLATE, "SV", "VISITNUM", "AE"),
+                "format is the constant filled in, so a log line logged with the raw pattern reads"
+                        + " the same");
+    }
+
+
+    @Test
     void exceptions_carryTheirMessages()
     {
         assertTrue(new DegenerateJoinKeyException("DM", List.of("A", "B")).getMessage()
-                .contains("(A, B)"));
+                .contains("no key column of (A, B) is present on both"));
         JoinKeyTypeMismatchException same = new JoinKeyTypeMismatchException("DM", "K", "K",
                 "Numeric", "Character");
         assertTrue(same.getMessage()
