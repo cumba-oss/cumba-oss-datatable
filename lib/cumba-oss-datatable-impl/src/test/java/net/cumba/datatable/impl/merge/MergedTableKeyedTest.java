@@ -296,27 +296,59 @@ class MergedTableKeyedTest
 
 
     @Test
-    void jkmR7_absentOnOneSideReadsTheOtherSidesTypeDefault_absentOnBothLeavesTheKey()
+    void regQ3_aColumnOnOneSideOnlyLeavesTheKey_absentOnBothLeavesItToo()
     {
-        // DM lacks STUDYID: AE's STUDYID must equal "" (the character default) to match — so a
-        // populated AE STUDYID never pairs, a blank one does.
+        // DM lacks STUDYID: the component leaves the key (REG-Q3), USUBJID alone pairs — the
+        // retired JKM R7 default ("" on DM's side) paired only AE's blank STUDYID
         IDataTable ae = ae("S1,AE,01-001,1,HEADACHE", ",AE,01-002,1,RASH");
         IDataTable dm = table("DM", "USUBJID,AGE:N", "01-001,54", "01-002,61");
         MergedTable t = MergedTables
                 .build(request(ae, dm).keyed(dmJoin().joinType(JoinType.LEFT).build()).build());
-        assertEquals(List.of(UNSUPPLIED, "61"), column(t, "DM.AGE"));
+        assertEquals(List.of("54", "61"), column(t, "DM.AGE"));
         // absent on BOTH sides: the component leaves the key, USUBJID alone pairs
         IDataTable ae2 = table("AE", "USUBJID,AESEQ:N", "01-001,1");
         MergedTable t2 = MergedTables.build(request(ae2, dm).keyed(dmJoin().build()).build());
         assertEquals(List.of("54"), column(t2, "DM.AGE"));
-        // a numeric column absent on one side contributes MIS, which pairs a MIS cell only
+        // a numeric column on one side only leaves the key too (the retired default was MIS)
         IDataTable ae3 = table("AE", "USUBJID,AGE:N", "01-001,", "01-002,54");
         IDataTable dm3 = table("DM", "USUBJID,SEX", "01-001,M", "01-002,F");
         MergedTable t3 = MergedTables.build(request(ae3, dm3)
                 .keyed(KeyedMergeSpec.builder().qualifier("DM").key(KeyColumn.of("USUBJID"))
                         .key(KeyColumn.of("AGE")).joinType(JoinType.LEFT).build())
                 .build());
-        assertEquals(List.of("M", UNSUPPLIED), column(t3, "DM.SEX"));
+        assertEquals(List.of("M", "F"), column(t3, "DM.SEX"));
+    }
+
+
+    @Test
+    void regQ3_theDropFansOut_oneRecordPairsEveryPartnerRowTheDroppedColumnTold()
+    {
+        // SV's two rows of 01-001 differ ONLY in VISITNUM, which AE lacks: with VISITNUM out of the
+        // key the AE record has two partners — the fan-out the caller's WARNING makes traceable
+        IDataTable ae = table("AE", "USUBJID,AETERM", "01-001,HEADACHE");
+        IDataTable sv = table("SV", "USUBJID,VISITNUM:N,SVSTDTC", "01-001,1,2024-01-01",
+                "01-001,2,2024-02-01");
+        MergedTable t = MergedTables
+                .build(request(ae, sv)
+                        .keyed(KeyedMergeSpec.builder().qualifier("SV").key(KeyColumn.of("USUBJID"))
+                                .key(KeyColumn.of("VISITNUM")).joinType(JoinType.LEFT).build())
+                        .build());
+        assertEquals(List.of("2024-01-01", "2024-02-01"), column(t, "SV.SVSTDTC"));
+        assertEquals(List.of("HEADACHE", "HEADACHE"), column(t, "AETERM"));
+    }
+
+
+    @Test
+    void regQ3_noColumnOnBothSides_isRefusedEvenWhenEachIsOnOneSide()
+    {
+        // STUDYID on AE only, USUBJID on DM only: every component leaves the key, none is left
+        IDataTable ae = table("AE", "STUDYID,AETERM", "S1,HEADACHE");
+        IDataTable dm = table("DM", "USUBJID,SEX", "01-001,M");
+        DegenerateJoinKeyException ex = assertThrows(DegenerateJoinKeyException.class,
+                () -> MergedTables.build(request(ae, dm).keyed(dmJoin().build()).build()));
+        assertTrue(
+                ex.getMessage().contains("no key column of (STUDYID, USUBJID) is present on both"),
+                ex.getMessage());
     }
 
 

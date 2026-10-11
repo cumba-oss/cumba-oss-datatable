@@ -19,9 +19,9 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li>{@code qualifier} — the name the partner's columns are qualified with (the entry
  * {@code Name}); {@code dataset} is the name asked of the resolver, the qualifier when unset.</li>
- * <li>{@code keys} — in key order; a component absent on both sides is dropped (JKM R7), absent on
- * one side it contributes that side's type default, absent everywhere the merge is refused
- * ({@link DegenerateJoinKeyException}).</li>
+ * <li>{@code keys} — in key order; a component joins only when both sides carry it: present on one
+ * side only or on neither it is dropped ({@code REG-Q3}), and with no component left the merge is
+ * refused ({@link DegenerateJoinKeyException}).</li>
  * <li>{@code joinType} — {@code inner} by default (the corpus default).</li>
  * <li>{@code joinAsString} — compare the keys as rendered text (D4-R3).</li>
  * <li>{@code keepMissings} — whether blank-keyed rows take part (JKM R4; {@code true} by

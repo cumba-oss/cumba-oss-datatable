@@ -43,8 +43,8 @@ import org.jspecify.annotations.Nullable;
  * the IG's cardinality of each side ({@code ONE} / {@code MANY}, OD-5).</li>
  * <li>Every key component is classified by {@code cumba-datatable}'s
  * {@link GroupKeyPolicy#textKeyIdentity(IDataValue)} (JKM R5): a missing {@code STUDYID} or
- * {@code USUBJID} is its own identity, never the empty string; an absent column reads {@code ""}
- * (JKM R7).</li>
+ * {@code USUBJID} is its own identity, never the empty string; an absent column reads {@code ""} (a
+ * RELREC link keeps this rule: {@code REG-Q4} QK7 — not an author-keyed join).</li>
  * </ul>
  */
 public final class RelrecLinks
@@ -565,7 +565,7 @@ public final class RelrecLinks
      * D2 (c)): {@code cumba-datatable}'s {@link GroupKeyPolicy#textKeyIdentity(IDataValue)} under
      * {@code KEEP_MISSING_KEYS} — a stored or {@code NaN}-coded {@code MissingValue} is its
      * constant, {@code ""} is {@code ""}, a number is its cleaned text, text is text. An absent
-     * column is {@code ""}, the character type default (JKM R7).
+     * column is {@code ""}, the character type default (kept for RELREC links, {@code REG-Q4} QK7).
      *
      * @param aTable
      *            the table.

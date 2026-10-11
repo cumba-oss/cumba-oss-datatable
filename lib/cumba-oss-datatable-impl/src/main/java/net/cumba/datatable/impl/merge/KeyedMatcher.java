@@ -3,6 +3,8 @@ package net.cumba.datatable.impl.merge;
 // OSS-IDENTITY datatable-merge: byte-identical in cumba-datatable and cumba-oss-datatable.
 // Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
 
+import java.lang.System.Logger;
+import java.lang.System.Logger.Level;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
@@ -14,6 +16,7 @@ import net.cumba.datatable.merge.CardinalityViolationException;
 import net.cumba.datatable.merge.DegenerateJoinKeyException;
 import net.cumba.datatable.merge.JoinKeyTypeMismatchException;
 import net.cumba.datatable.merge.KeyColumn;
+import net.cumba.datatable.merge.KeyDropWarning;
 import net.cumba.datatable.merge.KeyedMergeSpec;
 import net.cumba.datatable.merge.MalformedSidedKeyException;
 import net.cumba.datatable.merge.UnresolvedQualifiedKeyException;
@@ -21,7 +24,6 @@ import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.GroupKeyPolicy;
 import net.cumba.datatable.values.GroupKeyPolicy.KeyPart;
 import net.cumba.datatable.values.IDataValue;
-import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -33,13 +35,14 @@ import org.jspecify.annotations.Nullable;
  * implementation.
  *
  * <p>
- * ⭐ <b>JKM R7 lives here.</b> A key component absent on both sides leaves the key; absent on one
- * side it contributes the other side's type default (the empty string for a character column, a
- * present value by D34 #1; {@code MIS} for a numeric one, since a numeric cell cannot hold
- * {@code ""}); absent everywhere the merge is refused. A qualified left name ({@code DM.RPATHCD})
- * the primary does not carry is a chained key the caller composes (§4) and is refused here; one the
- * primary carries — a nested merged primary that already holds {@code DM.RPATHCD} — is an ordinary
- * column and keys like any other (W1 review M3).
+ * ⭐ <b>{@code REG-Q3} lives here</b> (owner, 2026-10-09; it replaced {@code JKM R7}'s one-side type
+ * default). A key component joins only when <b>both</b> sides carry it: present on one side only it
+ * leaves the key (logged at DEBUG with the {@link KeyDropWarning} wording — the WARNING is the
+ * caller's, which knows the rule), absent on both it leaves the key silently, and with no component
+ * left the merge is refused ({@link DegenerateJoinKeyException}). A qualified left name
+ * ({@code DM.RPATHCD}) the primary does not carry is a chained key the caller composes (§4) and is
+ * refused here; one the primary carries — a nested merged primary that already holds
+ * {@code DM.RPATHCD} — is an ordinary column and keys like any other (W1 review M3).
  * </p>
  *
  * <p>
@@ -57,6 +60,8 @@ import org.jspecify.annotations.Nullable;
 public final class KeyedMatcher
 {
 
+    private static final Logger LOGGER = System.getLogger(KeyedMatcher.class.getName());
+
     private final IDataTable primary;
 
     private final IDataTable partner;
@@ -66,8 +71,6 @@ public final class KeyedMatcher
     private final List<KeyColumn> keys;
 
     private final int[] recordColIds;
-
-    private final KeyPart[] absentPart;
 
     private final boolean[] active;
 
@@ -88,14 +91,13 @@ public final class KeyedMatcher
     private final KeyPart @Nullable [] scratch;
 
     private KeyedMatcher(IDataTable aPrimary, IDataTable aPartner, KeyedMergeSpec aSpec,
-            int[] aRecordColIds, int[] aPartnerColIds, KeyPart[] aAbsentPart, boolean[] aActive)
+            int[] aRecordColIds, int[] aPartnerColIds, boolean[] aActive)
     {
         primary = aPrimary;
         partner = aPartner;
         dataset = aSpec.datasetName();
         keys = aSpec.getKeys();
         recordColIds = aRecordColIds;
-        absentPart = aAbsentPart;
         active = aActive;
         keepMissings = aSpec.isKeepMissings();
         asString = aSpec.isJoinAsString();
@@ -136,7 +138,7 @@ public final class KeyedMatcher
      *             when a component is numeric on one side and character on the other (D4) and the
      *             spec neither declares {@code joinAsString} nor excludes the type check.
      * @throws DegenerateJoinKeyException
-     *             when no component is present on either side.
+     *             when no component is present on both sides.
      */
     public static KeyedMatcher of(IDataTable aPrimary, IDataTable aPartner, KeyedMergeSpec aSpec)
     {
@@ -151,7 +153,6 @@ public final class KeyedMatcher
         int n = keys.size();
         int[] recordColIds = new int[n];
         int[] partnerColIds = new int[n];
-        KeyPart[] absentPart = new KeyPart[n];
         boolean[] active = new boolean[n];
         int nActive = 0;
         for (int i = 0; i < n; i++)
@@ -166,17 +167,23 @@ public final class KeyedMatcher
             partnerColIds[i] = cm.getColumnIndex(key.right());
             boolean inPrimary = recordColIds[i] >= 0;
             boolean inPartner = partnerColIds[i] >= 0;
-            active[i] = inPrimary || inPartner;
-            absentPart[i] = KeyPart.EMPTY;
+            // REG-Q3: a component joins only when both sides carry it; on one side only it
+            // leaves the key (the caller WARNs, naming the rule), on neither it leaves silently
+            active[i] = inPrimary && inPartner;
             if (!active[i])
             {
+                if (inPrimary || inPartner)
+                {
+                    LOGGER.log(Level.DEBUG, KeyDropWarning.TEMPLATE, dataset,
+                            KeyDropWarning.keyText(key.left(), key.right()),
+                            inPrimary ? nameOf(aPrimary) : nameOf(aPartner));
+                }
                 continue;
             }
             nActive++;
-            DataValueType primaryType = inPrimary ? pm.getColumn(recordColIds[i]).getType() : null;
-            DataValueType partnerType = inPartner ? cm.getColumn(partnerColIds[i]).getType() : null;
-            if (aSpec.isTypeChecked() && !aSpec.isJoinAsString() && primaryType != null
-                    && partnerType != null)
+            DataValueType primaryType = pm.getColumn(recordColIds[i]).getType();
+            DataValueType partnerType = cm.getColumn(partnerColIds[i]).getType();
+            if (aSpec.isTypeChecked() && !aSpec.isJoinAsString())
             {
                 // D4-R1/R2: the join-key type identity, decided here because this is the only
                 // site holding both sides' declared types. A kind of null (BOOLEAN, MISSING, ...)
@@ -189,18 +196,13 @@ public final class KeyedMatcher
                             primaryKind.text(), partnerKind.text());
                 }
             }
-            // The present side's declared type decides what the absent side contributes.
-            DataValueType type = Objects.requireNonNull(inPrimary ? primaryType : partnerType);
-            absentPart[i] = ColumnKind.isNumeric(type) ? KeyPart.missing(MissingValue.MIS)
-                    : KeyPart.EMPTY;
         }
         if (nActive == 0)
         {
             throw new DegenerateJoinKeyException(dataset,
                     keys.stream().map(KeyColumn::left).toList());
         }
-        return new KeyedMatcher(aPrimary, aPartner, aSpec, recordColIds, partnerColIds, absentPart,
-                active);
+        return new KeyedMatcher(aPrimary, aPartner, aSpec, recordColIds, partnerColIds, active);
     }
 
 
@@ -465,8 +467,8 @@ public final class KeyedMatcher
 
     private KeyPart keyPart(@Nullable KeyCellReader[] aReaders, int aComponent, long aRow)
     {
-        KeyCellReader reader = aReaders[aComponent];
-        KeyPart part = reader == null ? absentPart[aComponent] : reader.read(aRow);
+        // an active component is present on both sides (REG-Q3), so its reader exists
+        KeyPart part = Objects.requireNonNull(aReaders[aComponent]).read(aRow);
         return asString ? part.asText() : part;
     }
 

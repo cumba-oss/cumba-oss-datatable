@@ -12,6 +12,7 @@ import java.util.Set;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.merge.KeyColumn;
+import net.cumba.datatable.merge.KeyDropWarning;
 import net.cumba.datatable.merge.MalformedSidedKeyException;
 import net.cumba.datatable.merge.RelrecLinks;
 
@@ -21,9 +22,10 @@ import net.cumba.datatable.merge.RelrecLinks;
  *
  * <ul>
  * <li>a plain component ({@code STUDYID}, {@code {left: DOMAIN, right: RDOMAIN}}, ...) is used when
- * present on both sides; present on one side only it is ignored with a log WARNING; present on
- * neither it is ignored. {@code {left: DOMAIN, right: RDOMAIN}} with no {@code DOMAIN} column on
- * the base compares {@code RDOMAIN} against the base's domain (P-15);</li>
+ * present on both sides; present on one side only it is ignored with a log WARNING (the
+ * {@link KeyDropWarning} wording every key drop shares, {@code REG-Q3}); present on neither it is
+ * ignored. {@code {left: DOMAIN, right: RDOMAIN}} with no {@code DOMAIN} column on the base
+ * compares {@code RDOMAIN} against the base's domain (P-15);</li>
  * <li>a <b>subject</b> component ({@code USUBJID}, {@code POOLID}, {@code APID}, {@code SPDEVID})
  * is a plain component whose absence everywhere is an error for every qualifier: with no subject
  * key usable, nothing identifies the record. Whether a supplemental row names a subject at all is
@@ -154,11 +156,8 @@ final class SuppKeyShape
             }
             else if (suppCol >= 0 || baseCol >= 0)
             {
-                LOGGER.log(Level.WARNING,
-                        "{0}: key column {1} is present on one side only ({2}) and is ignored",
-                        aSuppName,
-                        key.left().equals(key.right()) ? key.left()
-                                : key.left() + "/" + key.right(),
+                LOGGER.log(Level.WARNING, KeyDropWarning.TEMPLATE, aSuppName,
+                        KeyDropWarning.keyText(key.left(), key.right()),
                         suppCol >= 0 ? aSuppName : KeyedMatcher.nameOf(aBase));
             }
         }
