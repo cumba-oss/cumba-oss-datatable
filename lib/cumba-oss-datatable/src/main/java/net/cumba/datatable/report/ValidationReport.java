@@ -1,5 +1,8 @@
 package net.cumba.datatable.report;
 
+// OSS-IDENTITY datatable-merge: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.util.Collections;
 import java.util.List;
@@ -31,7 +34,8 @@ public class ValidationReport
 
     /**
      * The CORE identifiers of every rule for which at least one <em>non-skipped</em> execution was
-     * recorded, in first-seen order and without duplicates.
+     * recorded, in first-seen order — a <b>multiset</b> since D65: one entry per executed (rule ×
+     * dataset), so a rule executed on three data sets appears three times.
      *
      * <p>
      * This is the companion {@link #skippedRules} needs to be readable. A clean execution leaves no
@@ -42,6 +46,14 @@ public class ValidationReport
      * </p>
      */
     private final @Nullable List<String> executedCoreIds;
+
+    /**
+     * Everything the report's source says beyond the findings — the run, its rules and its data
+     * sets (PLAN-full-validation-report-view). Attached by the reader of a file or by the engine
+     * runner of an internal run; {@code null} when the source reports none, which
+     * {@link #getSummary()} answers as {@link ValidationRunSummary#EMPTY}.
+     */
+    private final @Nullable ValidationRunSummary summary;
 
     /**
      * Returns a read only view to the internal list of members.
@@ -88,6 +100,18 @@ public class ValidationReport
             return Collections.emptyList();
         }
         return Collections.unmodifiableList(executedCoreIds);
+    }
+
+
+    /**
+     * Returns the run summary.
+     *
+     * @return the summary; {@link ValidationRunSummary#EMPTY} when the source reports none, never
+     *         {@code null}.
+     */
+    public ValidationRunSummary getSummary()
+    {
+        return summary != null ? summary : ValidationRunSummary.EMPTY;
     }
 
 
