@@ -544,8 +544,11 @@ class DictionaryInstallerTest
         String sources = Files.readString(store.resolve(DictionaryInstaller.SOURCES_FILE));
         assertTrue(sources.contains("- Artefact: data.txt — SHA-256 " + sha256(original) + " — "),
                 sources);
-        assertEquals(java.util.List.of(), new LocalDictionarySource(raw).artefacts(),
-                "the read record is cleared when the install ends");
+        try (LocalDictionarySource probe = new LocalDictionarySource(raw))
+        {
+            assertEquals(java.util.List.of(), probe.artefacts(),
+                    "the read record is cleared when the install ends");
+        }
     }
 
 
