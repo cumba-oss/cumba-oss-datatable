@@ -389,11 +389,15 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      * header cell whose cached value element is EMPTY ({@code <f>…</f><v></v>}), which is what
      * openpyxl - and therefore {@code pandas.DataFrame.to_excel} - writes for every formula, since
      * neither evaluates formulas. The streaming reader reports that cell as {@code FORMULA} with
-     * cached type {@code NUMERIC} (so it is a valid header) and then throws
-     * {@code NumberFormatException("empty String")} from {@code getNumericCellValue()}, so the name
-     * degrades to blank. Verified end to end through {@code StreamingReader} on an
-     * openpyxl-produced file; plain {@code XSSFWorkbook} returns {@code 0.0} for the same cell
-     * instead, which is why probing with non-streaming POI makes this path look unreachable.
+     * cached type {@code NUMERIC} (so it is a valid header) whose stored value is blank, and
+     * {@link ExcelRow#isBlankNumeric} makes {@link ExcelRow#getCellValue} read such a cell as
+     * {@code null}, so the name degrades to blank. That guard is what decides it, NOT the reader:
+     * excel-streaming-reader up to 5.3.0 threw {@code NumberFormatException("empty String")} from
+     * {@code getNumericCellValue()} for a blank stored value (and the provider degraded the cell),
+     * but 5.3.2 returns {@code 0.0}, as plain {@code XSSFWorkbook} always did - without the guard
+     * every such header would be named {@code "0.0"} and the second one would fail the whole sheet
+     * with a duplicate column name. Verified end to end through {@code StreamingReader} on an
+     * openpyxl-produced file.
      * <p>
      * Dropping the column instead of naming it positionally would silently discard a column that
      * has data. {@code pandas.read_excel} answers the same file the same way, naming that column
@@ -465,6 +469,11 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      * A cell is considered a header if it is present, not blank, not an error, and (for formula
      * cells) the cached formula result is not blank or error. Used by
      * {@link #determineColumns(Row)} to decide where the header range stops.
+     * <p>
+     * ⚠ Decides from the TYPE only, never from the value: a numeric cell whose stored value is
+     * blank ({@link ExcelRow#isBlankNumeric} - the uncalculated formula openpyxl writes) must stay
+     * a header cell, or the header range would stop there and silently drop that column and every
+     * one after it. Its name is decided by {@link #headerName}.
      */
     private static boolean isHeaderCell(Cell aCell)
     {
@@ -639,7 +648,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
                 // itself.
                 try
                 {
-                    if (c != null && effectiveType(c) == CellType.NUMERIC)
+                    if (c != null && effectiveType(c) == CellType.NUMERIC && !isBlankNumeric(c))
                     {
                         if (DateUtil.isCellDateFormatted(c))
                         {
@@ -688,6 +697,37 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         {
             CellType t = aCell.getCellType();
             return t == CellType.FORMULA ? aCell.getCachedFormulaResultType() : t;
+        }
+
+
+        /**
+         * Whether the cell is NUMERIC by its {@link #effectiveType} - a plain numeric cell, or a
+         * formula whose cached result is numeric - but its stored value is BLANK. Such a cell has
+         * no value and reads as missing: it is never a number, never a date and never makes a
+         * column a date column.
+         * <p>
+         * The shapes: an uncalculated formula with an EMPTY cached value element
+         * ({@code <f>…</f><v></v>}), which openpyxl - and therefore
+         * {@code pandas.DataFrame.to_excel} - writes for EVERY formula, since neither evaluates
+         * formulas; and a plain or {@code t="n"} cell with an empty value ({@code <c><v></v></c>},
+         * {@code <c t="n"><v/></c>}).
+         * <p>
+         * Why the provider decides this itself (owner ruling R1, 2026-10-14):
+         * excel-streaming-reader up to 5.3.0 threw {@code NumberFormatException("empty String")}
+         * from {@code getNumericCellValue()} for a blank stored value, and the provider degraded
+         * the cell to missing; 5.3.2 returns {@code 0.0} instead, which would silently load an
+         * unevaluated data formula as a present {@code 0} and a date-styled one as 1899-12-31.
+         * {@code getStringCellValue()} returns the stored text in both versions ({@code ""} here,
+         * {@code "0"} for a real zero), and {@code isBlank()} also covers a whitespace-only value,
+         * which 5.3.2 trims to {@code 0.0} as well. Every numeric read goes through this check
+         * first: {@link #rawNumeric} and the date probe in the constructor.
+         * <p>
+         * ⚠ Call it only inside a {@code try}: {@code getCellType()} itself can throw for a cell
+         * whose stored content the reader cannot convert (see the constructor's H4 note).
+         */
+        private static boolean isBlankNumeric(Cell aCell)
+        {
+            return effectiveType(aCell) == CellType.NUMERIC && aCell.getStringCellValue().isBlank();
         }
 
 
@@ -965,10 +1005,13 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * {@link ExcelTableDataParser#addData2Column}, which choose the converted value for every
          * cell in a column once that column is decided to be a date column, regardless of any one
          * cell's own style.
+         * <p>
+         * Returns {@code null} (missing) for a cell whose stored value is blank - see
+         * {@link #isBlankNumeric}; excel-streaming-reader 5.3.2 would answer {@code 0.0} for it.
          */
         private @Nullable Object rawNumeric(Cell aCell)
         {
-            return aCell.getNumericCellValue();
+            return isBlankNumeric(aCell) ? null : aCell.getNumericCellValue();
         }
     }
 
