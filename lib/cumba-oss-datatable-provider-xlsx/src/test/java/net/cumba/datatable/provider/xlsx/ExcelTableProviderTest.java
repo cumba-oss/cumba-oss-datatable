@@ -1,5 +1,6 @@
 package net.cumba.datatable.provider.xlsx;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -17,6 +18,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.TimeZone;
 import net.cumba.datatable.DataTableColumnMeta;
@@ -2074,13 +2076,16 @@ class ExcelTableProviderTest
      * element (what openpyxl, and therefore {@code pandas.DataFrame.to_excel}, writes for every
      * formula), a plain cell with an empty value, and an explicitly {@code t="n"}-typed cell with
      * an empty value (the shape excel-streaming-reader's own 5.3.2 change names).
+     * {@code WHITESPACE} is a whitespace-only stored value, which the reader cannot read at all (it
+     * throws from {@code getCellType()}), so it degrades to missing by a different path.
      */
     private enum BlankNumeric
     {
 
         UNCALCULATED_FORMULA("", "<f>1+1</f><v></v>"),
         PLAIN("", "<v></v>"),
-        TYPE_N(" t=\"n\"", "<v/>");
+        TYPE_N(" t=\"n\"", "<v/>"),
+        WHITESPACE("", "<v> </v>");
 
         private final String typeAttribute;
 
@@ -2214,6 +2219,158 @@ class ExcelTableProviderTest
                         + ": a column of blank numeric cells is all missing");
             }
         }
+    }
+
+
+    /**
+     * A REAL number under a number format that renders it as empty text stays a present number,
+     * through every entry point, and a real {@code 0} header under such a format keeps the name
+     * {@code "0.0"} that excel-streaming-reader 5.3.0 gave it. The formats are the ordinary
+     * zero-hiding ones accounting sheets use - {@code 0;-0;""} and {@code #,##0;-#,##0;""} (third
+     * section empty) and {@code [=0]"";General} (a condition) - plus {@code 0;"";""}, which hides
+     * every negative number, so a real {@code -5} renders empty as well.
+     * <p>
+     * Guards the review finding against the first 5.3.2 guard: the streaming reader's
+     * {@code getStringCellValue()} is the FORMATTED display text, not the stored value, so deciding
+     * blankness from it alone loaded each of these cells as MISSING. Also carries the
+     * whitespace-only stored value {@code <v> </v>}, which degrades to missing through the reader
+     * throwing from {@code getCellType()} (both versions), not through the blank-value guard.
+     */
+    @Test
+    void testRealNumbersUnderFormatsThatRenderThemEmptyStayPresent() throws Exception
+    {
+        String[] names =
+        {
+                "ID", "Z1", "Z2", "Z3", "NEG", "0.0", "WS"
+        };
+        String[] formats =
+        {
+                null, "0;-0;\"\"", "#,##0;-#,##0;\"\"", "[=0]\"\";General", "0;\"\";\"\"",
+                "0;-0;\"\"", null
+        };
+        URI uri = writeWithBlankNumericCells(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            DataFormat df = wb.createDataFormat();
+            CellStyle[] styles = new CellStyle[formats.length];
+            for (int c = 0; c < formats.length; c++)
+            {
+                if (formats[c] != null)
+                {
+                    styles[c] = wb.createCellStyle();
+                    styles[c].setDataFormat(df.getFormat(formats[c]));
+                }
+            }
+            Row h = s.createRow(0);
+            for (int c = 0; c < names.length; c++)
+            {
+                if (c == 5)
+                {
+                    h.createCell(c).setCellValue(0.0);
+                    h.getCell(c).setCellStyle(styles[c]);
+                }
+                else
+                {
+                    h.createCell(c).setCellValue(names[c]);
+                }
+            }
+            double[][] data =
+            {
+                    {
+                            0, 0, 0, -5, 3, 1
+                    },
+                    {
+                            7, 8, 9, 4, 0, 2
+                    }
+            };
+            for (int r = 0; r < 2; r++)
+            {
+                Row row = s.createRow(r + 1);
+                row.createCell(0).setCellValue("r" + (r + 1));
+                for (int c = 1; c < names.length; c++)
+                {
+                    row.createCell(c).setCellValue(data[r][c - 1]);
+                    if (styles[c] != null)
+                    {
+                        row.getCell(c).setCellStyle(styles[c]);
+                    }
+                }
+            }
+        }, java.util.Map.of("G2", BlankNumeric.WHITESPACE));
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] inferred = ExcelTableProvider.inferColumns(openSheet(uri), uri, 50);
+
+        assertEquals(names.length, table.getColumnCount());
+        assertEquals(2, table.getRowCount());
+        List<Executable> claims = new ArrayList<>();
+        for (int c = 1; c <= 3; c++)
+        {
+            Object value = table.getValue(0, c);
+            String name = names[c];
+            claims.add(() -> assertEquals((Object) 0.0, value,
+                    name + ": a real 0 under a zero-hiding format is a present 0"));
+        }
+        claims.add(() -> assertEquals((Object) (-5.0), table.getValue(0, 4),
+                "a real -5 under 0;\"\";\"\" is a present -5"));
+        claims.add(() -> assertEquals((Object) 0.0, table.getValue(1, 5),
+                "a real 0 data cell under the header's zero-hiding format is a present 0"));
+        claims.add(() -> assertEquals((Object) 3.0, table.getValue(0, 5)));
+        claims.add(() -> assertEquals((Object) 7.0, table.getValue(1, 1)));
+        claims.add(() -> assertEquals((Object) 4.0, table.getValue(1, 4)));
+        claims.add(() -> assertInstanceOf(MissingValue.class, table.getValue(0, 6),
+                "a whitespace-only stored value is missing, not 0"));
+        claims.add(() -> assertEquals((Object) 2.0, table.getValue(1, 6)));
+        for (int c = 1; c < names.length; c++)
+        {
+            String name = names[c];
+            for (DataTableColumnMeta col : List.of(table.getMetaData().getColumn(c),
+                    meta.getColumn(c), inferred[c]))
+            {
+                claims.add(() -> assertEquals(name, col.getName(),
+                        "a real 0 header under a zero-hiding format is named 0.0, as in 5.3.0"));
+                claims.add(() -> assertEquals(DataValueType.DOUBLE, col.getType(), name));
+                claims.add(() -> assertNull(col.getDisplayFormat(), name));
+            }
+        }
+        assertAll(claims);
+    }
+
+
+    /**
+     * The one shape the public API cannot tell apart: a cell whose number format hides zero AND
+     * whose stored value is blank ({@code <c s="…"><v></v></c>} under {@code 0;-0;""}). Its display
+     * text is empty and its numeric value reads {@code 0.0} on excel-streaming-reader 5.3.2 -
+     * exactly what a real {@code 0} under that format gives. It reads as a present {@code 0}: the
+     * coordinator's interim choice (2026-10-14), pending an owner question, isolated in one branch
+     * of {@code ExcelRow.isBlankNumeric}. The same blank cell under {@code General} is missing (see
+     * {@link #testBlankNumericDataCellsLoadAsMissingNotZeroInEveryShape}). If the owner rules the
+     * other way, this test flips with that branch.
+     */
+    @Test
+    void testBlankStoredValueUnderAZeroHidingFormatReadsAsPresentZeroInterim() throws Exception
+    {
+        URI uri = writeWithBlankNumericCells(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            CellStyle hideZero = wb.createCellStyle();
+            hideZero.setDataFormat(wb.createDataFormat().getFormat("0;-0;\"\""));
+            s.createRow(0).createCell(0).setCellValue("V");
+            for (int r = 1; r <= 2; r++)
+            {
+                Row row = s.createRow(r);
+                row.createCell(0).setCellValue(r);
+                row.getCell(0).setCellStyle(hideZero);
+            }
+        }, java.util.Map.of("A2", BlankNumeric.PLAIN));
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(0).getType());
+        assertEquals((Object) 0.0, table.getValue(0, 0),
+                "interim: a blank stored value under a zero-hiding format reads as a present 0");
+        assertEquals(2.0, (double) table.getValue(1, 0), 0.0);
     }
 
 

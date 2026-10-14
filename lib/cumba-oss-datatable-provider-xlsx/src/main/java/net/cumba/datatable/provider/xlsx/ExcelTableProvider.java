@@ -29,8 +29,11 @@ import net.cumba.datatable.provider.IDataTableProvider;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
 import net.cumba.datatable.values.TemporalOrigin;
+import org.apache.poi.ss.usermodel.BuiltinFormats;
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -160,12 +163,13 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             // must not be left to the downstream parser construction to report.
             throw noHeaderColumns(aSheet);
         }
-        ExcelRow headRow = new ExcelRow(row, columnIndices);
+        BlankNumericProbe probe = new BlankNumericProbe();
+        ExcelRow headRow = new ExcelRow(row, columnIndices, probe);
 
         List<ExcelRow> guessRows = new ArrayList<>();
         while (rows.hasNext())
         {
-            guessRows.add(new ExcelRow(rows.next(), columnIndices));
+            guessRows.add(new ExcelRow(rows.next(), columnIndices, probe));
             if (guessRows.size() >= guessingRowCount)
             {
                 break;
@@ -218,13 +222,14 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             throw noHeaderColumns(aSheet);
         }
 
-        ExcelRow headRow = new ExcelRow(row, columnIndices);
+        BlankNumericProbe probe = new BlankNumericProbe();
+        ExcelRow headRow = new ExcelRow(row, columnIndices, probe);
 
         List<ExcelRow> guessRows = new ArrayList<>();
 
         while (rows.hasNext())
         {
-            guessRows.add(new ExcelRow(rows.next(), columnIndices));
+            guessRows.add(new ExcelRow(rows.next(), columnIndices, probe));
             if (guessRows.size() >= guessingRowCount)
             {
                 break;
@@ -262,7 +267,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         }
         while (rows.hasNext())
         {
-            tp.addDataRow(new ExcelRow(rows.next(), columnIndices));
+            tp.addDataRow(new ExcelRow(rows.next(), columnIndices, probe));
         }
 
         return tp.completeTable();
@@ -303,12 +308,13 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         {
             return new DataTableColumnMeta[0];
         }
-        ExcelRow headRow = new ExcelRow(headerRow, columnIndices);
+        BlankNumericProbe probe = new BlankNumericProbe();
+        ExcelRow headRow = new ExcelRow(headerRow, columnIndices, probe);
 
         List<ExcelRow> guessRows = new ArrayList<>();
         while (rows.hasNext() && guessRows.size() < aSampleRowCount)
         {
-            guessRows.add(new ExcelRow(rows.next(), columnIndices));
+            guessRows.add(new ExcelRow(rows.next(), columnIndices, probe));
         }
 
         int colCount = headRow.getColumnCount();
@@ -549,6 +555,66 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         return res;
     }
 
+    /**
+     * The format half of {@link ExcelRow#isBlankNumeric}: whether a numeric cell whose display text
+     * is empty and whose numeric value reads {@code 0.0} has a BLANK stored value, decided from the
+     * cell's number format.
+     * <p>
+     * One instance per load ({@link #buildMeta}, {@link #provide(Sheet, URI)},
+     * {@link #inferColumns}), used by one thread: {@link DataFormatter} is not thread-safe (it
+     * caches parsed formats), so it is never shared between loads. The formatter is created on
+     * first need only - the probe is reached only for a cell whose display text is blank and whose
+     * value reads {@code 0.0}, so a sheet without such a cell never allocates one.
+     */
+    private static final class BlankNumericProbe
+    {
+
+        private @Nullable DataFormatter formatter;
+
+        /**
+         * Whether the empty display text of a numeric cell whose value reads {@code 0.0} means that
+         * its stored value is blank, given the cell's style. Mirrors how excel-streaming-reader
+         * builds the display text: no style, or a style whose format the reader cannot name, means
+         * the text IS the stored text, so an empty text is a blank stored value; otherwise the text
+         * is the formatted value, and only a format that renders {@code 0} as non-empty text proves
+         * that the stored value was not a {@code 0}.
+         *
+         * @param aStyle
+         *            the cell's style, {@code null} when the workbook has no styles table.
+         * @return {@code true} when the stored value is blank (the cell is missing).
+         */
+        boolean emptyTextMeansBlankValue(@Nullable CellStyle aStyle)
+        {
+            if (aStyle == null)
+            {
+                return true;
+            }
+            String format = aStyle.getDataFormatString();
+            if (format == null)
+            {
+                format = BuiltinFormats.getBuiltinFormat(aStyle.getDataFormat());
+            }
+            if (format == null)
+            {
+                return true;
+            }
+            if (formatter == null)
+            {
+                formatter = new DataFormatter();
+            }
+            if (formatter.formatRawCellContents(0.0, aStyle.getDataFormat(), format).isBlank())
+            {
+                // ⚠ INTERIM (coordinator, 2026-10-14, pending an owner question): the format hides
+                // a zero, so a real 0 and a blank stored value give the same empty text and the
+                // same 0.0 - the public API cannot tell them apart. Read as a present 0, which is
+                // what every real zero under such a format needs. Flipping this one branch to
+                // `return true` makes the corner missing instead; the test
+                // testBlankStoredValueUnderAZeroHidingFormatReadsAsPresentZeroInterim pins it.
+                return false;
+            }
+            return true;
+        }
+    }
 
     /**
      * F-B15: per-column displayFormat hint inferred from whether any sample cell in the column was
@@ -628,7 +694,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          */
         private final double[] dateSasSeconds;
 
-        ExcelRow(Row aRow, int[] aColumnIndices)
+        ExcelRow(Row aRow, int[] aColumnIndices, BlankNumericProbe aProbe)
         {
             values = new Object[aColumnIndices.length];
             isDate = new boolean[aColumnIndices.length];
@@ -648,7 +714,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
                 // itself.
                 try
                 {
-                    if (c != null && effectiveType(c) == CellType.NUMERIC && !isBlankNumeric(c))
+                    if (c != null && effectiveType(c) == CellType.NUMERIC
+                            && !isBlankNumeric(c, aProbe))
                     {
                         if (DateUtil.isCellDateFormatted(c))
                         {
@@ -662,7 +729,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
                     LOGGER.log(Level.DEBUG, "Cell type/date probe failed for column {0}: {1}", i,
                             ex.getMessage());
                 }
-                values[i] = getCellValue(c);
+                values[i] = getCellValue(c, aProbe);
             }
         }
 
@@ -717,17 +784,50 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * from {@code getNumericCellValue()} for a blank stored value, and the provider degraded
          * the cell to missing; 5.3.2 returns {@code 0.0} instead, which would silently load an
          * unevaluated data formula as a present {@code 0} and a date-styled one as 1899-12-31.
-         * {@code getStringCellValue()} returns the stored text in both versions ({@code ""} here,
-         * {@code "0"} for a real zero), and {@code isBlank()} also covers a whitespace-only value,
-         * which 5.3.2 trims to {@code 0.0} as well. Every numeric read goes through this check
-         * first: {@link #rawNumeric} and the date probe in the constructor.
          * <p>
-         * ⚠ Call it only inside a {@code try}: {@code getCellType()} itself can throw for a cell
-         * whose stored content the reader cannot convert (see the constructor's H4 note).
+         * The reader offers no public accessor for the stored text, so the check is built from
+         * three conditions, cheapest first:
+         * <ol>
+         * <li>{@code getStringCellValue()} is blank. ⚠ For a numeric cell this is the FORMATTED
+         * DISPLAY TEXT ({@code DataFormatter.formatRawCellContents} over the cell's number format),
+         * not the stored value - when the cell has a number format and a non-empty stored value;
+         * otherwise it is the stored text itself. A blank stored value therefore always gives a
+         * blank text, but so does a real number under a format that renders it empty: a real
+         * {@code 0} under {@code 0;-0;""}, {@code #,##0;-#,##0;""} or {@code [=0]"";General}, a
+         * real {@code -5} under {@code 0;"";""}. Blank text alone is necessary, never sufficient.
+         * Almost every real cell leaves here.</li>
+         * <li>{@code getNumericCellValue()} is {@code 0.0}, which is what 5.3.2 answers for a blank
+         * stored value. Any other number is a real value whose format hides it.</li>
+         * <li>The cell's own number format renders {@code 0} as non-empty text - see
+         * {@link BlankNumericProbe#emptyTextMeansBlankValue}. Then the empty text cannot come from
+         * a stored {@code 0}, so the stored value is blank. Only cells that reach this point pay
+         * for a format call.</li>
+         * </ol>
+         * ⚠ The one corner the public API cannot decide - a format that hides zero AND a blank
+         * stored value - reads as a present {@code 0}; see the interim branch in
+         * {@link BlankNumericProbe#emptyTextMeansBlankValue}.
+         * <p>
+         * A whitespace-only stored value ({@code <v> </v>}) never reaches this check:
+         * {@code getCellType()} itself throws for it, from the reader's formatter (5.3.0 and 5.3.2
+         * alike), so it degrades to missing through the callers' {@code catch}, not through
+         * {@code isBlank()}.
+         * <p>
+         * Every numeric read goes through this check first: {@link #rawNumeric} and the date probe
+         * in the constructor. ⚠ Call it only inside a {@code try}: {@code getCellType()} itself can
+         * throw for a cell whose stored content the reader cannot convert (see the constructor's H4
+         * note).
          */
-        private static boolean isBlankNumeric(Cell aCell)
+        private static boolean isBlankNumeric(Cell aCell, BlankNumericProbe aProbe)
         {
-            return effectiveType(aCell) == CellType.NUMERIC && aCell.getStringCellValue().isBlank();
+            if (effectiveType(aCell) != CellType.NUMERIC || !aCell.getStringCellValue().isBlank())
+            {
+                return false;
+            }
+            if (aCell.getNumericCellValue() != 0.0)
+            {
+                return false;
+            }
+            return aProbe.emptyTextMeansBlankValue(aCell.getCellStyle());
         }
 
 
@@ -878,7 +978,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         }
 
 
-        private @Nullable Object getCellValue(@Nullable Cell aCell)
+        private @Nullable Object getCellValue(@Nullable Cell aCell, BlankNumericProbe aProbe)
         {
             try
             {
@@ -889,7 +989,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
                 return switch (aCell.getCellType())
                 {
-                case NUMERIC -> rawNumeric(aCell);
+                case NUMERIC -> rawNumeric(aCell, aProbe);
                 case STRING -> CDT.tri(aCell.getStringCellValue());
                 // F-B15: BOOLEAN as Boolean.toString — keeps boolean columns flagged as such
                 // by isNumberOrMissing (parseable as 0/1 it is NOT, so they stay string-typed,
@@ -903,7 +1003,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
                 case FORMULA -> switch (aCell.getCachedFormulaResultType())
                 {
                 case STRING -> CDT.tri(aCell.getStringCellValue());
-                case NUMERIC -> rawNumeric(aCell);
+                case NUMERIC -> rawNumeric(aCell, aProbe);
                 case BOOLEAN -> Boolean.toString(aCell.getBooleanCellValue());
                 // Bug fix (H6): a FORMULA cell's own CellType is FORMULA, never ERROR, even when
                 // its CACHED result is an error — errorToken()'s getErrorCellValue() rejects any
@@ -1009,9 +1109,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * Returns {@code null} (missing) for a cell whose stored value is blank - see
          * {@link #isBlankNumeric}; excel-streaming-reader 5.3.2 would answer {@code 0.0} for it.
          */
-        private @Nullable Object rawNumeric(Cell aCell)
+        private @Nullable Object rawNumeric(Cell aCell, BlankNumericProbe aProbe)
         {
-            return isBlankNumeric(aCell) ? null : aCell.getNumericCellValue();
+            return isBlankNumeric(aCell, aProbe) ? null : aCell.getNumericCellValue();
         }
     }
 
