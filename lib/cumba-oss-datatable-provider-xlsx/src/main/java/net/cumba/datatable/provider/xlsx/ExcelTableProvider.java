@@ -602,17 +602,14 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             {
                 formatter = new DataFormatter();
             }
-            if (formatter.formatRawCellContents(0.0, aStyle.getDataFormat(), format).isBlank())
-            {
-                // ⚠ INTERIM (coordinator, 2026-10-14, pending an owner question): the format hides
-                // a zero, so a real 0 and a blank stored value give the same empty text and the
-                // same 0.0 - the public API cannot tell them apart. Read as a present 0, which is
-                // what every real zero under such a format needs. Flipping this one branch to
-                // `return true` makes the corner missing instead; the test
-                // testBlankStoredValueUnderAZeroHidingFormatReadsAsPresentZeroInterim pins it.
-                return false;
-            }
-            return true;
+            boolean zeroRendersEmpty = formatter
+                    .formatRawCellContents(0.0, aStyle.getDataFormat(), format).isBlank();
+            // Owner ruling R8 (2026-10-14): a cell whose number format renders 0 as blank and
+            // whose stored value reads 0.0 loads as a present 0, because the public API cannot
+            // tell an uncalculated formula from a real 0 there (same empty text, same 0.0) and
+            // real zeros under zero-hiding formats are the common case. Pinned by
+            // testBlankStoredValueUnderAZeroHidingFormatReadsAsPresentZero.
+            return !zeroRendersEmpty;
         }
     }
 
@@ -804,8 +801,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * for a format call.</li>
          * </ol>
          * ⚠ The one corner the public API cannot decide - a format that hides zero AND a blank
-         * stored value - reads as a present {@code 0}; see the interim branch in
-         * {@link BlankNumericProbe#emptyTextMeansBlankValue}.
+         * stored value - reads as a present {@code 0} (owner ruling R8, 2026-10-14); see that
+         * branch in {@link BlankNumericProbe#emptyTextMeansBlankValue}.
          * <p>
          * A whitespace-only stored value ({@code <v> </v>}) never reaches this check:
          * {@code getCellType()} itself throws for it, from the reader's formatter (5.3.0 and 5.3.2
@@ -823,11 +820,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             {
                 return false;
             }
-            if (aCell.getNumericCellValue() != 0.0)
-            {
-                return false;
-            }
-            return aProbe.emptyTextMeansBlankValue(aCell.getCellStyle());
+            // 5.3.2 answers 0.0 for a blank stored value; any other number is a real value.
+            return aCell.getNumericCellValue() == 0.0
+                    && aProbe.emptyTextMeansBlankValue(aCell.getCellStyle());
         }
 
 

@@ -2312,7 +2312,8 @@ class ExcelTableProviderTest
             claims.add(() -> assertEquals((Object) 0.0, value,
                     name + ": a real 0 under a zero-hiding format is a present 0"));
         }
-        claims.add(() -> assertEquals((Object) (-5.0), table.getValue(0, 4),
+        Object minusFive = -5.0;
+        claims.add(() -> assertEquals(minusFive, table.getValue(0, 4),
                 "a real -5 under 0;\"\";\"\" is a present -5"));
         claims.add(() -> assertEquals((Object) 0.0, table.getValue(1, 5),
                 "a real 0 data cell under the header's zero-hiding format is a present 0"));
@@ -2342,14 +2343,15 @@ class ExcelTableProviderTest
      * The one shape the public API cannot tell apart: a cell whose number format hides zero AND
      * whose stored value is blank ({@code <c s="…"><v></v></c>} under {@code 0;-0;""}). Its display
      * text is empty and its numeric value reads {@code 0.0} on excel-streaming-reader 5.3.2 -
-     * exactly what a real {@code 0} under that format gives. It reads as a present {@code 0}: the
-     * coordinator's interim choice (2026-10-14), pending an owner question, isolated in one branch
-     * of {@code ExcelRow.isBlankNumeric}. The same blank cell under {@code General} is missing (see
-     * {@link #testBlankNumericDataCellsLoadAsMissingNotZeroInEveryShape}). If the owner rules the
-     * other way, this test flips with that branch.
+     * exactly what a real {@code 0} under that format gives. It loads as a present {@code 0} (owner
+     * ruling R8, 2026-10-14): the public API cannot tell an uncalculated formula from a real
+     * {@code 0} there, and real zeros under zero-hiding formats are the common case. The decision
+     * is one branch of {@code BlankNumericProbe.emptyTextMeansBlankValue}. The same blank cell
+     * under {@code General} is missing (see
+     * {@link #testBlankNumericDataCellsLoadAsMissingNotZeroInEveryShape}).
      */
     @Test
-    void testBlankStoredValueUnderAZeroHidingFormatReadsAsPresentZeroInterim() throws Exception
+    void testBlankStoredValueUnderAZeroHidingFormatReadsAsPresentZero() throws Exception
     {
         URI uri = writeWithBlankNumericCells(wb ->
         {
@@ -2369,7 +2371,7 @@ class ExcelTableProviderTest
 
         assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(0).getType());
         assertEquals((Object) 0.0, table.getValue(0, 0),
-                "interim: a blank stored value under a zero-hiding format reads as a present 0");
+                "R8: a blank stored value under a zero-hiding format reads as a present 0");
         assertEquals(2.0, (double) table.getValue(1, 0), 0.0);
     }
 
