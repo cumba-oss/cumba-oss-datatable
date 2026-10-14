@@ -146,7 +146,11 @@ class Step20To21Test
     void warningsCoverAmbiguousAndUnknownOriginsAndCt() throws Exception
     {
         List<String> warnings = of(V20).to(Version.V2_1).convert().getWarnings();
-        assertTrue(warnings.stream().anyMatch(w -> w.contains("CT")), "CT warning");
+        assertTrue(
+                warnings.stream()
+                        .anyMatch(w -> w.startsWith(
+                                "CT (controlled terminology) Standard rows could not be derived")),
+                "CT warning");
         assertTrue(warnings.stream().anyMatch(w -> w.contains("eDT")), "eDT ambiguous warning");
         assertTrue(warnings.stream().anyMatch(w -> w.contains("Mystery")),
                 "unknown-origin warning");

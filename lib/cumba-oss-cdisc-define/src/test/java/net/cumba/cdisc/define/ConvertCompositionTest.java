@@ -48,7 +48,10 @@ class ConvertCompositionTest
 
         // warnings aggregate across both atomic steps
         assertTrue(c.getWarnings().stream().anyMatch(w -> w.contains("synthesised WC")));
-        assertTrue(c.getWarnings().stream().anyMatch(w -> w.contains("CT")));
+        // the 2.1 leg's CT-Standards warning by its own text: a bare "CT" would also match the
+        // CodeList warning and a where-clause naming LBTESTCD "HCT"
+        assertTrue(c.getWarnings().stream().anyMatch(w -> w
+                .startsWith("CT (controlled terminology) Standard rows could not be derived")));
 
         ODM odm = new DefineXmlParser().parse(new java.io.ByteArrayInputStream(bytes));
         assertEquals("2.1.0",
