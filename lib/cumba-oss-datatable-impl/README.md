@@ -16,9 +16,10 @@ Concrete implementations on top of the `cumba-oss-datatable` contract:
 
 ## Java packages
 
-- `net.cumba.datatable.impl.*` (abstract base classes, view / merge /
-  order / databuffer / index implementations, format catalog,
-  cache + provider factories)
+- `net.cumba.datatable.impl` (abstract base classes, column caching) and its
+  subpackages `databuffer`, `view` (sort / filter / union / merge views),
+  `merge`, `index`, `library` (with the `.dblib` format), `metadata`,
+  `provider` + `io` (provider bases and factories) and `support`
 
 ## SPI registrations
 

@@ -7,11 +7,21 @@ Licensed under the **GNU Affero General Public License v3.0 only**
 
 ## Provenance
 
-Every module in this repository is **original work**. No module is derived
-from, ported from, or adapted from third-party source, so no upstream
-attribution or licence-retention obligation applies to the code here.
+The code in this repository is **original work**, with **one attributed
+exception**: `cumba-oss-datatable-provider-sas`'s `xpt/ObservationIteratorXpt.java`
+is derived from [theshoeshiner/sas-utils](https://github.com/theshoeshiner/sas-utils)
+under the Apache License 2.0. Its notice, the retained licence copy and the
+`AttributionTest` allow-list that keeps every other source file `NOT_DERIVED` are
+described in that module's [attribution section](lib/cumba-oss-datatable-provider-sas/README.md#attribution).
 
-Third-party code is consumed only as ordinary **Maven dependencies**
+Third-party **test data** is attributed beside the files, not here — for example the
+parso / sas-utils SAS7BDAT fixtures
+(`lib/cumba-oss-datatable-provider-sas/src/test/resources/net/cumba/datatable/provider/sas/sas7bdat/NOTICE-test-fixtures.md`),
+the CDISC example Define-XML documents
+(`lib/cumba-oss-cdisc-define/src/test/resources/convert/README.md`) and the CDISC
+example datasets under `testdata/` ([`testdata/README.md`](testdata/README.md)).
+
+Third-party code is otherwise consumed only as ordinary **Maven dependencies**
 (`carpet-record`, `univocity-parsers`, `excel-streaming-reader`, Jackson,
 Lombok, JSpecify); those carry no obligation beyond not misrepresenting
 them, and their licences are aggregated by `license-maven-plugin`
@@ -30,7 +40,7 @@ Depends on **`cumba-oss-commons`** (for `cumba-oss-help`) and **`cumba-oss-forma
 |---|---|---|
 | [`cumba-oss-datatable`](lib/cumba-oss-datatable/README.md) | `net.cumba.datatable` | Contracts only: `IDataTable`, `IDataValue`, `ICondition`, format catalogs, and the custom SPI mechanism (`GenericServiceFactory` / `GenericProviderFactory`). |
 | [`cumba-oss-datatable-impl`](lib/cumba-oss-datatable-impl/README.md) | `net.cumba.datatable.impl` | Concrete bases: `AbstractDataTable`, the columnar `IDataBuffer` family, sort / filter / merge views, the SPI factories. |
-| [`cumba-oss-cdisc-define`](lib/cumba-oss-cdisc-define/README.md) | `net.cumba.cdisc.define` | Define-XML object model — parser, builder, and disambiguation modules. |
+| [`cumba-oss-cdisc-define`](lib/cumba-oss-cdisc-define/README.md) | `net.cumba.cdisc.define` | Define-XML object model — parser, version converter (1.0 → 2.0 → 2.1), pruner, and disambiguation modules. |
 | [`cumba-oss-datatable-provider-cdt`](lib/cumba-oss-datatable-provider-cdt/README.md) | `net.cumba.datatable.provider.cdt` | CDT (Cumba Data Table) text format, single- and multi-dataset. |
 | [`cumba-oss-datatable-provider-csv`](lib/cumba-oss-datatable-provider-csv/README.md) | `net.cumba.datatable.provider.csv` | CSV, built on univocity-parsers. |
 | [`cumba-oss-datatable-provider-dsj`](lib/cumba-oss-datatable-provider-dsj/README.md) | `net.cumba.datatable.provider.dsj` | Dataset-JSON v1.1 (DSJ2), via `cumba-oss-cdisc-dsj`. |
@@ -48,10 +58,11 @@ Each module has its own `README.md` with coordinates and dependency detail.
 
 ```
 cumba-oss-commons     help · web-api · cdisc-library · bootstrap
-      ▲
+cumba-oss-formats     sas-utils · cdisc-dsj              (independent leaf)
+      ▲                                                  (datatable depends on both)
 cumba-oss-datatable   datatable · impl · cdisc-define · providers · manager-local · testkit · dictionary
       ▲
-cumba-oss-formats     sas-utils · cdisc-dsj              (independent leaf)
+cumba-oss-corej       the conformance engine, and the repositories built on it
 ```
 
 Dependencies run in one direction only. Build order is
