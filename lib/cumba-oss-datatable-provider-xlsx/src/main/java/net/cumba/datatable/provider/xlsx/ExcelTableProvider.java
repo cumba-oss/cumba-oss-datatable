@@ -804,10 +804,12 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * stored value - reads as a present {@code 0} (owner ruling R8, 2026-10-14); see that
          * branch in {@link BlankNumericProbe#emptyTextMeansBlankValue}.
          * <p>
-         * A whitespace-only stored value ({@code <v> </v>}) never reaches this check:
-         * {@code getCellType()} itself throws for it, from the reader's formatter (5.3.0 and 5.3.2
-         * alike), so it degrades to missing through the callers' {@code catch}, not through
-         * {@code isBlank()}.
+         * A whitespace-only stored value ({@code <v> </v>}) is missing on both paths. When the cell
+         * has a number format (any workbook with a styles table), {@code getCellType()} itself
+         * throws for it, from the reader's formatter (5.3.0 and 5.3.2 alike), so it degrades to
+         * missing through the callers' {@code catch}. Without a styles table the display text is
+         * the stored {@code " "}: {@code isBlank()} holds, the value reads {@code 0.0}, and the
+         * probe's no-style branch makes it missing.
          * <p>
          * Every numeric read goes through this check first: {@link #rawNumeric} and the date probe
          * in the constructor. ⚠ Call it only inside a {@code try}: {@code getCellType()} itself can
