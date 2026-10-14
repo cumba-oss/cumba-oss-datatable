@@ -21,7 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
  * in quotation marks anywhere in the type-guessing sample is evidence of TEXT, so its column types
  * STRING and every cell keeps its text -- a quoted number included. Unquoted cells keep today's
  * inference. Types are fixed by the sample: a quoted number in a row PAST it, in a column the
- * sample typed DOUBLE, is parsed as a number, as it always was.
+ * sample typed DOUBLE, is parsed as a number, as it always was; quoted text there is
+ * {@code MIS_ERROR} (BNM-F7).
  */
 class CsvQuotedValueIsStringTest
 {
@@ -149,8 +150,9 @@ class CsvQuotedValueIsStringTest
     /**
      * The sample decides the type; past it a quoted number in a DOUBLE column is parsed as the
      * number it spells, as it always was -- the column cannot hold text, and types are never
-     * revised. A quoted value past the sample in a character column is its text. (Unchanged by K7c;
-     * pinned.)
+     * revised. Quoted text that is no number there is MIS_ERROR, a value present but not readable
+     * as a number (owner ruling BNM-F7, 2026-10-12; it was MIS, which made it look absent). A
+     * quoted value past the sample in a character column is its text. (Unchanged by K7c; pinned.)
      */
     @Test
     void aQuotedNumberPastTheSampleInANumericColumnIsParsed() throws Exception
@@ -162,7 +164,8 @@ class CsvQuotedValueIsStringTest
 
         assertSame(DataValueType.DOUBLE, table.getMetaData().getColumn(0).getType());
         assertEquals(3.0, (double) table.getValue(2, 0), 0.0);
-        assertSame(MissingValue.MIS, table.getValue(3, 0), "quoted text in a numeric column");
+        assertSame(MissingValue.MIS_ERROR, table.getValue(3, 0),
+                "quoted text in a numeric column is present but not a number (BNM-F7)");
         assertEquals("4", table.getValue(2, 1));
         assertEquals("", table.getValue(3, 1));
     }

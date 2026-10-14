@@ -15,6 +15,7 @@ import net.cumba.datatable.merge.MergeMeta;
 import net.cumba.datatable.merge.MergedPart;
 import net.cumba.datatable.merge.MergedTable;
 import net.cumba.datatable.merge.UnresolvedDataset;
+import net.cumba.datatable.values.ListCellEncoding;
 
 /**
  * The merged evaluation table: a {@link MergeDataTable} over the parts {@link MergeBuilder} built,
@@ -55,7 +56,8 @@ final class MergedTableImpl extends MergeDataTable implements MergedTable
             // P-10's skipped qualifiers travel on the table's own metadata (M2): a consumer
             // holding only the IDataTable (the data browser behind a manager) still reads them
             setMetaData(DataTableMeta.builderFrom(getMetaData())
-                    .addMetaData(MergeMeta.SUPP_SKIPPED_QNAMS, String.join(", ", aSuppSkippedQnams))
+                    .addMetaData(MergeMeta.SUPP_SKIPPED_QNAMS,
+                            ListCellEncoding.join(aSuppSkippedQnams))
                     .build());
         }
     }

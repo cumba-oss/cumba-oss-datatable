@@ -9,8 +9,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicIntegerArray;
 import lombok.CustomLog;
 import lombok.Getter;
 import lombok.NonNull;
@@ -55,7 +59,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      * converted to SAS-datetime-seconds). Shared between {@link #inferDateFormats} (which decides
      * the column) and {@link ExcelTableDataParser#addData2Column} (which must then convert EVERY
      * numeric cell in that column the same way, not just the ones that happen to carry a
-     * date-formatted cell style themselves — see {@link ExcelRow#getDateValue}).
+     * date-formatted cell style themselves — see {@link ExcelRow#dateCell}).
      */
     private static final String DATE_DISPLAY_FORMAT = "E8601DT.";
 
@@ -187,9 +191,10 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         DataValueType[] dataTypes = determineTypes(guessRows, colCount);
         String[] dateFormats = inferDateFormats(guessRows, colCount);
 
+        String[] names = headerNames(row, headRow, columnIndices, aSheet.getSheetName(), aUri);
         for (int i = 0; i < colCount; i++)
         {
-            String name = headerName(headRow, i, columnIndices[i], aSheet.getSheetName(), aUri);
+            String name = names[i];
             DataValueType type = dataTypes[i];
             DataTableColumnMeta.DataTableColumnMetaBuilder b = dtms.addColumn(name, type);
             if (dateFormats[i] != null)
@@ -248,9 +253,10 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         DataValueType[] dataTypes = determineTypes(guessRows, colCount);
         String[] dateFormats = inferDateFormats(guessRows, colCount);
 
+        String[] names = headerNames(row, headRow, columnIndices, aSheet.getSheetName(), aUri);
         for (int i = 0; i < colCount; i++)
         {
-            String name = headerName(headRow, i, columnIndices[i], aSheet.getSheetName(), aUri);
+            String name = names[i];
             DataValueType type = dataTypes[i];
             DataTableColumnMeta.DataTableColumnMetaBuilder b = dtms.addColumn(name, type);
             if (dateFormats[i] != null)
@@ -259,7 +265,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             }
         }
 
-        ExcelTableDataParser tp = new ExcelTableDataParser(this, dtms.getTableMeta().build());
+        ExcelTableDataParser tp = new ExcelTableDataParser(this, dtms.getTableMeta().build(),
+                aSheet.getSheetName(), columnIndices, aUri);
 
         for (ExcelRow er : guessRows)
         {
@@ -322,9 +329,11 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         String[] dateFormats = inferDateFormats(guessRows, colCount);
 
         DataTableColumnMeta[] out = new DataTableColumnMeta[colCount];
+        String[] names = headerNames(headerRow, headRow, columnIndices, aSheet.getSheetName(),
+                aUri);
         for (int i = 0; i < colCount; i++)
         {
-            String name = headerName(headRow, i, columnIndices[i], aSheet.getSheetName(), aUri);
+            String name = names[i];
             out[i] = DataTableColumnMeta.builder().index(i).name(name).label("").type(dataTypes[i])
                     .displayFormat(dateFormats[i]).build();
         }
@@ -381,72 +390,122 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
 
     /**
-     * The name of header column {@code aIndex}: the header cell's rendered text, or the positional
-     * fallback {@code V<aIndex + 1>} when that text is blank, logged once at {@code WARNING} naming
-     * the Excel column it applies to.
+     * The names of the header columns: each header cell's rendered text, or the positional fallback
+     * {@code V<index + 1>} when that text is blank or the cell is an error ({@code #REF!}), logged
+     * once per column at {@code WARNING} naming the Excel column it applies to and why.
      * <p>
      * ⚠ <b>This fallback is REACHABLE and must not be deleted as dead code.</b> It is not merely
      * the mirror image of {@link #isHeaderCell(Cell)}'s blankness test: {@code isHeaderCell}
      * decides from the cell's TYPE (and, for a formula, its cached result type), while the name
      * comes from {@link ExcelRow#getStringValue}, which yields {@code ""} whenever
-     * {@link ExcelRow#getCellValue} had to degrade the cell to {@code null}. A header cell can
-     * therefore be accepted and still have no readable name. The shape that does it in practice, on
-     * a workbook that is valid OOXML and that pandas/openpyxl read without complaint: a formula
-     * header cell whose cached value element is EMPTY ({@code <f>…</f><v></v>}), which is what
-     * openpyxl - and therefore {@code pandas.DataFrame.to_excel} - writes for every formula, since
-     * neither evaluates formulas. The streaming reader reports that cell as {@code FORMULA} with
-     * cached type {@code NUMERIC} (so it is a valid header) whose stored value is blank, and
+     * {@link ExcelRow#getCellValue} has no value for the cell ({@code null} or an
+     * {@link Unreadable}). A header cell can therefore be accepted and still have no readable name.
+     * The shape that does it in practice, on a workbook that is valid OOXML and that
+     * pandas/openpyxl read without complaint: a formula header cell whose cached value element is
+     * EMPTY ({@code <f>…</f><v></v>}), which is what openpyxl - and therefore
+     * {@code pandas.DataFrame.to_excel} - writes for every formula, since neither evaluates
+     * formulas. The streaming reader reports that cell as {@code FORMULA} with cached type
+     * {@code NUMERIC} (so it is a valid header) whose stored value is blank, and
      * {@link ExcelRow#isBlankNumeric} makes {@link ExcelRow#getCellValue} read such a cell as
-     * {@code null}, so the name degrades to blank. That guard is what decides it, NOT the reader:
-     * excel-streaming-reader up to 5.3.0 threw {@code NumberFormatException("empty String")} from
-     * {@code getNumericCellValue()} for a blank stored value (and the provider degraded the cell),
-     * but 5.3.2 returns {@code 0.0}, as plain {@code XSSFWorkbook} always did - without the guard
-     * every such header would be named {@code "0.0"} and the second one would fail the whole sheet
-     * with a duplicate column name. Verified end to end through {@code StreamingReader} on an
-     * openpyxl-produced file.
+     * {@link Unreadable#UNCALCULATED_FORMULA}, so the name degrades to blank. That guard is what
+     * decides it, NOT the reader: excel-streaming-reader up to 5.3.0 threw
+     * {@code NumberFormatException("empty String")} from {@code getNumericCellValue()} for a blank
+     * stored value (and the provider degraded the cell), but 5.3.2 returns {@code 0.0}, as plain
+     * {@code XSSFWorkbook} always did - without the guard every such header would be named
+     * {@code "0.0"} and the second one would fail the whole sheet with a duplicate column name.
+     * Verified end to end through {@code StreamingReader} on an openpyxl-produced file.
      * <p>
      * Dropping the column instead of naming it positionally would silently discard a column that
      * has data. {@code pandas.read_excel} answers the same file the same way, naming that column
      * {@code Unnamed: 1} and keeping its values.
+     * <p>
+     * An ERROR header cell - a literal {@code #REF!}, or a formula whose cached result is an error
+     * - is named positionally as well, never after its error token (owner ruling Q37(ii),
+     * 2026-10-12: <i>"I would like to get this column in with a temp name, so nothing is lost,
+     * additionally log with warning."</i>).
+     * <p>
+     * A fallback never collides: names are not otherwise made unique (a duplicate name fails the
+     * whole sheet in {@code DataTableMetaSupport}), so a fallback that equals, ignoring case, a
+     * header name of the sheet or an earlier fallback takes the next free {@code V<n>_<k>}
+     * ({@code k = 1, 2, …}).
      *
+     * @param aRow
+     *            the header row as the reader gives it, for the cell types.
      * @param aHeadRow
-     *            the header row.
-     * @param aIndex
-     *            index of the column within the accepted header range (0-based).
-     * @param aSheetColumnIndex
-     *            the cell's own 0-based column index in the sheet, which is NOT {@code aIndex} when
-     *            the header range does not start at column A - only used for the log message, so
-     *            that it points at the cell the user has to look at.
+     *            the header row as read.
+     * @param aSheetColumns
+     *            per header column, the cell's own 0-based column index in the sheet, which is NOT
+     *            the column's index when the header range does not start at column A - for the cell
+     *            types and the log message, so that it points at the cell the user has to look at.
      * @param aSheetName
      *            name of the sheet, for the log message: the URI usually carries no sheet fragment
      *            on the table paths (sheet 0 is resolved positionally), so without this the warning
      *            would not say which sheet of a multi-sheet workbook it is about.
      * @param aUri
      *            source URI, for log context.
-     * @return a non-blank column name.
+     * @return a non-blank name per column, unique as far as the fallbacks go.
      */
-    private static String headerName(ExcelRow aHeadRow, int aIndex, int aSheetColumnIndex,
+    private static String[] headerNames(Row aRow, ExcelRow aHeadRow, int[] aSheetColumns,
             String aSheetName, URI aUri)
     {
-        String name = aHeadRow.getStringValue(aIndex);
-        if (!name.isBlank())
+        String[] names = new String[aSheetColumns.length];
+        String[] whyFallback = new String[aSheetColumns.length];
+        Set<String> used = new HashSet<>();
+        for (int i = 0; i < names.length; i++)
         {
-            return name;
+            String name = aHeadRow.getStringValue(i);
+            if (isErrorCell(aRow.getCell(aSheetColumns[i])))
+            {
+                whyFallback[i] = "has an unreadable header (" + name + ")";
+            }
+            else if (name.isBlank())
+            {
+                whyFallback[i] = "has a blank name";
+            }
+            else
+            {
+                names[i] = name;
+                used.add(name.toLowerCase(Locale.ROOT));
+            }
         }
-        String fallback = "V" + (aIndex + 1);
-        LOGGER.log(Level.WARNING,
-                "Excel column %s of sheet '%s' has a blank name; using fallback '%s' (uri=%s)"
-                        .formatted(CellReference.convertNumToColString(aSheetColumnIndex),
-                                aSheetName, fallback, aUri));
-        return fallback;
+        for (int i = 0; i < names.length; i++)
+        {
+            if (whyFallback[i] == null)
+            {
+                continue;
+            }
+            String fallback = "V" + (i + 1);
+            for (int k = 1; used.contains(fallback.toLowerCase(Locale.ROOT)); k++)
+            {
+                fallback = "V" + (i + 1) + "_" + k;
+            }
+            used.add(fallback.toLowerCase(Locale.ROOT));
+            names[i] = fallback;
+            LOGGER.log(Level.WARNING,
+                    "Excel column %s of sheet '%s' %s; using fallback '%s' (uri=%s)".formatted(
+                            CellReference.convertNumToColString(aSheetColumns[i]), aSheetName,
+                            whyFallback[i], fallback, aUri));
+        }
+        return names;
     }
 
 
     /**
-     * Determine the column indices of the header row. Treats any non-blank, non-error cell as a
-     * header — numeric, boolean, date, and formula cells whose cached result is non-blank all
-     * count. The header range terminates at the first blank/empty/error cell, mirroring how Excel
-     * itself treats a "used range" run of header labels.
+     * Whether a header cell is an error - a literal one, or a formula whose cached result is one.
+     * Its type was already read once by {@link #determineColumns}, which fails the sheet when it
+     * cannot be.
+     */
+    private static boolean isErrorCell(@Nullable Cell aCell)
+    {
+        return aCell != null && ExcelRow.effectiveType(aCell) == CellType.ERROR;
+    }
+
+
+    /**
+     * Determine the column indices of the header row. Treats any cell that is not blank as a header
+     * — text, numeric, boolean, date, error, and every formula cell. The header range terminates at
+     * the first blank or absent cell, mirroring how Excel itself treats a "used range" run of
+     * header labels.
      */
     private static int[] determineColumns(Row aRow)
     {
@@ -462,7 +521,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         {
             if (!isHeaderCell(aRow.getCell(idx)))
             {
-                // First blank/error cell terminates the contiguous header range.
+                // First blank cell terminates the contiguous header range.
                 break;
             }
             headerIndices.add(idx);
@@ -472,23 +531,29 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
 
     /**
-     * A cell is considered a header if it is present, not blank, not an error, and (for formula
-     * cells) the cached formula result is not blank or error. Used by
-     * {@link #determineColumns(Row)} to decide where the header range stops.
+     * A cell is considered a header unless it is absent, {@code BLANK}, or plain text that is
+     * blank: those end the header range ({@link #determineColumns(Row)}).
+     * <p>
+     * Everything else is a header, even when it carries no usable name: an ERROR cell
+     * ({@code #REF!}) and a FORMULA cell whatever its cached result - blank, an error, or blank
+     * text ({@code =""}). Such a column is kept under its positional name (owner ruling Q37(ii),
+     * 2026-10-12: <i>"I would like to get this column in with a temp name, so nothing is lost,
+     * additionally log with warning."</i>); {@link #headerNames} names it and logs why. They used
+     * to end the range, which silently dropped that column and every one after it.
      * <p>
      * ⚠ Decides from the TYPE only, never from the value: a numeric cell whose stored value is
-     * blank ({@link ExcelRow#isBlankNumeric} - the uncalculated formula openpyxl writes) must stay
-     * a header cell, or the header range would stop there and silently drop that column and every
-     * one after it. Its name is decided by {@link #headerName}.
+     * blank ({@link ExcelRow#isBlankNumeric}) stays a header cell. A cell whose type the reader
+     * cannot read at all throws here, and the sheet fails with one {@code IOException} naming it
+     * ({@link #headerColumns}).
      */
-    private static boolean isHeaderCell(Cell aCell)
+    private static boolean isHeaderCell(@Nullable Cell aCell)
     {
         if (aCell == null)
         {
             return false;
         }
         CellType t = aCell.getCellType();
-        if (t == CellType.BLANK || t == CellType.ERROR)
+        if (t == CellType.BLANK)
         {
             return false;
         }
@@ -497,22 +562,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             String s = aCell.getStringCellValue();
             return s != null && !s.isBlank();
         }
-        if (t == CellType.FORMULA)
-        {
-            CellType cached = aCell.getCachedFormulaResultType();
-            if (cached == CellType.BLANK || cached == CellType.ERROR)
-            {
-                return false;
-            }
-            if (cached == CellType.STRING)
-            {
-                String s = aCell.getStringCellValue();
-                return s != null && !s.isBlank();
-            }
-            // Numeric / boolean formula result is a valid header.
-            return true;
-        }
-        // NUMERIC, BOOLEAN — present and not blank, accept as header.
+        // ERROR, FORMULA (any cached result), NUMERIC, BOOLEAN: a header, named by headerNames.
         return true;
     }
 
@@ -639,6 +689,40 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         return res;
     }
 
+    /**
+     * A present cell that has no readable value - not a blank cell. It reads
+     * {@link MissingValue#MIS_ERROR} in every column type (owner ruling Q37(i), 2026-10-12: <i>"a,
+     * log and continue and read as MIS_ERROR."</i>; BNM-F7 for the reader failure), never
+     * {@code MIS}, which would make it look absent. For column typing it is no evidence either way,
+     * like a blank cell; as a header it has no name, so it gets the positional fallback.
+     */
+    private enum Unreadable
+    {
+
+        /**
+         * A formula whose cached value is empty ({@code <f>…</f><v></v>}): what openpyxl - and
+         * therefore {@code pandas.DataFrame.to_excel} - writes for every formula, since neither
+         * evaluates formulas. A plain numeric cell with an empty value is NOT this: it is a blank
+         * cell (owner ruling R1, 2026-10-14). Under a zero-hiding number format the shape reads as
+         * a present 0 instead (owner ruling R8; see {@code BlankNumericProbe}).
+         */
+        UNCALCULATED_FORMULA("formula without a cached value"),
+
+        /**
+         * A cell the streaming reader throws on (a stored value it cannot convert to the type the
+         * cell claims, e.g. {@code t="n"} with {@code <v>N/A</v>}).
+         */
+        READ_FAILED("cell the reader cannot read");
+
+        private final String reason;
+
+        Unreadable(String aReason)
+        {
+            reason = aReason;
+        }
+    }
+
+
     private static class ExcelRow
     {
 
@@ -667,6 +751,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
         private final @Nullable Object[] values;
 
+        /** The sheet row this row was read from, 0-based - for the {@link Unreadable} warning. */
+        private final int rowNum;
+
         /** Parallel array: true when the source cell was numeric AND date-formatted. */
         private final boolean[] isDate;
 
@@ -685,15 +772,16 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * date up to ~63 years off. {@link Cell#getLocalDateTimeCellValue()} converts a
          * {@code NUMERIC} cell's value correctly regardless of that cell's OWN style (verified
          * empirically), so precomputing it here for every numeric cell — and having
-         * {@link ExcelTableDataParser#addData2Column} choose this array over
-         * {@link #getDoubleValue} once the COLUMN is decided to be a date column — makes the
-         * conversion consistent for the whole column instead of per-cell.
+         * {@link ExcelTableDataParser#addData2Column} choose this array over {@link #numericCell}
+         * once the COLUMN is decided to be a date column — makes the conversion consistent for the
+         * whole column instead of per-cell.
          */
         private final double[] dateSasSeconds;
 
         ExcelRow(Row aRow, int[] aColumnIndices, BlankNumericProbe aProbe)
         {
             values = new Object[aColumnIndices.length];
+            rowNum = aRow.getRowNum();
             isDate = new boolean[aColumnIndices.length];
             dateSasSeconds = new double[aColumnIndices.length];
             java.util.Arrays.fill(dateSasSeconds, Double.NaN);
@@ -767,14 +855,16 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         /**
          * Whether the cell is NUMERIC by its {@link #effectiveType} - a plain numeric cell, or a
          * formula whose cached result is numeric - but its stored value is BLANK. Such a cell has
-         * no value and reads as missing: it is never a number, never a date and never makes a
-         * column a date column.
+         * no value: it is never a number, never a date and never makes a column a date column.
          * <p>
          * The shapes: an uncalculated formula with an EMPTY cached value element
          * ({@code <f>…</f><v></v>}), which openpyxl - and therefore
          * {@code pandas.DataFrame.to_excel} - writes for EVERY formula, since neither evaluates
          * formulas; and a plain or {@code t="n"} cell with an empty value ({@code <c><v></v></c>},
-         * {@code <c t="n"><v/></c>}).
+         * {@code <c t="n"><v/></c>}). The plain shapes are blank cells and read {@code MIS} (R1:
+         * behave as 5.3.0); the formula is {@link Unreadable#UNCALCULATED_FORMULA} and reads
+         * {@code MIS_ERROR} (owner ruling Q37(i), 2026-10-12) - {@link #getCellValue} makes that
+         * split on the cell's own type.
          * <p>
          * Why the provider decides this itself (owner ruling R1, 2026-10-14):
          * excel-streaming-reader up to 5.3.0 threw {@code NumberFormatException("empty String")}
@@ -804,12 +894,14 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * stored value - reads as a present {@code 0} (owner ruling R8, 2026-10-14); see that
          * branch in {@link BlankNumericProbe#emptyTextMeansBlankValue}.
          * <p>
-         * A whitespace-only stored value ({@code <v> </v>}) is missing on both paths. When the cell
-         * has a number format (any workbook with a styles table), {@code getCellType()} itself
+         * A whitespace-only stored value ({@code <v> </v>}) is missing on both paths, but not the
+         * same missing (a named gap; the owner rules whitespace-only values theoretical). When the
+         * cell has a number format (any workbook with a styles table), {@code getCellType()} itself
          * throws for it, from the reader's formatter (5.3.0 and 5.3.2 alike), so it degrades to
-         * missing through the callers' {@code catch}. Without a styles table the display text is
-         * the stored {@code " "}: {@code isBlank()} holds, the value reads {@code 0.0}, and the
-         * probe's no-style branch makes it missing.
+         * {@link Unreadable#READ_FAILED} ({@code MIS_ERROR}) through the callers' {@code catch}.
+         * Without a styles table the display text is the stored {@code " "}: {@code isBlank()}
+         * holds, the value reads {@code 0.0}, and the probe's no-style branch makes it a blank
+         * {@code MIS}.
          * <p>
          * Every numeric read goes through this check first: {@link #rawNumeric} and the date probe
          * in the constructor. ⚠ Call it only inside a {@code try}: {@code getCellType()} itself can
@@ -895,58 +987,122 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
 
         /**
-         * The SAS-datetime-seconds value of this cell, for a column {@code inferDateFormats} has
-         * decided IS a date column — computed for every numeric cell regardless of that cell's own
-         * style (see {@link #dateSasSeconds}), which is what keeps a whole date column internally
-         * consistent even when not every cell in it carries the date cell style.
+         * The cell's text: {@code ""} for a cell with no value and for an {@link Unreadable} one,
+         * so a header cell of either kind gets the positional fallback name.
          */
-        double getDateValue(int aColumn)
-        {
-            return dateSasSeconds[aColumn];
-        }
-
-
         String getStringValue(int aColumn)
         {
             @Nullable
             Object val = values[aColumn];
-            return val != null ? val.toString() : "";
+            return val == null || val instanceof Unreadable ? "" : val.toString();
+        }
+
+
+        /** Whether the cell is present but has no readable value - see {@link Unreadable}. */
+        boolean isUnreadable(int aColumn)
+        {
+            return values[aColumn] instanceof Unreadable;
+        }
+
+
+        /** Why the cell has no readable value, for a cell {@link #isUnreadable}. */
+        String unreadableReason(int aColumn)
+        {
+            return values[aColumn] instanceof Unreadable u ? u.reason : "";
         }
 
 
         /**
-         * Returns the numeric value of this cell for a column that {@link #isNumberOrMissing} has
-         * classified as DOUBLE. Falls back to parsing the cell's text when it is not itself a
-         * {@link Number} — {@code isNumberOrMissing} no longer lets a text cell make the column
-         * DOUBLE in the first place, but the {@code guessingRowCount}-bounded sample can still miss
-         * a text cell that appears only in a row past the sample: this parse-or-{@code NaN}
-         * fallback is what keeps such a later row from throwing rather than silently reporting the
-         * value as missing. See the fix note on {@link #isNumberOrMissing} for why the sample
-         * itself must not rely on text parsing.
+         * The value this cell stores in a column that {@link #isNumberOrMissing} has classified as
+         * {@code DOUBLE}: a {@link Double}, or the {@link MissingValue} it reads as. The sample
+         * that typed the column is bounded ({@code guessingRowCount}), so a cell past it can be
+         * anything:
+         * <ul>
+         * <li>BLANK - no value at all ({@code null}: absent, BLANK, a plain numeric cell whose
+         * stored value is blank) or text that is empty or whitespace only - is
+         * {@link MissingValue#MIS}.</li>
+         * <li>A number is that number; text that parses is its number ({@code "NaN"} is
+         * {@code MIS}, owner ruling BNM E5).</li>
+         * <li>Anything else is a value present but not readable as a number, so
+         * {@link MissingValue#MIS_ERROR} (owner ruling BNM-F7, 2026-10-12: <i>"same here, should
+         * already be aligned if not, then yes MIS_ERROR."</i>): an {@link Unreadable} cell, text
+         * that does not parse, an error cell ({@code "#N/A"}), a boolean, and a number whose value
+         * is infinite - a stored {@code 1E+400} and text {@code "Infinity"} alike (owner,
+         * 2026-10-12: <i>"Should CSV/XLSX text Infinity also become MIS_ERROR: yes."</i>).</li>
+         * </ul>
+         * Text past the sample that parses keeps its number: {@link #isNumberOrMissing} keeps a
+         * text cell out of the sample's evidence (see there), but a column the sample did type
+         * {@code DOUBLE} loses nothing a later text cell spells.
          */
-        @SuppressWarnings("PMD.EmptyCatchBlock")
-        double getDoubleValue(int aColumn)
+        Object numericCell(int aColumn)
         {
             @Nullable
             Object val = values[aColumn];
-            if (val == null)
+            if (val instanceof Unreadable)
             {
-                return Double.NaN;
+                return MissingValue.MIS_ERROR;
             }
+            if (val == null || isBlankText(val))
+            {
+                return MissingValue.MIS;
+            }
+            double d;
             if (val instanceof Number num)
             {
-                return num.doubleValue();
+                d = num.doubleValue();
             }
+            else
+            {
+                try
+                {
+                    d = Double.parseDouble(val.toString());
+                }
+                catch (NumberFormatException _)
+                {
+                    return MissingValue.MIS_ERROR;
+                }
+            }
+            if (Double.isNaN(d))
+            {
+                return MissingValue.MIS;
+            }
+            return Double.isInfinite(d) ? MissingValue.MIS_ERROR : d;
+        }
 
-            try
+
+        /**
+         * The value this cell stores in a DATE column ({@code E8601DT.}, see
+         * {@link #dateSasSeconds}): the converted SAS-datetime-seconds, {@link MissingValue#MIS}
+         * for a blank cell, and {@link MissingValue#MIS_ERROR} for a present cell with no date - an
+         * {@link Unreadable} cell, text, a serial past Excel's last date, a negative serial, a
+         * failed conversion (BNM-F7). The split is decided on the RAW cell: the converted value is
+         * {@code NaN} for all of them, the blank one included.
+         */
+        Object dateCell(int aColumn)
+        {
+            @Nullable
+            Object val = values[aColumn];
+            if (val instanceof Unreadable)
             {
-                return Double.parseDouble(val.toString());
+                return MissingValue.MIS_ERROR;
             }
-            catch (NumberFormatException _)
+            if (val == null || isBlankText(val))
             {
-                // not a number
+                return MissingValue.MIS;
             }
-            return Double.NaN;
+            double d = dateSasSeconds[aColumn];
+            return Double.isNaN(d) ? MissingValue.MIS_ERROR : d;
+        }
+
+
+        /**
+         * Whether a present cell value is blank text, empty or whitespace only (a STRING cell is
+         * right-trimmed on read, so whitespace-only text arrives as {@code ""}). A {@code null}
+         * value - no value at all - is blank as well; the callers test it first.
+         */
+        private static boolean isBlankText(Object aValue)
+        {
+            return aValue instanceof String str && str.isBlank();
         }
 
 
@@ -960,7 +1116,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * as {@code "0001"}) must never promote a column to DOUBLE merely because its digits happen
          * to parse — doing so silently destroyed the very thing the producer used TEXT formatting
          * to protect: {@code determineTypes} classified an all-text {@code "0001"}/"0002"/"0010"}
-         * column as DOUBLE, and {@link #getDoubleValue} then re-parsed each cell to
+         * column as DOUBLE, and {@code getDoubleValue} then re-parsed each cell to
          * {@code 1.0}/{@code 2.0}/ {@code 10.0} — an irreversible data-fidelity bug, confirmed
          * against an independently (openpyxl-)produced fixture whose cells are genuinely text-typed
          * (not merely numeric-looking). A real Excel-NUMERIC cell is unaffected by this change;
@@ -971,10 +1127,17 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         {
             @Nullable
             Object val = values[aColumn];
-            return val == null || val instanceof Number;
+            // An Unreadable cell is no evidence either way, exactly like a blank one.
+            return val == null || val instanceof Number || val instanceof Unreadable;
         }
 
 
+        /**
+         * The value of one cell: {@code null} for a cell with no value (absent, BLANK, or a plain
+         * numeric cell whose stored value is blank - see {@link #isBlankNumeric}), an
+         * {@link Unreadable} for a present cell that has no readable value, otherwise a
+         * {@link Double} (a NUMERIC cell's raw value) or a {@link String}.
+         */
         private @Nullable Object getCellValue(@Nullable Cell aCell, BlankNumericProbe aProbe)
         {
             try
@@ -1000,7 +1163,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
                 case FORMULA -> switch (aCell.getCachedFormulaResultType())
                 {
                 case STRING -> CDT.tri(aCell.getStringCellValue());
-                case NUMERIC -> rawNumeric(aCell, aProbe);
+                // Q37(i): an uncalculated formula is not a blank cell - see Unreadable.
+                case NUMERIC -> isBlankNumeric(aCell, aProbe) ? Unreadable.UNCALCULATED_FORMULA
+                        : aCell.getNumericCellValue();
                 case BOOLEAN -> Boolean.toString(aCell.getBooleanCellValue());
                 // Bug fix (H6): a FORMULA cell's own CellType is FORMULA, never ERROR, even when
                 // its CACHED result is an error — errorToken()'s getErrorCellValue() rejects any
@@ -1017,8 +1182,9 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             }
             catch (Exception ex)
             {
+                // A present cell the reader failed on is not a blank one (BNM-F7).
                 LOGGER.log(Level.DEBUG, ex.getMessage(), ex);
-                return null;
+                return Unreadable.READ_FAILED;
             }
         }
 
@@ -1116,9 +1282,47 @@ public class ExcelTableProvider extends AbstractDataTableProvider
     private static class ExcelTableDataParser extends AbstractTableDataParser<ExcelRow>
     {
 
-        ExcelTableDataParser(@NonNull IDataTableProvider aProvider, @NonNull DataTableMeta aMeta)
+        /** The sheet's name, for the {@link Unreadable} warning. */
+        private final String sheetName;
+
+        /** Per table column, the sheet column it is read from (0-based). */
+        private final int[] sheetColumns;
+
+        /** Source URI, for log context. */
+        private final URI uri;
+
+        /** Per table column, 1 once its {@link Unreadable} warning was logged. */
+        private final AtomicIntegerArray warned;
+
+        ExcelTableDataParser(@NonNull IDataTableProvider aProvider, @NonNull DataTableMeta aMeta,
+                String aSheetName, int[] aSheetColumns, URI aUri)
         {
             super(aProvider, aMeta);
+            sheetName = aSheetName;
+            sheetColumns = aSheetColumns.clone();
+            uri = aUri;
+            warned = new AtomicIntegerArray(aSheetColumns.length);
+        }
+
+
+        /**
+         * Logs ONE {@code WARNING} per column per load, at its first {@link Unreadable} cell (owner
+         * ruling Q37(i), 2026-10-12: <i>"a, log and continue and read as MIS_ERROR."</i>): it names
+         * the sheet, the cell and why, and says that further such cells of the column are not
+         * logged - a formula column of a million rows would otherwise flood the log.
+         */
+        private void warnUnreadableOnce(ExcelRow aRow, int aColumnIndex, String aColumnName)
+        {
+            if (!warned.compareAndSet(aColumnIndex, 0, 1))
+            {
+                return;
+            }
+            String cell = new CellReference(aRow.rowNum, sheetColumns[aColumnIndex])
+                    .formatAsString();
+            LOGGER.log(Level.WARNING, ("Excel cell %s of sheet '%s' (column '%s') is a %s; the cell"
+                    + " reads as MIS_ERROR. Further such cells in this column are not logged"
+                    + " (uri=%s)").formatted(cell, sheetName, aColumnName,
+                            aRow.unreadableReason(aColumnIndex), uri));
         }
 
 
@@ -1128,6 +1332,10 @@ public class ExcelTableProvider extends AbstractDataTableProvider
         {
             for (ExcelRow row : aRowSlice)
             {
+                if (row.isUnreadable(aColumnIndex))
+                {
+                    warnUnreadableOnce(row, aColumnIndex, aMetaColumn.getName());
+                }
                 switch (aMetaColumn.getType())
                 {
                 case DOUBLE:
@@ -1137,21 +1345,15 @@ public class ExcelTableProvider extends AbstractDataTableProvider
                     // style happens to be date-formatted. See ExcelRow#dateSasSeconds.
                     boolean isDateColumn = DATE_DISPLAY_FORMAT
                             .equals(aMetaColumn.getDisplayFormat());
-                    double dblVal = isDateColumn ? row.getDateValue(aColumnIndex)
-                            : row.getDoubleValue(aColumnIndex);
-                    if (Double.isNaN(dblVal))
-                    {
-                        aDataColumn.addElement(MissingValue.MIS);
-                    }
-                    else
-                    {
-                        aDataColumn.addElement(dblVal);
-                    }
+                    aDataColumn.addElement(isDateColumn ? row.dateCell(aColumnIndex)
+                            : row.numericCell(aColumnIndex));
                     break;
                 }
                 case STRING:
                 default:
-                    aDataColumn.addElement(row.getStringValue(aColumnIndex));
+                    // Q37(i): an Unreadable cell reads MIS_ERROR in every column type.
+                    aDataColumn.addElement(row.isUnreadable(aColumnIndex) ? MissingValue.MIS_ERROR
+                            : row.getStringValue(aColumnIndex));
                     break;
                 }
             }

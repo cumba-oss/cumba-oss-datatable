@@ -203,7 +203,7 @@ class ExcelTableProviderTest
 
         assertEquals(3, table.getRowCount());
         assertEquals(1.0, (double) table.getValue(0, 0), 0.001);
-        assertInstanceOf(MissingValue.class, table.getValue(1, 0));
+        assertSame(MissingValue.MIS, table.getValue(1, 0), "an absent cell is blank: MIS");
         assertEquals(3.0, (double) table.getValue(2, 0), 0.001);
     }
 
@@ -767,7 +767,7 @@ class ExcelTableProviderTest
         IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
 
         assertEquals("E8601DT.", table.getMetaData().getColumn(0).getDisplayFormat());
-        assertInstanceOf(MissingValue.class, table.getValue(1, 0),
+        assertSame(MissingValue.MIS, table.getValue(1, 0),
                 "a missing cell in a date column must read as missing, not as SAS-epoch-zero");
     }
 
@@ -908,8 +908,8 @@ class ExcelTableProviderTest
         assertEquals(2, table.getColumnCount());
         assertEquals(2, table.getRowCount(), "the corrupted cell's row must still be read");
         assertEquals(2.0, (double) table.getValue(0, 1), 0.0001);
-        assertInstanceOf(MissingValue.class, table.getValue(1, 1),
-                "the unparseable cell must degrade to missing, not abort the whole sheet");
+        assertSame(MissingValue.MIS_ERROR, table.getValue(1, 1),
+                "the unparseable cell must degrade to MIS_ERROR (BNM-F7), not abort the whole sheet");
         assertEquals(3.0, (double) table.getValue(1, 0),
                 "the corrupted cell's OWN row-sibling must still read correctly");
     }
@@ -1159,12 +1159,14 @@ class ExcelTableProviderTest
 
 
     /**
-     * A formula header cell whose cached result is blank text (e.g. {@code =""}) terminates the
-     * header range, exactly like a genuinely blank cell — a real spreadsheet can easily have such a
-     * formula left over from a template.
+     * A formula header cell whose cached result is blank text (e.g. {@code =""}) - a real
+     * spreadsheet can easily have such a formula left over from a template - keeps its column under
+     * the positional name, and the range goes on (owner ruling Q37(ii), 2026-10-12: <i>"I would
+     * like to get this column in with a temp name, so nothing is lost, additionally log with
+     * warning."</i>). It used to end the range, dropping the column and every one after it.
      */
     @Test
-    void testHeaderFormulaCellWithBlankStringResultTerminatesRange() throws Exception
+    void testHeaderFormulaCellWithBlankStringResultIsKeptPositionally() throws Exception
     {
         URI uri = writeTempXlsx(wb ->
         {
@@ -1180,18 +1182,21 @@ class ExcelTableProviderTest
 
         IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
 
-        assertEquals(1, table.getColumnCount(),
-                "a formula header cell whose cached result is blank text must terminate the range");
+        assertEquals(3, table.getColumnCount(),
+                "a formula header cell whose cached result is blank text keeps its column");
+        assertEquals("V2", table.getMetaData().getColumn(1).getName());
+        assertEquals("SCORE", table.getMetaData().getColumn(2).getName());
     }
 
 
     /**
-     * A formula header cell whose cached result is an ERROR (e.g. {@code =1/0}) terminates the
-     * header range — a completely realistic case when a header formula references a column that has
-     * since been deleted or divides by a now-empty cell.
+     * A formula header cell whose cached result is an ERROR (e.g. {@code =1/0}) - a completely
+     * realistic case when a header formula references a column that has since been deleted or
+     * divides by a now-empty cell - keeps its column under the positional name, never the error
+     * token, with one WARNING saying why (Q37(ii)).
      */
     @Test
-    void testHeaderFormulaCellWithErrorResultTerminatesRange() throws Exception
+    void testHeaderFormulaCellWithErrorResultIsKeptPositionally() throws Exception
     {
         URI uri = writeTempXlsx(wb ->
         {
@@ -1205,21 +1210,31 @@ class ExcelTableProviderTest
             evaluateAllFormulas(wb);
         });
 
-        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        IDataTable table;
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+            assertTrue(log.containsMessageContaining(
+                    "Excel column B of sheet 'DATA' has an unreadable header (#DIV/0!); using"
+                            + " fallback 'V2'"),
+                    () -> String.valueOf(log.messages()));
+        }
 
-        assertEquals(1, table.getColumnCount(),
-                "a formula header cell whose cached result is an error must terminate the range");
+        assertEquals(3, table.getColumnCount(),
+                "a formula header cell whose cached result is an error keeps its column");
+        assertEquals("V2", table.getMetaData().getColumn(1).getName());
+        assertEquals("SCORE", table.getMetaData().getColumn(2).getName());
     }
 
 
     /**
      * A directly ERROR-typed header cell (e.g. {@code #REF!} left behind after deleting a column
-     * that a header formula/reference used to point at) terminates the header range. Distinct from
-     * the FORMULA-cached-error case above: this is a plain {@code CellType.ERROR} cell, not a
-     * formula.
+     * that a header formula/reference used to point at) keeps its column under the positional name,
+     * and the columns after it are read (Q37(ii)). Distinct from the FORMULA-cached-error case
+     * above: this is a plain {@code CellType.ERROR} cell, not a formula.
      */
     @Test
-    void testHeaderDirectErrorCellTerminatesRange() throws Exception
+    void testHeaderDirectErrorCellIsKeptPositionally() throws Exception
     {
         URI uri = writeTempXlsx(wb ->
         {
@@ -1230,12 +1245,64 @@ class ExcelTableProviderTest
             h.createCell(2).setCellValue("SCORE");
             Row r1 = s.createRow(1);
             r1.createCell(0).setCellValue("Alice");
+            r1.createCell(1).setCellValue(7.0);
+            r1.createCell(2).setCellValue(8.0);
+        });
+
+        IDataTable table;
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+            assertTrue(log.containsMessageContaining("has an unreadable header (#REF!)"),
+                    () -> String.valueOf(log.messages()));
+        }
+
+        assertEquals(3, table.getColumnCount());
+        assertEquals("NAME", table.getMetaData().getColumn(0).getName());
+        assertEquals("V2", table.getMetaData().getColumn(1).getName());
+        assertEquals("SCORE", table.getMetaData().getColumn(2).getName());
+        assertEquals(7.0, (double) table.getValue(0, 1), 0.0, "nothing is lost");
+        assertEquals(8.0, (double) table.getValue(0, 2), 0.0);
+    }
+
+
+    /**
+     * A positional name never collides with a real header: names are not otherwise made unique (a
+     * duplicate fails the whole sheet), so a fallback that a header of the sheet already spells -
+     * ignoring case, before or after it - takes the next free {@code V<n>_<k>}.
+     */
+    @Test
+    void testAPositionalNameThatCollidesTakesTheNextFreeSuffix() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("v2_1");
+            h.createCell(1).setCellErrorValue(FormulaError.REF.getCode());
+            h.createCell(2).setCellValue("V2");
+            h.createCell(3).setCellFormula("\"\"");
+            h.createCell(4).setCellValue("v4");
+            Row r1 = s.createRow(1);
+            for (int c = 0; c < 5; c++)
+            {
+                r1.createCell(c).setCellValue(c);
+            }
+            evaluateAllFormulas(wb);
         });
 
         IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] inferred = ExcelTableProvider.inferColumns(openSheet(uri), uri, 50);
 
-        assertEquals(1, table.getColumnCount());
-        assertEquals("NAME", table.getMetaData().getColumn(0).getName());
+        List<String> expected = List.of("v2_1", "V2_2", "V2", "V4_1", "v4");
+        for (int c = 0; c < expected.size(); c++)
+        {
+            assertEquals(expected.get(c), table.getMetaData().getColumn(c).getName());
+            assertEquals(expected.get(c), meta.getColumn(c).getName());
+            assertEquals(expected.get(c), inferred[c].getName());
+            assertEquals((double) c, (double) table.getValue(0, c), 0.0);
+        }
     }
 
 
@@ -1305,8 +1372,9 @@ class ExcelTableProviderTest
      * <p>
      * POI cannot author the shape directly — an unevaluated {@code XSSFCell} formula is written
      * with no {@code <v>} element at all, which the streaming reader reports as a BLANK cached
-     * result (that cell then terminates the header range instead) — so POI builds the workbook and
-     * one literal XML patch adds the empty {@code <v></v>} openpyxl would have written.
+     * result (a different shape, named positionally as well since Q37(ii)) — so POI builds the
+     * workbook and one literal XML patch adds the empty {@code <v></v>} openpyxl would have
+     * written.
      */
     private URI writeFormulaHeaderWithEmptyCachedValue() throws IOException
     {
@@ -1941,8 +2009,15 @@ class ExcelTableProviderTest
     }
 
 
+    /**
+     * Numeric and formula header cells are headers; an ERROR header cell no longer ends the range
+     * but keeps its column under the positional name, and the columns after it are read (owner
+     * ruling Q37(ii), 2026-10-12: <i>"I would like to get this column in with a temp name, so
+     * nothing is lost, additionally log with warning."</i>). It used to stop the range there.
+     */
     @Test
-    void inferColumns_acceptsNumericAndFormulaHeadersAndStopsAtError() throws IOException
+    void inferColumns_acceptsNumericAndFormulaHeadersAndKeepsAnErrorHeaderPositionally()
+        throws IOException
     {
         try (Workbook wb = new XSSFWorkbook())
         {
@@ -1951,8 +2026,8 @@ class ExcelTableProviderTest
             h.createCell(0).setCellValue("STR");
             h.createCell(1).setCellValue(42.0); // numeric header cell
             h.createCell(2).setCellFormula("1+1"); // numeric-formula header cell
-            h.createCell(3).setCellErrorValue(FormulaError.NA.getCode()); // ERROR terminates
-            h.createCell(4).setCellValue("AFTER"); // excluded (after the terminator)
+            h.createCell(3).setCellErrorValue(FormulaError.NA.getCode()); // ERROR: kept as V4
+            h.createCell(4).setCellValue("AFTER"); // read: an error no longer ends the range
 
             Row d = s.createRow(1);
             d.createCell(0).setCellValue("x");
@@ -1963,8 +2038,10 @@ class ExcelTableProviderTest
 
             DataTableColumnMeta[] cols = ExcelTableProvider.inferColumns(s,
                     URI.create("file:///f.xlsx"), 10);
-            assertEquals(3, cols.length);
+            assertEquals(5, cols.length);
             assertEquals("STR", cols[0].getName());
+            assertEquals("V4", cols[3].getName());
+            assertEquals("AFTER", cols[4].getName());
         }
     }
 
@@ -2062,10 +2139,10 @@ class ExcelTableProviderTest
 
         assertEquals(253_717_833_600.0, (double) table.getValue(0, 0), 0.5,
                 "Excel's last date, 9999-12-31, is still a date");
-        assertInstanceOf(MissingValue.class, table.getValue(1, 0),
-                "one day past Excel's last date is not a date");
-        assertInstanceOf(MissingValue.class, table.getValue(2, 0),
-                "1e308 must be missing, not POI's overflowed 1899-12-31");
+        assertSame(MissingValue.MIS_ERROR, table.getValue(1, 0),
+                "one day past Excel's last date is not a date: a present value, unreadable");
+        assertSame(MissingValue.MIS_ERROR, table.getValue(2, 0),
+                "1e308 must be MIS_ERROR, not POI's overflowed 1899-12-31");
     }
 
     // ============ a numeric cell with a BLANK stored value is MISSING, never 0 ============
@@ -2196,27 +2273,28 @@ class ExcelTableProviderTest
                 assertNull(col.getDisplayFormat(), names[c]);
             }
         }
-        assertInstanceOf(MissingValue.class, table.getValue(0, 1),
-                "an uncalculated formula is missing, not 0");
+        assertSame(MissingValue.MIS_ERROR, table.getValue(0, 1),
+                "an uncalculated formula is MIS_ERROR (Q37(i)), not 0");
         assertEquals(7.0, (double) table.getValue(1, 1), 0.0);
         assertEquals(0.0, (double) table.getValue(0, 2), 0.0,
                 "a real 0 beside the blank cell stays a present 0");
         assertEquals(5.0, (double) table.getValue(1, 2), 0.0);
-        assertInstanceOf(MissingValue.class, table.getValue(0, 4),
-                "a plain numeric cell with an empty value is missing, not 0");
+        assertSame(MissingValue.MIS, table.getValue(0, 4),
+                "a plain numeric cell with an empty value is MIS (R1), not 0");
         assertEquals(8.0, (double) table.getValue(1, 4), 0.0);
-        assertInstanceOf(MissingValue.class, table.getValue(0, 5),
-                "a t=\"n\" cell with an empty value is missing, not 0");
+        assertSame(MissingValue.MIS, table.getValue(0, 5),
+                "a t=\"n\" cell with an empty value is MIS (R1), not 0");
         assertEquals(9.0, (double) table.getValue(1, 5), 0.0);
         for (int c : new int[]
         {
                 3, 6, 7
         })
         {
+            MissingValue expected = c == 3 ? MissingValue.MIS_ERROR : MissingValue.MIS;
             for (int r = 0; r < 2; r++)
             {
-                assertInstanceOf(MissingValue.class, table.getValue(r, c), names[c] + " row " + r
-                        + ": a column of blank numeric cells is all missing");
+                assertSame(expected, table.getValue(r, c), names[c] + " row " + r
+                        + ": a column of uncalculated formulas is MIS_ERROR, of blank cells MIS");
             }
         }
     }
@@ -2320,8 +2398,9 @@ class ExcelTableProviderTest
         claims.add(() -> assertEquals((Object) 3.0, table.getValue(0, 5)));
         claims.add(() -> assertEquals((Object) 7.0, table.getValue(1, 1)));
         claims.add(() -> assertEquals((Object) 4.0, table.getValue(1, 4)));
-        claims.add(() -> assertInstanceOf(MissingValue.class, table.getValue(0, 6),
-                "a whitespace-only stored value is missing, not 0"));
+        claims.add(() -> assertSame(MissingValue.MIS_ERROR, table.getValue(0, 6),
+                "a whitespace-only stored value the reader cannot read (styles table) is"
+                        + " MIS_ERROR, not 0 (named gap L11)"));
         claims.add(() -> assertEquals((Object) 2.0, table.getValue(1, 6)));
         for (int c = 1; c < names.length; c++)
         {
@@ -2358,14 +2437,19 @@ class ExcelTableProviderTest
             Sheet s = wb.createSheet("DATA");
             CellStyle hideZero = wb.createCellStyle();
             hideZero.setDataFormat(wb.createDataFormat().getFormat("0;-0;\"\""));
-            s.createRow(0).createCell(0).setCellValue("V");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("V");
+            h.createCell(1).setCellValue("F");
             for (int r = 1; r <= 2; r++)
             {
                 Row row = s.createRow(r);
-                row.createCell(0).setCellValue(r);
-                row.getCell(0).setCellStyle(hideZero);
+                for (int c = 0; c < 2; c++)
+                {
+                    row.createCell(c).setCellValue(r);
+                    row.getCell(c).setCellStyle(hideZero);
+                }
             }
-        }, java.util.Map.of("A2", BlankNumeric.PLAIN));
+        }, java.util.Map.of("A2", BlankNumeric.PLAIN, "B2", BlankNumeric.UNCALCULATED_FORMULA));
 
         IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
 
@@ -2373,6 +2457,10 @@ class ExcelTableProviderTest
         assertEquals((Object) 0.0, table.getValue(0, 0),
                 "R8: a blank stored value under a zero-hiding format reads as a present 0");
         assertEquals(2.0, (double) table.getValue(1, 0), 0.0);
+        assertEquals((Object) 0.0, table.getValue(0, 1),
+                "R8 corner of Q37(i) (named gap): an uncalculated formula under a zero-hiding"
+                        + " format reads as a present 0, not MIS_ERROR");
+        assertEquals(2.0, (double) table.getValue(1, 1), 0.0);
     }
 
 
@@ -2435,16 +2523,251 @@ class ExcelTableProviderTest
         for (int c = 0; c < 3; c++)
         {
             assertEquals(1_994_457_600.0, (double) table.getValue(0, c), 0.5, names[c]);
-            assertInstanceOf(MissingValue.class, table.getValue(1, c),
-                    names[c] + ": a blank cell in a date column is missing, not 1899-12-31");
+            assertSame(c == 0 ? MissingValue.MIS_ERROR : MissingValue.MIS, table.getValue(1, c),
+                    names[c] + ": a blank cell in a date column is MIS (an uncalculated formula"
+                            + " MIS_ERROR), not 1899-12-31");
         }
         for (int c = 3; c < names.length; c++)
         {
+            MissingValue expected = c == 3 ? MissingValue.MIS_ERROR : MissingValue.MIS;
             for (int r = 0; r < 2; r++)
             {
-                assertInstanceOf(MissingValue.class, table.getValue(r, c),
+                assertSame(expected, table.getValue(r, c),
                         names[c] + " row " + r + ": a date-styled blank cell is missing");
             }
         }
+    }
+
+    // ============ BNM-F7 / Q37(i): a non-blank unreadable numeric cell is MIS_ERROR ============
+
+
+    /**
+     * A cell past the type-guessing sample in a column the sample typed {@code DOUBLE}: a BLANK
+     * cell (absent, or text that is empty or whitespace only) is {@link MissingValue#MIS}; a
+     * NON-BLANK cell that is not a number is {@link MissingValue#MIS_ERROR} (owner ruling BNM-F7,
+     * 2026-10-12): text that does not parse, an error cell (literal or formula-cached), a boolean.
+     * A number whose value is infinite - text {@code "Infinity"}, or a stored {@code 1E+400} - is
+     * {@code MIS_ERROR} too (owner, 2026-10-12: <i>"Should CSV/XLSX text Infinity also become
+     * MIS_ERROR: yes."</i>). Text {@code "NaN"} keeps BNM E5 ({@code MIS}); text that parses keeps
+     * its number.
+     */
+    @Test
+    void testUnreadableAndInfiniteNumericCellsAreMisErrorAndBlankOnesMis() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI plain = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("VAL");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+            s.createRow(2).createCell(0).setCellValue(2.0);
+            s.createRow(3).createCell(0).setCellValue("abc");
+            s.createRow(4).createCell(0).setCellErrorValue(FormulaError.NA.getCode());
+            s.createRow(5).createCell(0).setCellFormula("1/0");
+            s.createRow(6).createCell(0).setCellValue("Infinity");
+            s.createRow(7).createCell(0).setCellValue("NaN");
+            s.createRow(8).createCell(0).setCellValue("   ");
+            s.createRow(9).createCell(0).setCellValue("");
+            s.createRow(10).createCell(0).setCellValue(true);
+            s.createRow(11).createCell(0).setCellValue("42");
+            s.createRow(12).createCell(0).setCellValue(777.0);
+            s.createRow(13);
+            s.createRow(14).createCell(0).setCellValue(5.0);
+            evaluateAllFormulas(wb);
+        });
+        byte[] bytes = patchSheet1Xml(Files.readAllBytes(new File(plain).toPath()), "<v>777.0</v>",
+                "<v>1E+400</v>");
+        File patched = File.createTempFile("xlsxinfinite", ".xlsx");
+        patched.deleteOnExit();
+        Files.write(patched.toPath(), bytes);
+
+        IDataTable table = provider.provide(patched.toURI(), ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(0).getType());
+        assertAll(() -> assertSame(MissingValue.MIS_ERROR, table.getValue(2, 0), "abc"),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(3, 0), "#N/A cell"),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(4, 0), "=1/0 cached"),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(5, 0), "text Infinity"),
+                () -> assertSame(MissingValue.MIS, table.getValue(6, 0), "text NaN: BNM E5"),
+                () -> assertSame(MissingValue.MIS, table.getValue(7, 0), "whitespace-only text"),
+                () -> assertSame(MissingValue.MIS, table.getValue(8, 0), "empty text"),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(9, 0), "boolean"),
+                () -> assertEquals(42.0, (double) table.getValue(10, 0), 0.0),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(11, 0), "stored 1E+400"),
+                () -> assertSame(MissingValue.MIS, table.getValue(12, 0), "absent cell"),
+                () -> assertEquals(5.0, (double) table.getValue(13, 0), 0.0));
+    }
+
+
+    /**
+     * The same split in a DATE column (one {@code inferDateFormats} gives {@code E8601DT.}): the
+     * blank / non-blank decision is made from the raw cell, not from the converted value - a blank
+     * cell is {@code MIS}, a present cell whose date conversion fails is {@code MIS_ERROR}: text
+     * past the sample, a serial past Excel's last date, a negative serial, an uncalculated formula.
+     */
+    @Test
+    void testDateColumnSplitsBlankFromUnreadableOnTheRawCell() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI uri = writeWithBlankNumericCells(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            CellStyle dateStyle = wb.createCellStyle();
+            dateStyle.setDataFormat(wb.createDataFormat().getFormat("yyyy-mm-dd"));
+            s.createRow(0).createCell(0).setCellValue("DT");
+            double[] serials =
+            {
+                    45000.0, 45001.0, 2_958_466.0, -5.0, 45002.0
+            };
+            for (int i = 0; i < serials.length; i++)
+            {
+                dateCell(s.createRow(i + 1), 0, dateStyle).setCellValue(serials[i]);
+            }
+            s.createRow(6).createCell(0).setCellValue("2023-01-01");
+            s.createRow(7).createCell(0).setCellValue("   ");
+            s.createRow(8);
+        }, java.util.Map.of("A6", BlankNumeric.UNCALCULATED_FORMULA));
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals("E8601DT.", table.getMetaData().getColumn(0).getDisplayFormat());
+        assertAll(() -> assertEquals(1_994_457_600.0, (double) table.getValue(0, 0), 0.5),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(2, 0), "past max"),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(3, 0), "negative serial"),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(4, 0),
+                        "uncalculated formula"),
+                () -> assertSame(MissingValue.MIS_ERROR, table.getValue(5, 0), "text"),
+                () -> assertSame(MissingValue.MIS, table.getValue(6, 0), "whitespace-only text"),
+                () -> assertSame(MissingValue.MIS, table.getValue(7, 0), "absent cell"));
+    }
+
+
+    /**
+     * The openpyxl-written workbook (external producer; see
+     * {@code src/test/resources/openpyxl/generate-openpyxl-fixture.py}): every formula carries an
+     * empty cached value, so the formula column reads {@code MIS_ERROR} in every row (Q37(i):
+     * <i>"a, log and continue and read as MIS_ERROR."</i>), while a cell openpyxl left out is a
+     * blank {@code MIS}.
+     */
+    @Test
+    void testOpenpyxlFormulaColumnReadsMisError() throws Exception
+    {
+        IDataTable table = provider.provide(openpyxlFixture(), ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals("CALC", table.getMetaData().getColumn(1).getName());
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(1).getType());
+        for (int r = 0; r < 3; r++)
+        {
+            assertSame(MissingValue.MIS_ERROR, table.getValue(r, 1), "CALC row " + r);
+        }
+        assertEquals(1.5, (double) table.getValue(0, 2), 0.0);
+        assertSame(MissingValue.MIS, table.getValue(1, 2), "a cell openpyxl did not write");
+    }
+
+
+    /**
+     * Q37(i): <i>"log and continue"</i> - ONE {@code WARNING} per column per load, at the first
+     * such cell, naming the sheet, the cell and why; the other two formula cells of the column are
+     * not logged. Asserted on the level as well as the text: a DEBUG line the user never sees would
+     * not be the ruled log.
+     */
+    @Test
+    void testOpenpyxlFormulaColumnWarnsOncePerColumn() throws Exception
+    {
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            provider.provide(openpyxlFixture(), ExcelProviderSupplier.FI_XLSX);
+            List<String> warnings = unreadableCellWarnings(log);
+            assertEquals(1, warnings.size(), () -> String.valueOf(log.messages()));
+            String w = warnings.get(0);
+            assertAll(() -> assertTrue(w.contains("Excel cell B2 of sheet 'DATA'"), w),
+                    () -> assertTrue(w.contains("column 'CALC'"), w),
+                    () -> assertTrue(w.contains("formula without a cached value"), w),
+                    () -> assertTrue(w.contains("not logged"), w));
+        }
+    }
+
+
+    /** A cell the reader throws on is logged the same way, with its own reason. */
+    @Test
+    void testAReadFailureIsLoggedOnceAsWell() throws Exception
+    {
+        URI goodUri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            s.createRow(0).createCell(0).setCellValue("A");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+            s.createRow(2).createCell(0).setCellValue(4.0);
+            s.createRow(3).createCell(0).setCellValue(5.0);
+        });
+        byte[] bytes = patchSheet1Xml(Files.readAllBytes(new File(goodUri).toPath()), "<v>4.0</v>",
+                "<v>N/A</v>");
+        bytes = patchSheet1Xml(bytes, "<v>5.0</v>", "<v>N/B</v>");
+        File corrupt = File.createTempFile("xlsxreadfail", ".xlsx");
+        corrupt.deleteOnExit();
+        Files.write(corrupt.toPath(), bytes);
+
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            IDataTable table = provider.provide(corrupt.toURI(), ExcelProviderSupplier.FI_XLSX);
+            assertSame(MissingValue.MIS_ERROR, table.getValue(1, 0));
+            assertSame(MissingValue.MIS_ERROR, table.getValue(2, 0));
+            List<String> warnings = unreadableCellWarnings(log);
+            assertEquals(1, warnings.size(), () -> String.valueOf(log.messages()));
+            assertTrue(warnings.get(0).contains("Excel cell A3 of sheet 'DATA'"),
+                    warnings::toString);
+            assertTrue(warnings.get(0).contains("cell the reader cannot read"), warnings::toString);
+        }
+    }
+
+
+    /**
+     * The openpyxl workbook's {@code #REF!} header (column D; openpyxl writes the error code as an
+     * error cell) keeps its column as {@code V4}, with its data, and the column after it is read -
+     * through all three entry points, which must agree (Q37(ii)).
+     */
+    @Test
+    void testOpenpyxlRefHeaderKeepsItsColumnInEveryEntryPoint() throws Exception
+    {
+        URI uri = openpyxlFixture();
+        IDataTable table;
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+            assertTrue(log.containsMessageContaining(
+                    "Excel column D of sheet 'DATA' has an unreadable header (#REF!); using"
+                            + " fallback 'V4'"),
+                    () -> String.valueOf(log.messages()));
+        }
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] inferred = ExcelTableProvider.inferColumns(openSheet(uri), uri, 50);
+
+        List<String> expected = List.of("ID", "CALC", "NUM", "V4", "SITE");
+        assertEquals(expected.size(), table.getColumnCount());
+        for (int c = 0; c < expected.size(); c++)
+        {
+            assertEquals(expected.get(c), table.getMetaData().getColumn(c).getName());
+            assertEquals(expected.get(c), meta.getColumn(c).getName());
+            assertEquals(expected.get(c), inferred[c].getName());
+        }
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(3).getType());
+        assertEquals(20.0, (double) table.getValue(1, 3), 0.0);
+        assertEquals("S3", table.getValue(2, 4));
+    }
+
+
+    private static List<String> unreadableCellWarnings(LoggerCapture aLog)
+    {
+        return aLog.records().stream().filter(r -> r.getLevel() == java.util.logging.Level.WARNING)
+                .map(java.util.logging.LogRecord::getMessage)
+                .filter(m -> m.contains("reads as MIS_ERROR")).toList();
+    }
+
+
+    private URI openpyxlFixture() throws Exception
+    {
+        return java.util.Objects
+                .requireNonNull(getClass().getResource("/openpyxl/uncalculated-formulas.xlsx"))
+                .toURI();
     }
 }

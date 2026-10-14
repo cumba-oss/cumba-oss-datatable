@@ -24,13 +24,14 @@ public class CsvRecord
      * Per column: {@code true} where the cell was enclosed in quotation marks in the file;
      * {@code null} when none was (or none that matters -- see below). Otherwise exactly as long as
      * {@link #values}. {@link CsvRecordReader} guarantees the flag for every missing-sentinel cell
-     * ({@code .}, {@code ._}, {@code .A}..{@code .Z}) of every record, and for EVERY cell of a
-     * type-guessing sample record ({@link CsvRecordReader#nextWithQuoteFlags()}); a non-sentinel
-     * cell of a later record may carry {@code false} although quoted, which no reading past the
-     * sample depends on. Owner rulings 2026-09-30: K7 <i>"missing only if it is not in quotation
-     * marks"</i> and K7b <i>"Agree to special missings as long as they are not in quotation
-     * marks"</i> -- an unquoted sentinel is the SAS missing, a quoted one is text; K7c <i>"yes any
-     * quoted value is always a string"</i> -- a quoted cell in the sample types its column STRING.
+     * ({@code .}, {@code ._}, {@code .A}..{@code .Z}) and every blank cell of every record, and for
+     * EVERY cell of a type-guessing sample record ({@link CsvRecordReader#nextWithQuoteFlags()}); a
+     * non-blank, non-sentinel cell of a later record may carry {@code false} although quoted, which
+     * no reading past the sample depends on. Owner rulings 2026-09-30: K7 <i>"missing only if it is
+     * not in quotation marks"</i> and K7b <i>"Agree to special missings as long as they are not in
+     * quotation marks"</i> -- an unquoted sentinel is the SAS missing, a quoted one is text; K7c
+     * <i>"yes any quoted value is always a string"</i> -- a quoted cell in the sample types its
+     * column STRING.
      */
     private final boolean @Nullable [] quoted;
 
@@ -236,10 +237,11 @@ public class CsvRecord
 
 
     /**
-     * Test if the cell was enclosed in quotation marks -- exact for every missing-sentinel cell,
-     * and for every cell of a type-guessing sample record (see {@link #quoted}). Package-private
-     * for that reason: past the sample a quoted non-sentinel cell answers {@code false}, so the
-     * flag is no general "was quoted" answer and is read only by this package's typing code.
+     * Test if the cell was enclosed in quotation marks -- exact for every missing-sentinel cell and
+     * every blank cell, and for every cell of a type-guessing sample record (see {@link #quoted}).
+     * Package-private for that reason: past the sample another quoted cell may answer
+     * {@code false}, so the flag is no general "was quoted" answer and is read only by this
+     * package's typing and numeric-cell code.
      *
      * @param aColumn
      *            the (0-based) index of the column to test.

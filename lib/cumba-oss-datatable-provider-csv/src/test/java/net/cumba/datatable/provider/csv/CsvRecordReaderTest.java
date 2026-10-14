@@ -215,6 +215,47 @@ class CsvRecordReaderTest
     }
 
 
+    /**
+     * BNM-F7 with K7c: past the sample a BLANK cell's quote flag is exact too -- a quoted
+     * {@code ""} is text, an unquoted empty field is nothing, and univocity reads both as
+     * {@code null}. Only a record holding an empty cell AND a doubled quote, or a whitespace-only
+     * cell (which only quoting keeps) and any quote, pays the second parse.
+     */
+    @Test
+    void blankCellsPastTheSampleAreFlagged()
+    {
+        CsvRecordReader r = reader("x,\n\"x\",\nx,\"\"\n\"a\"\"b\",\nx,\" \"\n");
+        try
+        {
+            CsvRecord emptyNoQuote = Objects.requireNonNull(r.next());
+            CsvRecord emptyQuoteElsewhere = Objects.requireNonNull(r.next());
+            assertEquals(0, r.reReadCount(), "an empty cell without a doubled quote");
+            assertFalse(emptyNoQuote.isQuoted(1));
+            assertFalse(emptyQuoteElsewhere.isQuoted(1));
+
+            CsvRecord quotedEmpty = Objects.requireNonNull(r.next());
+            assertEquals(1, r.reReadCount());
+            assertEquals("", quotedEmpty.getValue(1));
+            assertTrue(quotedEmpty.isQuoted(1), "a quoted empty value is quoted");
+
+            CsvRecord escapedQuote = Objects.requireNonNull(r.next());
+            assertEquals(2, r.reReadCount(), "the gate is a pre-check; the twin decides");
+            assertEquals("a\"b", escapedQuote.getValue(0));
+            assertFalse(escapedQuote.isQuoted(1));
+
+            CsvRecord quotedSpace = Objects.requireNonNull(r.next());
+            assertEquals(3, r.reReadCount());
+            assertEquals(" ", quotedSpace.getValue(1));
+            assertTrue(quotedSpace.isQuoted(1));
+            assertNull(r.next());
+        }
+        finally
+        {
+            r.stopParsing();
+        }
+    }
+
+
     /** An unterminated {@code ".} at the end of the input is still a quoted cell. */
     @Test
     void unterminatedQuotedDotAtEofIsQuoted()

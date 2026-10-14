@@ -28,6 +28,15 @@ import org.jspecify.annotations.Nullable;
  * quotes, where {@code " ."} is a quoted {@code "."} too; there any quote gates the re-read. Every
  * other record costs one scan of its values for a sentinel.
  * <p>
+ * A BLANK cell needs its flag too (owner ruling BNM-F7, 2026-10-12, with K7c): in a numeric column
+ * an unquoted blank cell has no value ({@code MIS}), a quoted one is text that is not a number
+ * ({@code MIS_ERROR}), and univocity reads a quoted {@code ""} as {@code null}, exactly like an
+ * unquoted empty field. Its trace in the raw text is the same kind of pair: a quoted empty value is
+ * the quote character twice. So a record holding an empty cell is re-read only when its raw text
+ * holds a doubled quote (an escaped quote inside some text costs a second parse it did not need,
+ * never a wrong flag), and one holding a whitespace-only cell -- which only quoting keeps, since
+ * the parser trims unquoted whitespace -- whenever it holds a quote character at all.
+ * <p>
  * The type-guessing sample is read differently ({@link #nextWithQuoteFlags()}): there EVERY quoted
  * cell must be known, because any quoted value is text evidence (owner ruling K7c, 2026-09-30:
  * <i>"yes any quoted value is always a string."</i>), so a sample record is re-read whenever its
@@ -39,6 +48,19 @@ final class CsvRecordReader
 
     private static final String DOT = ".";
 
+    /**
+     * {@link #flaggedCellKinds} bit: a missing-sentinel cell ({@code .}, {@code ._}, {@code .A}..).
+     */
+    private static final int KIND_SENTINEL = 1;
+
+    /** {@link #flaggedCellKinds} bit: an empty cell (a quoted {@code ""} reads as one). */
+    private static final int KIND_EMPTY = 2;
+
+    /**
+     * {@link #flaggedCellKinds} bit: a non-empty, whitespace-only cell (only quoting keeps one).
+     */
+    private static final int KIND_WHITESPACE = 4;
+
     private final CsvParserSettings settings;
 
     private final CsvParser parser;
@@ -47,6 +69,9 @@ final class CsvRecordReader
 
     /** The quote character followed by a dot: the opening of every quoted {@code "."}. */
     private final String quoteDot;
+
+    /** The quote character twice: every quoted empty value {@code ""}. */
+    private final String quoteQuote;
 
     /** {@code true} when {@code " ."} reads as {@code "."}, so the quote need not touch the dot. */
     private final boolean anyQuoteGates;
@@ -63,6 +88,7 @@ final class CsvRecordReader
         parser = new CsvParser(aSettings);
         quote = aSettings.getFormat().getQuote();
         quoteDot = quote + DOT;
+        quoteQuote = String.valueOf(quote) + quote;
         anyQuoteGates = aSettings.getIgnoreLeadingWhitespacesInQuotes();
     }
 
@@ -75,7 +101,8 @@ final class CsvRecordReader
 
     /**
      * Returns the next record, or {@code null} at the end of the input. Its quote flags are exact
-     * for every missing-sentinel cell -- all a record past the type-guessing sample needs.
+     * for every missing-sentinel cell and every blank cell -- all a record past the type-guessing
+     * sample needs.
      *
      * @return the next record, or {@code null} at the end of the input.
      */
@@ -108,18 +135,37 @@ final class CsvRecordReader
         {
             return null;
         }
-        if (!aEveryQuote && !containsSentinel(row))
+        int kinds = aEveryQuote ? 0 : flaggedCellKinds(row);
+        if (!aEveryQuote && kinds == 0)
         {
             return new CsvRecord(row);
         }
         String raw = Objects.requireNonNullElse(parser.getContext().currentParsedContent(), "");
-        boolean anyQuote = aEveryQuote || anyQuoteGates;
-        if (anyQuote ? raw.indexOf(quote) < 0 : !raw.contains(quoteDot))
+        if (!mayHoldQuotedFlaggedCell(raw, aEveryQuote || anyQuoteGates, kinds))
         {
             return new CsvRecord(row);
         }
         reReads++;
         return new CsvRecord(row, quotedCells(row, quoteKeeper().parseLine(raw), quote));
+    }
+
+
+    /**
+     * Whether the raw text of a record can hold a QUOTED cell of one of the kinds
+     * {@link #flaggedCellKinds} found -- the gate in front of the second parse. Every kind leaves
+     * its own trace in the raw text: a quoted {@code "."} has the quote touching the dot, a quoted
+     * empty value is two quote characters in a row, and a quoted whitespace-only value at least one
+     * quote character. With {@code aAnyQuote} (a sample record, or a parser that ignores leading
+     * whitespace inside quotes) any quote character gates.
+     */
+    private boolean mayHoldQuotedFlaggedCell(String aRaw, boolean aAnyQuote, int aKinds)
+    {
+        if (aAnyQuote || (aKinds & KIND_WHITESPACE) != 0)
+        {
+            return aRaw.indexOf(quote) >= 0;
+        }
+        return ((aKinds & KIND_SENTINEL) != 0 && aRaw.contains(quoteDot))
+                || ((aKinds & KIND_EMPTY) != 0 && aRaw.contains(quoteQuote));
     }
 
 
@@ -170,16 +216,33 @@ final class CsvRecordReader
     }
 
 
-    private static boolean containsSentinel(String[] aRow)
+    /**
+     * The kinds of cell in {@code aRow} whose quote flag a record past the sample must carry, as a
+     * bit set of {@link #KIND_SENTINEL}, {@link #KIND_EMPTY} and {@link #KIND_WHITESPACE}: a
+     * missing sentinel (K7: quoted is text, unquoted the missing), and a blank cell -- in a numeric
+     * column an unquoted blank cell is {@code MIS} but a quoted one is text that is not a number
+     * (BNM-F7 with K7c), and univocity reads a quoted {@code ""} as {@code null} exactly like an
+     * unquoted empty field. One scan of the values; {@code 0} when the record needs no flags.
+     */
+    private static int flaggedCellKinds(String[] aRow)
     {
+        int kinds = 0;
         for (String v : aRow)
         {
-            if (CsvRecord.isMissingSentinel(v))
+            if (v == null || v.isEmpty())
             {
-                return true;
+                kinds |= KIND_EMPTY;
+            }
+            else if (CsvRecord.isMissingSentinel(v))
+            {
+                kinds |= KIND_SENTINEL;
+            }
+            else if (v.isBlank())
+            {
+                kinds |= KIND_WHITESPACE;
             }
         }
-        return false;
+        return kinds;
     }
 
 

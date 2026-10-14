@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.Locale;
+import java.util.Set;
 
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
@@ -40,6 +41,16 @@ public final class CdtWriter
 
     /** The fence used to open and close every data block. */
     public static final String FENCE = CdtFence.DEFAULT;
+
+    /**
+     * The dataset-level identifiers that are carried whatever their capitalisation (owner ruling
+     * Q31 ⓑ, 2026-10-12: <i>"agree to b, but might already be closed."</i>): the Dataset-JSON
+     * document identifiers - {@code datasetJSONVersion} and the four OIDs - which the Dataset-JSON
+     * loader puts on a table and which are data, not presentation. Lower case; matched ignoring
+     * case (names match case-insensitively, owner 2026-09-28), written in the key's own spelling.
+     */
+    private static final Set<String> CARRIED_IDENTIFIERS = Set.of("datasetjsonversion", "fileoid",
+            "studyoid", "metadataversionoid", "itemgroupoid");
 
     private CdtWriter()
     {
@@ -185,14 +196,16 @@ public final class CdtWriter
         // SASDatasetName, Compression, "Row Length"), and the engine-read keys are snake_case
         // (file_format, dataset_size, transport_version) or reach the engine under a snake-case
         // name (Encoding / EncodingSource as extract_metadata("encoding") / ("encoding_source")),
-        // and the round-trip identifiers are camelCase. The decode-charset pair MUST stay skipped:
+        // and the round-trip identifiers are camelCase - and, whatever their capitalisation,
+        // carried when listed in CARRIED_IDENTIFIERS (Q31 ⓑ: StudyOID survives, Comment does
+        // not; see isPresentationKey). The decode-charset pair MUST stay skipped:
         // CdtTableBuilder lets a declared Encoding attribute win, so writing it would make a
         // sas7bdat exported to CDT claim windows-1252 when read back (CdtWriterEncodingKeysTest).
         for (String key : aMeta.getMetaDataKeys())
         {
             if (key == null || "class".equals(key) || "label".equals(key)
                     || "dataset_class".equals(key) || key.indexOf('.') >= 0
-                    || startsWithUpperCase(key))
+                    || isPresentationKey(key))
             {
                 continue;
             }
@@ -675,18 +688,18 @@ public final class CdtWriter
 
 
     /**
-     * Whether a dataset-level metadata key looks like a presentation key rather than one to carry
-     * (Q31). True when the first character is upper case.
+     * Whether a dataset-level metadata key is a presentation key rather than one to carry (Q31):
+     * its first character is upper case, and it is not one of the {@link #CARRIED_IDENTIFIERS}.
      *
      * <p>
-     * ⚠ <b>Known residual hole, deliberately left rather than papered over.</b> This is a
-     * capitalisation heuristic, so a hand-authored PascalCase key — {@code StudyOID} rather than
-     * {@code studyOID} — is still dropped, indistinguishable from {@code Comment} or {@code Class}.
-     * Closing it absolutely needs an explicit list of the known presentation keys, which is a
-     * different trade: the list would live here while the keys are introduced in the providers and
-     * in {@code DataTableMetaSupport}, so a new key that nobody added to it would cost the ~10x
-     * file growth this filter exists to avoid. Which side that should fail on is the owner's call
-     * and is filed as open; the heuristic is the fix the ruling evidenced.
+     * The capitalisation rule is what keeps the dataset header small: every presentation key in the
+     * stack is PascalCase or spaced, while the engine-read keys are snake_case and the round-trip
+     * identifiers camelCase. It cannot tell a hand-authored PascalCase identifier -
+     * {@code StudyOID} rather than {@code studyOID} - from {@code Comment} or {@code Class}, so the
+     * identifiers are named explicitly (owner ruling Q31 ⓑ, 2026-10-12): a listed identifier
+     * survives whatever its capitalisation. The list fails CLOSED: a key nobody added to it keeps
+     * the capitalisation rule, so a new presentation key never costs the ~10x file growth this
+     * filter exists to avoid; a new identifier that is not camelCase is dropped until it is listed.
      * </p>
      *
      * <p>
@@ -700,9 +713,10 @@ public final class CdtWriter
      *            the metadata key.
      * @return true when the key should be suppressed as presentation metadata.
      */
-    private static boolean startsWithUpperCase(String aName)
+    private static boolean isPresentationKey(String aName)
     {
-        return !aName.isEmpty() && Character.isUpperCase(aName.charAt(0));
+        return !aName.isEmpty() && Character.isUpperCase(aName.charAt(0))
+                && !CARRIED_IDENTIFIERS.contains(aName.toLowerCase(Locale.ROOT));
     }
 
     // ---- meta helpers -------------------------------------------------------------

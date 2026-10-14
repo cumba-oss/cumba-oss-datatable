@@ -43,6 +43,7 @@ import net.cumba.datatable.metadata.IColumnMetadata;
 import net.cumba.datatable.metadata.IDataTableMetadata;
 import net.cumba.datatable.metadata.IMetadataLibrary;
 import net.cumba.datatable.values.DataValueType;
+import net.cumba.datatable.values.ListCellEncoding;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -167,19 +168,15 @@ public class DefineMetadataLibrary implements IMetadataLibrary
 
 
     /**
-     * Build a comma-separated list of CT-package ids from the Define-XML {@code <Standard>}
-     * elements of type "CT". Package id format follows the CDISC Library convention
-     * {@code <publishingSet>ct-<version>}, e.g. {@code sdtmct-2022-03-25}. Returns {@code null}
-     * when no such Standards exist.
+     * Build the list of CT-package ids from the Define-XML {@code <Standard>} elements of type
+     * "CT", in the documented list encoding ({@link ListCellEncoding}: {@code ", "}). Package id
+     * format follows the CDISC Library convention {@code <publishingSet>ct-<version>}, e.g.
+     * {@code sdtmct-2022-03-25}. Returns {@code null} when no such Standards exist.
      */
     private static @Nullable String collectCtPackageIds(DefineSupport aDefine)
     {
         List<Standard> stds = aDefine.getStandards().toList();
-        if (stds.isEmpty())
-        {
-            return null;
-        }
-        StringBuilder sb = new StringBuilder();
+        List<String> ids = new ArrayList<>();
         for (Standard s : stds)
         {
             if (s == null || !"CT".equalsIgnoreCase(s.getType()))
@@ -192,13 +189,9 @@ public class DefineMetadataLibrary implements IMetadataLibrary
             {
                 continue;
             }
-            if (!sb.isEmpty())
-            {
-                sb.append(", ");
-            }
-            sb.append(pubSet.toLowerCase(Locale.ROOT)).append("ct-").append(sVer);
+            ids.add(pubSet.toLowerCase(Locale.ROOT) + "ct-" + sVer);
         }
-        return sb.isEmpty() ? null : sb.toString();
+        return ids.isEmpty() ? null : ListCellEncoding.join(ids);
     }
 
 

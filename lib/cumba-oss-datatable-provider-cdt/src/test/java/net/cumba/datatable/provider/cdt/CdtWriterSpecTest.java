@@ -350,15 +350,14 @@ class CdtWriterSpecTest
      * suppressed, so the fix did not trade a silent data loss for a 10x file.
      *
      * <p>
-     * ⚠ {@code StudyOID} is in the suppressed list on purpose. It is the residual hole the ruling
-     * names: a hand-authored PascalCase key is indistinguishable from {@code Comment} under a
-     * capitalisation rule and is still dropped. Pinned as MEASURED, not as intended — if the filter
-     * is ever given an explicit presentation-key list this assertion is the one that must flip, and
-     * it should flip deliberately.
+     * {@code StudyOID} was the residual hole of the capitalisation rule: a hand-authored PascalCase
+     * key is indistinguishable from {@code Comment}. Owner ruling Q31 ⓑ (2026-10-12) closed it with
+     * an identifier allowlist, so it now survives while the presentation keys beside it stay
+     * dropped (see {@code CdtWriterIdentifierAllowlistTest}).
      * </p>
      */
     @Test
-    void presentationKeysAreStillSuppressedAndPascalCaseIsTheResidualHole()
+    void presentationKeysAreStillSuppressedAndAListedIdentifierIsNot()
     {
         CdtDataset ds = CdtParser.parseFirst("""
                 dataset DM Comment=c Standard=SDTM Purpose=Tabulation SASDatasetName=DM StudyOID=S1
@@ -374,8 +373,8 @@ class CdtWriterSpecTest
         assertFalse(headerLine.contains("Standard="), headerLine);
         assertFalse(headerLine.contains("Purpose="), headerLine);
         assertFalse(headerLine.contains("SASDatasetName="), headerLine);
-        assertFalse(headerLine.contains("StudyOID="),
-                headerLine + " -- Q31's known residual hole, pinned as measured");
+        assertTrue(headerLine.contains("StudyOID=S1"),
+                headerLine + " -- Q31 ⓑ: a listed identifier survives in any capitalisation");
     }
 
 

@@ -140,9 +140,9 @@ class CsvSpecialMissingTest
         assertSame(DataValueType.STRING, table.getMetaData().getColumn(1).getType());
         assertSame(MissingValue.MIS_C, table.getValue(1, 0));
         assertSame(MissingValue.MIS_D, table.getValue(1, 1));
-        assertSame(MissingValue.MIS, table.getValue(2, 0),
-                "a quoted special past the sample cannot be text in a DOUBLE column: MIS, as a"
-                        + " quoted '.' there always was");
+        assertSame(MissingValue.MIS_ERROR, table.getValue(2, 0),
+                "a quoted special past the sample is text, which a DOUBLE column cannot read as a"
+                        + " number: MIS_ERROR (BNM-F7), as a quoted '.' there");
         assertEquals(".D", table.getValue(2, 1));
     }
 }

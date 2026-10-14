@@ -772,7 +772,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     // K7 / K7b (owner, 2026-09-30): an unquoted ".", "._" or ".A".."Z" is that SAS
                     // missing in EVERY column type -- its own identity, stored as CdtTableBuilder
                     // stores it, in a DOUBLE buffer too; a quoted one falls through (text in a
-                    // STRING column, MIS in a numeric one -- no number to parse).
+                    // STRING column; in a numeric one a non-blank cell that does not parse, so
+                    // MIS_ERROR -- see numericCell).
                     aDataColumn.addElement(missing);
                     continue;
                 }
@@ -786,18 +787,8 @@ public class CsvTableProvider extends AbstractDataTableProvider
                 switch (aMetaColumn.getType())
                 {
                 case DOUBLE:
-                {
-                    double dblVal = row.getDoubleValue(aColumnIndex);
-                    if (Double.isNaN(dblVal))
-                    {
-                        aDataColumn.addElement(MissingValue.MIS);
-                    }
-                    else
-                    {
-                        aDataColumn.addElement(dblVal);
-                    }
+                    aDataColumn.addElement(numericCell(row, aColumnIndex));
                     break;
-                }
                 case STRING:
                 default:
                     // Right-trim + intern like every other provider (XPT, SAS7BDAT, Parquet,
@@ -810,6 +801,58 @@ public class CsvTableProvider extends AbstractDataTableProvider
                     break;
                 }
             }
+        }
+
+
+        /**
+         * The value a present, non-sentinel cell of a column typed {@code DOUBLE} stores. A cell
+         * reaches here past the type-guessing sample (inside it, text makes the column STRING), so
+         * it can be anything:
+         * <ul>
+         * <li>BLANK (empty or whitespace only, and not quoted) is {@link MissingValue#MIS}: there
+         * is no value.</li>
+         * <li>A number is that number; {@code "NaN"} is {@code MIS} (owner ruling BNM E5, a bare
+         * NaN is {@code MIS}).</li>
+         * <li>Anything else is a value present but not readable as a number, so
+         * {@link MissingValue#MIS_ERROR} (owner ruling BNM-F7, 2026-10-12: <i>"same here, should
+         * already be aligned if not, then yes MIS_ERROR."</i>), as SAS and Dataset-JSON store it:
+         * text that does not parse, a QUOTED value that is blank or a sentinel (any quoted value is
+         * text, K7c), and a number whose parsed value is infinite -- {@code "Infinity"},
+         * {@code "-Infinity"} and an overflowing literal such as {@code "1e400"} alike (owner,
+         * 2026-10-12: <i>"Should CSV/XLSX text Infinity also become MIS_ERROR: yes."</i>).</li>
+         * </ul>
+         * The quote flag of a blank cell is exact past the sample: {@link CsvRecordReader} re-reads
+         * a record that holds an empty cell next to a doubled quote character.
+         */
+        private static Object numericCell(CsvRecord aRow, int aColumnIndex)
+        {
+            String text = aRow.getValue(aColumnIndex);
+            if (aRow.isQuoted(aColumnIndex))
+            {
+                // K7c: a quoted value is text; a blank or sentinel one cannot be a number.
+                if (CDT.isBlankOrNull(text) || CsvRecord.isMissingSentinel(text))
+                {
+                    return MissingValue.MIS_ERROR;
+                }
+            }
+            else if (CDT.isBlankOrNull(text))
+            {
+                return MissingValue.MIS;
+            }
+            double parsed;
+            try
+            {
+                parsed = Double.parseDouble(text);
+            }
+            catch (NumberFormatException _)
+            {
+                return MissingValue.MIS_ERROR;
+            }
+            if (Double.isNaN(parsed))
+            {
+                return MissingValue.MIS;
+            }
+            return Double.isInfinite(parsed) ? MissingValue.MIS_ERROR : parsed;
         }
     }
 }
