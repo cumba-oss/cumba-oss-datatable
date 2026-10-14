@@ -1,8 +1,12 @@
 # Define-XML conversion fixtures — provenance and licence
 
-The three `define-v*-sdtm.xml` files here are third-party CDISC example Define-XML documents (example metadata, no
-study data), used as input for the conversion tests. Per the project owner (2026-10-14), the third-party test files of this project were taken from three repositories:
-`cdisc-org/DataExchange-DatasetJson`, `cdisc-org/sdtm-adam-pilot-project` and `phuse-org/phuse-scripts`.
+The three `define-v*-sdtm.xml` files here are CDISC example Define-XML documents (example metadata, no study data),
+used as input for the conversion tests. All three come from one MIT-licensed CDISC example,
+`cdisc-org/DataExchange-DatasetJson` `examples/sdtm/define.xml` (Define-XML 2.1): `define-v21-sdtm.xml` is an
+earlier revision of it, and `define-v20-sdtm.xml` / `define-v10-sdtm.xml` are **down-converted** from it by
+[`derive_define_fixtures.py`](derive_define_fixtures.py) beside this file (2026-10-14, `PLAN-mit-fixture-resourcing`;
+they replace a Define-XML 1.0 file pruned from `cdisc-org/sdtm-adam-pilot-project`, whose terms forbid modification,
+and a Define-XML 2.0 file whose source could not be identified).
 
 md5 is of the file as committed. **identical** = byte-identical to the named source file; **derived** = made from
 the source content, as described; **not identified** = the exact source could not be shown. Comparisons were made on
@@ -10,24 +14,11 @@ the source content, as described; **not identified** = the exact source could no
 
 | Path | md5 | Relationship to the source |
 |---|---|---|
-| `define-v10-sdtm.xml` | `487a6d98c8bc99e6fdcea26040dbad22` | **derived** from `updated-pilot-submission-package/900172/m5/datasets/cdiscpilot01/tabulations/sdtm/define.xml` (`sdtm-adam-pilot-project`, md5 `ecbefff4cf1879b6ebc606e76706fc87`): pruned to the six domains AE, DM, DS, LB, RELREC and TA with their item, code-list, method and comment definitions, re-serialised (attribute order, layout), and the six archive-location leaves renamed from `<domain>.xpt` to `<domain>.dsjc`. Every one of its 208 identified elements is present in the source; 194 are equal in attributes and content, the other 14 differ only by those leaf names (measured, element-wise). Same bytes as `cumba-corej-rules` `src/test/resources/testdata_study/sdtm/define.xml`, which `PruneDefineXmlDriver` there produces from the full pilot define (inference: this copy was taken from it) |
-| `define-v20-sdtm.xml` | `b0f0b6f02168481569a0b9a91189ee4e` | **not identified**: the CDISC Define-XML 2.0 SDTM example (header: *"File: define2-0-0-example-sdtm.xml, Author: CDISC XML Technologies Team"*). The closest published copy is `phuse-2018/define.cdisc.sdtm.xml` in `cdisc-org/define-xml-2.0-stylesheets` (commit `e94be4ec`, file last changed `34ec2a9b`, 2022-03-15; MIT, *"Copyright (c) 2020 Lex Jansen"*); this file differs from it in 80 / 21 lines (measured `diff`): AETERM has a value-level list with two where clauses and length 200 (25 there), the TS dataset declares 11 variables with roles (6 there; added TSGRPID, TSVALNF, TSVALCD, TSVCDREF, TSVCDVER), the TS leaf names `ts.xml` (`ts.xpt` there) and the stylesheet reference differs. Not found in the three repositories named by the owner: `phuse-scripts` `development/R/data/define2_sdtm.xml` carries the same header but is a 16 809-byte cut-down (measured, commit `398a6d33`), and no other file there or in the other two is this example; it may come from the CDISC Define-XML 2.0 release package (inference; those terms were not read) |
+| `define-v10-sdtm.xml` | `331ea9a47c5c4ffdbf6ffc9b52250061` | **derived** from `cdisc-org/DataExchange-DatasetJson` `examples/sdtm/define.xml` @ `a379f49a` (md5 `1d20c8a4…`), MIT, down-converted by `derive_define_fixtures.py` (2.1 → 2.0 → 1.0, the mappings listed in the script's header): Define-XML 1.0.0 / CRT-DDS, 28 datasets, 1.0 value-level metadata by the `ValueList.<DS>.<VAR>` / `<DS>.<VAR>.<value>` naming convention (10 value lists, 97 value-level items; where-clauses 1.0 cannot express — `IN`, `NE`, values with spaces — are dropped). Checked by the script: CDISC ODM 1.2.1 schema on the ODM core, structural checks S1–S6 on the 1.0 extension |
+| `define-v20-sdtm.xml` | `8919c399b5130f4b820adecd3c74562b` | **derived** from `cdisc-org/DataExchange-DatasetJson` `examples/sdtm/define.xml` @ `a379f49a` (md5 `1d20c8a4…`), MIT, down-converted by `derive_define_fixtures.py` (2.1 → 2.0): Define-XML 2.0.0, 28 datasets (the source's 31 minus the three `def:HasNoData` datasets NV, SUPPNV, SUPPOE, which 2.0 cannot declare). Validated by the script with `xmllint --schema` against the CDISC Define-XML 2.0 schema vendored in `cumba-corej` (`cumba-corej-define-conformance` `xsd/define-2-0/`, referenced, not copied here) |
 | `define-v21-sdtm.xml` | `cba534dfd19fc379fe40050fbc47824e` | **derived** from `examples/sdtm/define.xml` as of commits `925754def9` / `de5dc15f` (md5 `e695e993…`): 57 of 11 789 lines differ (measured `diff`): the 28 `def:leaf` archive locations and titles name `<dataset>.xml` instead of `<dataset>.json` (56 lines), and `IT.EX.EXROUTE` carries an added `def:CommentOID="COM.DTC1"`. Against HEAD (`.xpt` leaves since `bd3a79ad`) it also differs in `CreationDateTime`/`AsOfDateTime` and `def:Context` (`Other` here, `Submission` there). The `.xml` leaves are the original MSG v2 (Dataset-XML) naming, so this may be an earlier release of the same CDISC example (inference); no published copy with these exact bytes was found |
 
 ## Sources
-
-### `cdisc-org/sdtm-adam-pilot-project`
-
-- **Repository:** <https://github.com/cdisc-org/sdtm-adam-pilot-project>; HEAD of `master` at retrieval was
-  `667511d4b183871d74392ba691c935c38d431d39` (committed 2024-12-20), retrieved 2026-10-14. The files used were last
-  changed in commit `2f1a3eb6` (2019-05-23).
-- **Content:** the CDISC SDTM/ADaM pilot submission package, study `CDISCPILOT01` (example data, not real study data).
-- **Terms:** the repository has **no** `LICENSE` file. Its `README.md` ("DISCLAIMER AND LIABILITY", "Terms of Use")
-  says, in the part bearing on redistribution: *"By downloading / using this data, you agree to the Terms of use. …
-  You shall not (and will not allow or assist any third party to), under any circumstances: … (b) disassemble,
-  reverse engineer, decompile, modify, or alter any part of the Data; … (e) sublicense or distribute the data for a
-  fee, or (f) sublicense or distribute the data without an attribution back to CDISC."* This section is that
-  attribution: the data is CDISC's, from the CDISC SDTM/ADaM pilot project (study `CDISCPILOT01`).
 
 ### `cdisc-org/DataExchange-DatasetJson`
 
@@ -68,3 +59,36 @@ SOFTWARE.
 
 The MIT condition requires this notice in all copies or substantial portions; this section carries it for the files
 derived from this repository.
+
+## Regenerating `define-v20-sdtm.xml` and `define-v10-sdtm.xml`
+
+[`derive_define_fixtures.py`](derive_define_fixtures.py) (Python ≥ 3.9, standard library only, plus `xmllint`) is a
+hand-written down-converter, deliberately independent of the converter these files test (`Step10To20` /
+`Step20To21`): running that converter backwards would make the fixtures confirm themselves. Its header lists every
+mapping; it refuses any input whose md5 is not the `a379f49a` file's.
+
+```bash
+git clone https://github.com/cdisc-org/DataExchange-DatasetJson && git -C DataExchange-DatasetJson checkout a379f49a
+python3 derive_define_fixtures.py --source DataExchange-DatasetJson/examples/sdtm/define.xml             # writes both
+python3 derive_define_fixtures.py --source DataExchange-DatasetJson/examples/sdtm/define.xml --check     # compare only
+python3 derive_define_fixtures.py --source DataExchange-DatasetJson/examples/sdtm/define.xml --self-test # plant defects
+```
+
+Nothing is written unless every oracle passes:
+
+- **2.0:** `xmllint --schema` against CDISC's Define-XML 2.0 schema, found by walking up from the script to
+  `cumba-corej` (or `cumba-oss-corej`) `…-define-conformance/src/main/resources/xsd/define-2-0/cdisc-define-2.0/
+  define2-0-0.xsd` (MIT; provenance in that directory's `README.md`), or `--define20-xsd`. No copy is kept here.
+- **1.0:** no CDISC-hosted Define-XML 1.0 schema under a usable licence was found (2026-10-14: `cdisc-org` has no
+  repository carrying `define1-0-0.xsd`; the only public copy GitHub code search found sits inside another
+  validation toolkit, which this project does not use). The 1.0 file is therefore checked (a) on its **ODM core** —
+  every `def:` element and attribute stripped, the rest validated with `xmllint --schema` against CDISC's ODM 1.2.1
+  schema (`cdisc-org/DataExchange-ODM` `archive/ODM1-2-1/ODM1-2-1-foundation.xsd` @ `6cb00a9c`, MIT,
+  sha256-pinned, downloaded at run time unless `--odm121-foundation` names a local copy; not kept here) — and (b)
+  **structurally** by checks S1–S6 written down in the script's `check_v10`: namespaces and versions; the `def:`
+  vocabulary limited to 1.0 (what CDISC's 2.0 schema keeps from 1.0 or lists as deprecated 1.0 constructs); no 2.x
+  construct left; every dataset with label, structure, class, domain keys naming its own variables and an archive
+  location resolving to its leaf; every reference resolving and nothing orphaned; value lists following the 1.0
+  naming convention.
+- `--self-test` plants defects (three for 2.0, eight for 1.0 covering S1–S7) and fails unless each one
+  is reported.

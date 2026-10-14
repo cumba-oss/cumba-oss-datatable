@@ -220,9 +220,14 @@ class Step20To21Test
         assertTrue(out.contains("def:Context="));
         assertTrue(out.contains("<def:Standards>"));
         assertEquals(0, count(out, "def:Class=\""), "no Class attributes remain");
-        assertEquals(34, count(out, "<def:Class "), "all 34 datasets got a Class element");
+        // The fixture declares 28 datasets, each with a def:Class attribute: the MIT 2.1 example's
+        // 31 minus the three def:HasNoData datasets the down-converter drops (convert/README.md).
+        assertEquals(28, count(out, "<def:Class "), "all 28 datasets got a Class element");
         assertFalse(out.contains("Type=\"CRF\""), "all CRF origins remapped");
-        assertTrue(count(out, "def:StandardOID=\"") >= 34, "every dataset references a standard");
+        // The fixture carries no def:StandardOID at all, so every occurrence is the converter's:
+        // one per dataset.
+        assertEquals(28, count(out, "def:StandardOID=\""),
+                "every dataset references the synthesised standard");
 
         ODM odm = new DefineXmlParser().parse(new ByteArrayInputStream(bytes));
         assertNotNull(odm.getStudies().get(0).getMetaDataVersions().get(0).getStandards());
