@@ -5,6 +5,7 @@
 # NOT_DERIVED is the explicit allow-list: P300's own code, no upstream notice required. It must
 # still be LISTED -- adding a source file with no row here FAILS the build, which is what stops
 # a new derived file slipping in unattributed.
+net/cumba/datatable/provider/sas/SasFormatSpelling.java	NOT_DERIVED	-
 net/cumba/datatable/provider/sas/sas7bdat/BdatObservation.java	NOT_DERIVED	-
 net/cumba/datatable/provider/sas/sas7bdat/BdatParallelLoader.java	NOT_DERIVED	-
 net/cumba/datatable/provider/sas/sas7bdat/BdatProviderSupplier.java	NOT_DERIVED	-

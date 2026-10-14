@@ -1,5 +1,8 @@
 package net.cumba.datatable.provider.sas.xpt.library;
 
+// OSS-IDENTITY provider-sas: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.io.File;
 import java.io.IOException;
 import java.lang.System.Logger;
@@ -20,6 +23,7 @@ import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
+import net.cumba.datatable.provider.sas.SasFormatSpelling;
 import net.cumba.datatable.provider.sas.xpt.XptTableProvider;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.sasutils.VariableType;
@@ -166,32 +170,16 @@ public class XptLibraryProvider extends AbstractLibraryProvider
     }
 
 
+    /**
+     * The SAS display format of a library member's column, spelled by
+     * {@link SasFormatSpelling#assemble} exactly as {@code XptTableProvider} spells it when the
+     * dataset is opened.
+     */
     protected @Nullable String getFullFormatName(VariableXpt aVariable)
     {
-        String name = aVariable.getFormatTypeString();
-
-        if (CDT.isBlankOrNull(name))
-        {
-            return null;
-        }
-
-        StringBuilder sb = new StringBuilder();
-
-        sb.append(name.trim());
-
-        int w = aVariable.getFormatLength();
-        int d = aVariable.getFormatDecimals();
-
-        if (w > 0)
-        {
-            sb.append(w);
-        }
-        sb.append('.');
-        if (d > 0)
-        {
-            sb.append(d);
-        }
-        return sb.toString();
+        return SasFormatSpelling.assemble(aVariable.getFormatTypeString(),
+                aVariable.getFormatLength(), aVariable.getFormatDecimals(),
+                aVariable.getType() == VariableType.NUMERIC);
     }
 
 

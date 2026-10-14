@@ -43,6 +43,7 @@ import net.cumba.datatable.impl.provider.AbstractDataTableProvider;
 import net.cumba.datatable.impl.provider.AbstractTableDataParser;
 import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.io.FileInfo;
+import net.cumba.datatable.provider.sas.SasFormatSpelling;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
 import net.cumba.sasutils.PositionAwareInputStream;
@@ -821,27 +822,22 @@ public class BdatTableProvider extends AbstractDataTableProvider
 
         FormatAndLabelSubHeader flsh = aVariable.getFormatAndLabelSubHeader();
 
-        String dispFmt = flsh != null ? flsh.getFormat() : null;
-        // isBlankOrNull, not != null: an all-blank format slice of non-zero length right-trims to
-        // "" and used to be assembled into a bare "." (or "8."), which is not a format SAS has.
-        // The XPT twin already guarded it this way.
-        if (!CDT.isBlankOrNull(dispFmt))
+        // The stored name, digits and decimals, spelled by the helper the XPT readers share: SAS's
+        // plain number format w.d is stored with a BLANK name and comes back as "8." / "8.1"; a
+        // blank name without a width (a bare "." is no format) or on a character column stays no
+        // format (PLAN-sas-bare-wd-format-read). formatDigits/formatDecimals are nullable Short on
+        // the wire model; a format without a digit/decimal count is valid and must not NPE the
+        // load.
+        if (flsh != null)
         {
-            // formatDigits/formatDecimals are nullable Short on the wire model; a format without a
-            // digit/decimal count is valid and must not NPE the load.
-            if (flsh.formatDigits != null && flsh.formatDigits > 0)
+            String dispFmt = SasFormatSpelling.assemble(flsh.getFormat(),
+                    flsh.formatDigits != null ? flsh.formatDigits : 0,
+                    flsh.formatDecimals != null ? flsh.formatDecimals : 0,
+                    type == DataValueType.DOUBLE);
+            if (dispFmt != null)
             {
-                dispFmt = dispFmt + flsh.formatDigits;
+                b.displayFormat(dispFmt);
             }
-            dispFmt = dispFmt + ".";
-
-            if (type == DataValueType.DOUBLE && flsh.formatDecimals != null
-                    && flsh.formatDecimals > 0)
-            {
-                dispFmt += flsh.formatDecimals;
-            }
-
-            b.displayFormat(dispFmt);
         }
 
         if (!CDT.isBlankOrNull(aVariable.getLabel()))

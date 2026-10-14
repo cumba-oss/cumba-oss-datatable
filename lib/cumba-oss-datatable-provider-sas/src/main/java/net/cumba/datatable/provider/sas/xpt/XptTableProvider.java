@@ -39,6 +39,7 @@ import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.io.Property;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.provider.IDataTableProvider;
+import net.cumba.datatable.provider.sas.SasFormatSpelling;
 import net.cumba.datatable.provider.sas.xpt.library.XptLibraryMember;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.MissingValue;
@@ -607,43 +608,23 @@ public class XptTableProvider extends AbstractDataTableProvider
 
 
     /**
-     * Build the full SAS display format name string from the XPT variable's format fields. A
-     * variable without an explicit stored format returns {@code null} (no synthetic "$w." default
-     * is produced for character columns), consistent with {@code XptLibraryProvider} and the BDAT
-     * provider.
+     * The SAS display format stored in the XPT variable's NAMESTR record ({@code nform},
+     * {@code nfl}, {@code nfd}), spelled by {@link SasFormatSpelling#assemble}. SAS's plain number
+     * format {@code w.d} is stored with a blank name and comes back as {@code 8.} / {@code 8.1}; a
+     * blank name without a width, or on a character column, is no format (no synthetic {@code $w.}
+     * default is produced). {@code XptLibraryProvider} and the BDAT provider spell through the same
+     * helper.
      *
      * @param aVariable
      *            the XPT variable descriptor.
-     * @return the format string (e.g. "BEST12.2", "DATE9."), or {@code null} when the variable has
-     *         no stored format.
+     * @return the format string (e.g. "BEST12.2", "DATE9.", "8.1"), or {@code null} when the
+     *         variable has no stored format.
      */
     protected @Nullable String getFullFormatName(VariableXpt aVariable)
     {
-        String name = aVariable.getFormatTypeString();
-        int w = aVariable.getFormatLength();
-        int d = aVariable.getFormatDecimals();
-
-        // No stored format → no display format (consistent with XptLibraryProvider and the BDAT
-        // provider; a synthetic "$w." default for character columns is intentionally not produced).
-        if (CDT.isBlankOrNull(name))
-        {
-            return null;
-        }
-
-        StringBuilder sb = new StringBuilder();
-
-        sb.append(name.trim());
-
-        if (w > 0)
-        {
-            sb.append(w);
-        }
-        sb.append('.');
-        if (d > 0)
-        {
-            sb.append(d);
-        }
-        return sb.toString();
+        return SasFormatSpelling.assemble(aVariable.getFormatTypeString(),
+                aVariable.getFormatLength(), aVariable.getFormatDecimals(),
+                aVariable.getType() == VariableType.NUMERIC);
     }
 
     private static class XptTableDataParser extends AbstractTableDataParser<XptObservation>
