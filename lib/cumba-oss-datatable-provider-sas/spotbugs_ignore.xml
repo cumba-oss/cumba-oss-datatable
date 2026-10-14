@@ -122,4 +122,14 @@
         <Bug pattern="EI_EXPOSE_REP2" />
     </Match>
 
+    <Match>
+        <!-- MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR: the constructor sets name and description through the inherited
+             AbstractLibraryProvider setters (already @SuppressWarnings("this-escape")).
+             Not made final: the class is shared with the published cumba-oss-datatable jars, where final
+             on a public type is an API change; both twins take the same decision. -->
+        <Class name="net.cumba.datatable.provider.sas.xpt.library.XptLibraryProvider" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR" />
+    </Match>
+
 </FindBugsFilter>

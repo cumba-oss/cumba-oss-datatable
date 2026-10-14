@@ -262,4 +262,42 @@
         <Bug pattern="NP_PARAMETER_MUST_BE_NONNULL_BUT_MARKED_AS_NULLABLE" />
     </Match>
 
+    <Match>
+        <!-- MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR: the constructors set the metadata through the inherited
+             AbstractDataTable.setMetaData (already @SuppressWarnings("this-escape")).
+             Not made final: the class is shared with the published cumba-oss-datatable jars, where final
+             on a public type is an API change; both twins take the same decision. -->
+        <Class name="net.cumba.datatable.impl.ColumnCachedDataTable" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR" />
+    </Match>
+
+    <Match>
+        <!-- MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR: the constructor builds the cached columns through
+             createCachedColumns (already @SuppressWarnings("this-escape")). Not made final: the abstract base of
+             every table provider, shared with the published cumba-oss-datatable jars. -->
+        <Class name="net.cumba.datatable.impl.provider.AbstractTableDataParser" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR" />
+    </Match>
+
+    <Match>
+        <!-- MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR: the constructor sets metadata and format catalog through the
+             inherited AbstractDataTable setters (already @SuppressWarnings("this-escape")). Not made final:
+             MergedTableImpl extends it (in both twins). -->
+        <Class name="net.cumba.datatable.impl.view.MergeDataTable" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR" />
+    </Match>
+
+    <Match>
+        <!-- MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR: the constructor sets format catalog and metadata through the
+             inherited AbstractDataTable setters (already @SuppressWarnings("this-escape")).
+             Not made final: the class is shared with the published cumba-oss-datatable jars, where final
+             on a public type is an API change; both twins take the same decision. -->
+        <Class name="net.cumba.datatable.impl.view.ViewDataTable" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR" />
+    </Match>
+
 </FindBugsFilter>

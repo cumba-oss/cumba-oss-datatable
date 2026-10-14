@@ -93,4 +93,14 @@
         <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE" />
     </Match>
 
+    <Match>
+        <!-- MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR: the constructor sets name and description through the inherited
+             AbstractLibraryProvider setters (already @SuppressWarnings("this-escape")). Not made final: a public type
+             of the published cumba-oss-datatable-manager-local jar, where final is an API change;
+             its twin in cumba-datatable-manager-local takes the same decision. -->
+        <Class name="net.cumba.datatable.library.folder.FolderLibraryProvider" />
+        <Method name="&lt;init&gt;" />
+        <Bug pattern="MC_OVERRIDABLE_METHOD_CALL_IN_CONSTRUCTOR" />
+    </Match>
+
 </FindBugsFilter>
