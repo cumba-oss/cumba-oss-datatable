@@ -429,7 +429,11 @@ public class DataTableMeta implements IDataTableMeta, Cloneable
                 }
             }
 
-            if (res.totalRowCount < res.rowCount)
+            // A known filtered count with an unknown total (-1) is legal: a database manager counts
+            // the
+            // filtered table and the whole table separately and asynchronously (PLAN-jdbc-manager
+            // §4.10).
+            if (res.totalRowCount >= 0 && res.totalRowCount < res.rowCount)
             {
                 String msg = MessageFormat.format(
                         "The totalRowCount is lower than rowCount: ({0} < {1}).", res.totalRowCount,

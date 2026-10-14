@@ -275,6 +275,22 @@ class DefaultDataTableMetaTest
 
 
     @Test
+    void testBuilderTotalRowCountValidation()
+    {
+        // an unknown total (-1) accepts any known row count
+        DataTableMeta unknownTotal = DataTableMeta.builder().setColumns(col(0, "col0")).rowCount(7)
+                .totalRowCount(-1).build();
+        assertEquals(7, unknownTotal.getRowCount());
+        assertEquals(-1, unknownTotal.getTotalRowCount());
+
+        // a known total lower than the row count is refused
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> DataTableMeta
+                .builder().setColumns(col(0, "col0")).rowCount(7).totalRowCount(6).build());
+        assertTrue(ex.getMessage().contains("totalRowCount is lower than rowCount"));
+    }
+
+
+    @Test
     void testBuilderColumnsNullElement()
     {
         assertThrows(IllegalArgumentException.class,
