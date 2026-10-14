@@ -1,5 +1,8 @@
 package net.cumba.datatable.values;
 
+// OSS-IDENTITY datatable-list-cell: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.Arrays;
