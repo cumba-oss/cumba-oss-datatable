@@ -2065,4 +2065,227 @@ class ExcelTableProviderTest
         assertInstanceOf(MissingValue.class, table.getValue(2, 0),
                 "1e308 must be missing, not POI's overflowed 1899-12-31");
     }
+
+    // ============ a numeric cell with a BLANK stored value is MISSING, never 0 ============
+
+    /**
+     * The three shapes of a numeric cell whose stored value is blank, each written as raw sheet XML
+     * because POI cannot author any of them: an uncalculated formula with an EMPTY cached value
+     * element (what openpyxl, and therefore {@code pandas.DataFrame.to_excel}, writes for every
+     * formula), a plain cell with an empty value, and an explicitly {@code t="n"}-typed cell with
+     * an empty value (the shape excel-streaming-reader's own 5.3.2 change names).
+     */
+    private enum BlankNumeric
+    {
+
+        UNCALCULATED_FORMULA("", "<f>1+1</f><v></v>"),
+        PLAIN("", "<v></v>"),
+        TYPE_N(" t=\"n\"", "<v/>");
+
+        private final String typeAttribute;
+
+        private final String body;
+
+        BlankNumeric(String aTypeAttribute, String aBody)
+        {
+            typeAttribute = aTypeAttribute;
+            body = aBody;
+        }
+    }
+
+    /**
+     * Writes the workbook {@code aBuilder} builds, then rewrites each cell named in
+     * {@code aBlankCells} (by its A1 reference) to the given blank shape, keeping the cell's own
+     * attributes - its style above all, so a date-styled placeholder stays date-styled - except
+     * {@code t}, which the shape decides. Fails the test when a named cell is not in the sheet XML.
+     */
+    private URI writeWithBlankNumericCells(WorkbookBuilder aBuilder,
+            java.util.Map<String, BlankNumeric> aBlankCells)
+        throws IOException
+    {
+        URI plain = writeTempXlsx(aBuilder);
+        byte[] bytes = rewriteSheet1Xml(Files.readAllBytes(new File(plain).toPath()), xml ->
+        {
+            String out = xml;
+            for (java.util.Map.Entry<String, BlankNumeric> e : aBlankCells.entrySet())
+            {
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("<c r=\"" + e.getKey() + "\"([^>]*)>.*?</c>").matcher(out);
+                assertTrue(m.find(), "fixture setup: cell " + e.getKey() + " not found");
+                String attributes = m.group(1).replaceAll(" t=\"[^\"]*\"", "");
+                out = out.substring(0, m.start()) + "<c r=\"" + e.getKey() + "\"" + attributes
+                        + e.getValue().typeAttribute + ">" + e.getValue().body + "</c>"
+                        + out.substring(m.end());
+            }
+            return out;
+        });
+        File patched = File.createTempFile("xlsxblanknumeric", ".xlsx");
+        patched.deleteOnExit();
+        Files.write(patched.toPath(), bytes);
+        return patched.toURI();
+    }
+
+
+    /**
+     * A numeric DATA cell whose stored value is blank loads as MISSING - in every shape, through
+     * every entry point - while a real {@code 0} beside it stays {@code 0.0}, and a column made
+     * only of such cells is a {@code DOUBLE} column of missing values (as is a column with no cells
+     * at all), with no display format.
+     * <p>
+     * Characterised on excel-streaming-reader 5.3.0, whose {@code getNumericCellValue()} threw
+     * {@code NumberFormatException("empty String")} for a blank stored value; 5.3.2 returns
+     * {@code 0.0} for it instead, which would silently load an unevaluated data formula as a
+     * present {@code 0}. The provider's own guard keeps the answer (owner ruling R1, 2026-10-14).
+     */
+    @Test
+    void testBlankNumericDataCellsLoadAsMissingNotZeroInEveryShape() throws Exception
+    {
+        String[] names =
+        {
+                "ID", "CALC", "ZERO", "ONLYF", "PLAIN", "TYPEN", "ONLYP", "ONLYN"
+        };
+        URI uri = writeWithBlankNumericCells(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            for (int i = 0; i < names.length; i++)
+            {
+                h.createCell(i).setCellValue(names[i]);
+            }
+            double[][] data =
+            {
+                    {
+                            0, 0.0, 0, 0, 0, 0, 0
+                    },
+                    {
+                            7.0, 5.0, 0, 8.0, 9.0, 0, 0
+                    }
+            };
+            for (int r = 0; r < 2; r++)
+            {
+                Row row = s.createRow(r + 1);
+                row.createCell(0).setCellValue("r" + (r + 1));
+                for (int c = 1; c < names.length; c++)
+                {
+                    row.createCell(c).setCellValue(data[r][c - 1]);
+                }
+            }
+        }, java.util.Map.of("B2", BlankNumeric.UNCALCULATED_FORMULA, "D2",
+                BlankNumeric.UNCALCULATED_FORMULA, "D3", BlankNumeric.UNCALCULATED_FORMULA, "E2",
+                BlankNumeric.PLAIN, "F2", BlankNumeric.TYPE_N, "G2", BlankNumeric.PLAIN, "G3",
+                BlankNumeric.PLAIN, "H2", BlankNumeric.TYPE_N, "H3", BlankNumeric.TYPE_N));
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] inferred = ExcelTableProvider.inferColumns(openSheet(uri), uri, 50);
+
+        assertEquals(names.length, table.getColumnCount());
+        assertEquals(2, table.getRowCount());
+        for (int c = 1; c < names.length; c++)
+        {
+            for (DataTableColumnMeta col : List.of(table.getMetaData().getColumn(c),
+                    meta.getColumn(c), inferred[c]))
+            {
+                assertEquals(names[c], col.getName());
+                assertEquals(DataValueType.DOUBLE, col.getType(), names[c]);
+                assertNull(col.getDisplayFormat(), names[c]);
+            }
+        }
+        assertInstanceOf(MissingValue.class, table.getValue(0, 1),
+                "an uncalculated formula is missing, not 0");
+        assertEquals(7.0, (double) table.getValue(1, 1), 0.0);
+        assertEquals(0.0, (double) table.getValue(0, 2), 0.0,
+                "a real 0 beside the blank cell stays a present 0");
+        assertEquals(5.0, (double) table.getValue(1, 2), 0.0);
+        assertInstanceOf(MissingValue.class, table.getValue(0, 4),
+                "a plain numeric cell with an empty value is missing, not 0");
+        assertEquals(8.0, (double) table.getValue(1, 4), 0.0);
+        assertInstanceOf(MissingValue.class, table.getValue(0, 5),
+                "a t=\"n\" cell with an empty value is missing, not 0");
+        assertEquals(9.0, (double) table.getValue(1, 5), 0.0);
+        for (int c : new int[]
+        {
+                3, 6, 7
+        })
+        {
+            for (int r = 0; r < 2; r++)
+            {
+                assertInstanceOf(MissingValue.class, table.getValue(r, c), names[c] + " row " + r
+                        + ": a column of blank numeric cells is all missing");
+            }
+        }
+    }
+
+
+    /**
+     * The same blank shapes, DATE-styled: a blank cell never makes a column a date column and is
+     * never converted to a date - serial {@code 0} would be 1899-12-31, a present, plausible and
+     * wrong date. In a column whose literal dates make it a date column, the blank row is missing;
+     * a column made only of date-styled blank cells is a {@code DOUBLE} column of missing values
+     * with NO {@code E8601DT.}, through every entry point. Characterised on excel-streaming-reader
+     * 5.3.0 (see {@link #testBlankNumericDataCellsLoadAsMissingNotZeroInEveryShape}). Expected
+     * date: 45000 is 2023-03-15, 1994457600 seconds after 1960-01-01 (Python {@code datetime}).
+     */
+    @Test
+    void testDateStyledBlankNumericCellsAreMissingAndNeverMakeADateColumn() throws Exception
+    {
+        String[] names =
+        {
+                "DTF", "DTP", "DTN", "ONLYDTF", "ONLYDTP", "ONLYDTN"
+        };
+        URI uri = writeWithBlankNumericCells(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            CellStyle dateStyle = wb.createCellStyle();
+            dateStyle.setDataFormat(wb.createDataFormat().getFormat("yyyy-mm-dd"));
+            Row h = s.createRow(0);
+            for (int i = 0; i < names.length; i++)
+            {
+                h.createCell(i).setCellValue(names[i]);
+            }
+            for (int r = 1; r <= 2; r++)
+            {
+                Row row = s.createRow(r);
+                for (int c = 0; c < names.length; c++)
+                {
+                    dateCell(row, c, dateStyle).setCellValue(45000.0);
+                }
+            }
+        }, java.util.Map.of("A3", BlankNumeric.UNCALCULATED_FORMULA, "B3", BlankNumeric.PLAIN, "C3",
+                BlankNumeric.TYPE_N, "D2", BlankNumeric.UNCALCULATED_FORMULA, "D3",
+                BlankNumeric.UNCALCULATED_FORMULA, "E2", BlankNumeric.PLAIN, "E3",
+                BlankNumeric.PLAIN, "F2", BlankNumeric.TYPE_N, "F3", BlankNumeric.TYPE_N));
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] inferred = ExcelTableProvider.inferColumns(openSheet(uri), uri, 50);
+
+        assertEquals(names.length, table.getColumnCount());
+        assertEquals(2, table.getRowCount());
+        for (int c = 0; c < names.length; c++)
+        {
+            String expectedFormat = c < 3 ? "E8601DT." : null;
+            for (DataTableColumnMeta col : List.of(table.getMetaData().getColumn(c),
+                    meta.getColumn(c), inferred[c]))
+            {
+                assertEquals(names[c], col.getName());
+                assertEquals(DataValueType.DOUBLE, col.getType(), names[c]);
+                assertEquals(expectedFormat, col.getDisplayFormat(), names[c]);
+            }
+        }
+        for (int c = 0; c < 3; c++)
+        {
+            assertEquals(1_994_457_600.0, (double) table.getValue(0, c), 0.5, names[c]);
+            assertInstanceOf(MissingValue.class, table.getValue(1, c),
+                    names[c] + ": a blank cell in a date column is missing, not 1899-12-31");
+        }
+        for (int c = 3; c < names.length; c++)
+        {
+            for (int r = 0; r < 2; r++)
+            {
+                assertInstanceOf(MissingValue.class, table.getValue(r, c),
+                        names[c] + " row " + r + ": a date-styled blank cell is missing");
+            }
+        }
+    }
 }
