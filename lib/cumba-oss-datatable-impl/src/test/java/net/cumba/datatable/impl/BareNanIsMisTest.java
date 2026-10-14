@@ -144,6 +144,115 @@ class BareNanIsMisTest
         }
     }
 
+    /**
+     * A numeric buffer that reports its one cell missing with a {@code null} raw value - what only
+     * a custom buffer can do here (a {@link DataBufferDouble} refuses a {@code null}, below). A
+     * small fake, not a mock.
+     */
+    static final class NullRawNumericBuffer
+            extends net.cumba.datatable.impl.databuffer.AbstractNumericDataBuffer
+    {
+
+        NullRawNumericBuffer()
+        {
+            size = 1;
+        }
+
+
+        @Override
+        public void setExpectedSize(int aLength)
+        {
+            // fixed size of one
+        }
+
+
+        @Override
+        public boolean canStore(@org.jspecify.annotations.Nullable Object aValue)
+        {
+            return false;
+        }
+
+
+        @Override
+        public void setValue(int aIndex, @org.jspecify.annotations.Nullable Object aValue)
+        {
+            throw new IllegalArgumentException("read-only");
+        }
+
+
+        @Override
+        public @org.jspecify.annotations.Nullable Object getValue(int aIndex)
+        {
+            return null;
+        }
+
+
+        @Override
+        public boolean isMissing(int aIndex)
+        {
+            return true;
+        }
+
+
+        @Override
+        public void trimToSize()
+        {
+            // nothing to trim
+        }
+
+
+        @Override
+        public boolean canStoreDouble(double aValue)
+        {
+            return false;
+        }
+
+
+        @Override
+        public boolean canStoreLong(long aValue)
+        {
+            return false;
+        }
+
+
+        @Override
+        public void setDoubleValue(int aIndex, double aValue)
+        {
+            throw new IllegalArgumentException("read-only");
+        }
+
+
+        @Override
+        public void setLongValue(int aIndex, long aValue)
+        {
+            throw new IllegalArgumentException("read-only");
+        }
+
+
+        @Override
+        public double getValueAsDouble(int aIndex)
+        {
+            return Double.NaN;
+        }
+    }
+
+    /**
+     * Ruling F-RS9 in the OSS twin (owner ruling BNM-F2 (a), 2026-10-12: <i>"I think this already
+     * was ruled and aligned in between, please confirm. If still differs, then yes align to
+     * MIS_UNKNOWN."</i>): a missing numeric cell whose raw value is {@code null} is
+     * {@code MIS_UNKNOWN}, as in cumba-datatable. It answered {@code MIS}.
+     */
+    @Test
+    void aNullRawMissingNumericCellIsMisUnknown()
+    {
+        NullRawNumericBuffer buf = new NullRawNumericBuffer();
+        for (DataValueType type : List.of(DataValueType.DOUBLE, DataValueType.LONG))
+        {
+            IDataValue v = buf.getDataValue(0, type);
+            assertSame(MissingValue.MIS_UNKNOWN, v.getValue(), type + " arm");
+        }
+    }
+
 
     /** The buffer this repository gives a DOUBLE column refuses a {@code null}: no H1 here. */
     @Test
