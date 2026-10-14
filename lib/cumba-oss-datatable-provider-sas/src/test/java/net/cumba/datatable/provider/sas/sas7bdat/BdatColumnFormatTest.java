@@ -20,19 +20,25 @@ class BdatColumnFormatTest
 {
 
     /**
-     * An all-blank format slice of non-zero length right-trims to whitespace; assembling it anyway
-     * produced a bare {@code "."} (or {@code "8."}), which is not a format SAS has. The guard is
-     * {@code !CDT.isBlankOrNull(dispFmt)}, not {@code dispFmt != null} - the XPT twin already
-     * guarded it this way. Unguarded on both sides until now: reverting the guard to a null check
-     * passed every existing test.
+     * SAS stores its plain number format {@code w.d} ({@code 8.}, {@code 8.2}) with an EMPTY format
+     * name and only a width and a decimal count; ReadStat reports such a variable as {@code "8"} /
+     * {@code "8.1"}. This test used to assert that a blank name with a width yields no format --
+     * "not a format SAS has" -- and so pinned the reader dropping a real format
+     * (PLAN-sas-bare-wd-format-read). A blank name is no format only WITHOUT a width (a bare
+     * {@code "."} stays impossible), and on a character column, where SAS stores its {@code w.}
+     * format under the name {@code $}.
      */
     @Test
-    void aBlankFormatYieldsNoDisplayFormatNotABareDot()
+    void aBlankNameIsNoFormatOnlyWithoutAWidth()
     {
-        assertNull(formatOf(VariableType.NUMERIC, 8, "   ", (short) 8, null),
-                "an all-blank stored format must yield NO display format, never a bare '.'");
+        assertEquals("8.", formatOf(VariableType.NUMERIC, 8, "   ", (short) 8, null),
+                "a blank name with a width is SAS's w. format");
+        assertEquals("8.2", formatOf(VariableType.NUMERIC, 8, "", (short) 8, (short) 2));
+        assertNull(formatOf(VariableType.NUMERIC, 8, "   ", (short) 0, null),
+                "a blank name without a width is no format, never a bare '.'");
         assertNull(formatOf(VariableType.CHARACTER, 10, "", null, null));
-        // and a real format still assembles, so the null above is not a broken helper path
+        assertNull(formatOf(VariableType.CHARACTER, 10, "  ", (short) 10, null));
+        // and a real format still assembles, so the nulls above are not a broken helper path
         assertEquals("DATE9.", formatOf(VariableType.NUMERIC, 8, "DATE", (short) 9, null));
     }
 

@@ -1,5 +1,8 @@
 package net.cumba.datatable.provider.sas.xpt;
 
+// OSS-IDENTITY provider-sas: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -137,7 +140,40 @@ class XptTableProviderTest
         vxpt.formatLength = (short) 10;
         vxpt.formatDecimals = (short) 0;
 
-        // A format length without a format name is not a format → null.
+        // A format length without a format name on a character column is not a format → null
+        // (SAS stores the character w. format under the name "$").
+        assertNull(provider.getFullFormatName(vxpt));
+    }
+
+
+    @Test
+    void testGetFullFormatNameNumericBlankNameWithWidthIsTheWdFormat()
+    {
+        // SAS stores its plain number format w.d ("8.", "8.1") with an EMPTY name and only the
+        // width and decimal count; ReadStat reports "8" / "8.1" (PLAN-sas-bare-wd-format-read).
+        VariableXpt vxpt = createVar("AGE", (short) 1, (short) 8);
+        vxpt.formatTypeString = "        ";
+        vxpt.formatLength = (short) 8;
+        vxpt.formatDecimals = (short) 0;
+        assertEquals("8.", provider.getFullFormatName(vxpt));
+
+        vxpt.formatDecimals = (short) 1;
+        assertEquals("8.1", provider.getFullFormatName(vxpt));
+
+        vxpt.formatTypeString = null;
+        assertEquals("8.1", provider.getFullFormatName(vxpt));
+    }
+
+
+    @Test
+    void testGetFullFormatNameNumericBlankNameWithoutWidthIsNoFormat()
+    {
+        // BW2 (owner 2026-10-12): a blank name with width 0 and decimals > 0 stays "no format" --
+        // a w.d format needs a width (ReadStat would report ".3").
+        VariableXpt vxpt = createVar("LBSTRESN", (short) 1, (short) 8);
+        vxpt.formatTypeString = "";
+        vxpt.formatLength = (short) 0;
+        vxpt.formatDecimals = (short) 3;
         assertNull(provider.getFullFormatName(vxpt));
     }
 

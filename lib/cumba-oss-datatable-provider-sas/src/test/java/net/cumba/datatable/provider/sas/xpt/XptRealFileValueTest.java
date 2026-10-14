@@ -1,5 +1,8 @@
 package net.cumba.datatable.provider.sas.xpt;
 
+// OSS-IDENTITY provider-sas: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -264,6 +267,55 @@ class XptRealFileValueTest
             DataTableColumnMeta col = m.getColumn(c);
             assertNull(col.getDisplayFormat(), () -> col.getName() + " display format");
             assertNull(col.getLabel(), () -> col.getName() + " label");
+        }
+    }
+
+
+    /**
+     * SAS's plain number format {@code w.d} is stored with an EMPTY format name and only a width
+     * and a decimal count. The fixture is CDISC's {@code examples/adam/adcibc.xpt} from
+     * {@code cdisc-org/DataExchange-DatasetJson} @ {@code a379f49a} (MIT; byte-identical copy, see
+     * {@code testdata/README.md}), written by SAS. The expected formats are ReadStat's:
+     * {@code pyreadstat.read_xport("adcibc.xpt", metadataonly=True)[1].original_variable_types}
+     * (pyreadstat 1.3.6) gives {@code '8'} for {@code TRTPN}, {@code AGE}, {@code AGEGR1N},
+     * {@code RACEN}, {@code ADY}, {@code PARAMN}, {@code '8.1'} for {@code AVISITN},
+     * {@code 'DATE9'} for {@code TRTSDT}, {@code TRTEDT}, {@code ADT} and {@code None} for the
+     * other 26 variables. SAS spells the first two {@code 8.} and {@code 8.1}, which is what the
+     * provider must hand on (PLAN-sas-bare-wd-format-read); it used to drop both.
+     */
+    @Test
+    void bareWdFormatsMatchReadStat() throws IOException
+    {
+        DataTableMeta m = read("adcibc.xpt").getMetaData();
+        assertEquals(36, m.getColumnCount());
+        assertEquals("8.", m.getColumn("AGE").getDisplayFormat());
+        assertEquals("8.1", m.getColumn("AVISITN").getDisplayFormat());
+        assertEquals("DATE9.", m.getColumn("TRTSDT").getDisplayFormat());
+        assertNull(m.getColumn("USUBJID").getDisplayFormat());
+
+        List<String> formatted = new ArrayList<>();
+        for (int c = 0; c < m.getColumnCount(); c++)
+        {
+            DataTableColumnMeta col = m.getColumn(c);
+            if (col.getDisplayFormat() != null)
+            {
+                formatted.add(col.getName() + "=" + col.getDisplayFormat());
+            }
+        }
+        assertEquals(List.of("TRTSDT=DATE9.", "TRTEDT=DATE9.", "TRTPN=8.", "AGE=8.", "AGEGR1N=8.",
+                "RACEN=8.", "AVISITN=8.1", "ADY=8.", "ADT=DATE9.", "PARAMN=8."), formatted);
+
+        // the library view reads the same NAMESTR records through its own path
+        try (IDataTableLibrary lib = new XptLibraryProvider().provide(fixture("adcibc.xpt").toURI(),
+                XptProviderSupplier.FI_XPT))
+        {
+            DataTableColumnMeta[] viaLibrary = ((XptLibrary) lib).getMembers().toList().get(0)
+                    .getColumns();
+            for (int c = 0; c < viaLibrary.length; c++)
+            {
+                assertEquals(m.getColumn(c).getDisplayFormat(), viaLibrary[c].getDisplayFormat(),
+                        viaLibrary[c].getName());
+            }
         }
     }
 

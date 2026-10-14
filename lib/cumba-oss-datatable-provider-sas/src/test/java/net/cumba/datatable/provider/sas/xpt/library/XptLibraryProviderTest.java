@@ -109,12 +109,18 @@ class XptLibraryProviderTest
 
 
     @Test
-    void testGetFullFormatNameReturnsNullWhenNoFormat()
+    void testGetFullFormatNameKeepsTheBareWdFormat()
     {
-        // No format name: there is no display format, however the width and decimals are set.
+        // No format name but a width: SAS's plain number format w.d, which SAS stores with an
+        // empty name (ReadStat reports "12.2"). This used to assert null and so pinned the reader
+        // dropping the format (PLAN-sas-bare-wd-format-read).
         VariableXpt v = makeVar("X", VariableType.NUMERIC, "", (short) 8, null, (short) 12,
                 (short) 2);
-        assertNull(provider.getFullFormatName(v));
+        assertEquals("12.2", provider.getFullFormatName(v));
+        // without a width there is still no format, whatever the decimals
+        VariableXpt noWidth = makeVar("X", VariableType.NUMERIC, "", (short) 8, null, (short) 0,
+                (short) 2);
+        assertNull(provider.getFullFormatName(noWidth));
     }
 
     // ==================== provideLibraryMembers ====================
