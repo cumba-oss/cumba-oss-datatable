@@ -78,7 +78,8 @@ Nothing is written unless every oracle passes:
 
 - **2.0:** `xmllint --schema` against CDISC's Define-XML 2.0 schema, found by walking up from the script to
   `cumba-corej` (or `cumba-oss-corej`) `…-define-conformance/src/main/resources/xsd/define-2-0/cdisc-define-2.0/
-  define2-0-0.xsd` (MIT; provenance in that directory's `README.md`), or `--define20-xsd`. No copy is kept here.
+  define2-0-0.xsd` (MIT; provenance in `…-define-conformance/src/main/resources/xsd/README.md`), or
+  `--define20-xsd`. No copy is kept here.
 - **1.0:** no CDISC-hosted Define-XML 1.0 schema under a usable licence was found (2026-10-14: `cdisc-org` has no
   repository carrying `define1-0-0.xsd`; the only public copy GitHub code search found sits inside another
   validation toolkit, which this project does not use). The 1.0 file is therefore checked (a) on its **ODM core** —
@@ -90,5 +91,5 @@ Nothing is written unless every oracle passes:
   construct left; every dataset with label, structure, class, domain keys naming its own variables and an archive
   location resolving to its leaf; every reference resolving and nothing orphaned; value lists following the 1.0
   naming convention.
-- `--self-test` plants defects (three for 2.0, eight for 1.0 covering S1–S7) and fails unless each one
+- `--self-test` plants defects (three for 2.0, eight for 1.0 covering S1–S6 and the ODM core (S7)) and fails unless each one
   is reported.

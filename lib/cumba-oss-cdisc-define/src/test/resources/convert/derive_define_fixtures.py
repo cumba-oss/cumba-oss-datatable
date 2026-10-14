@@ -23,6 +23,10 @@ must not be produced by running it backwards. Each mapping below follows the Def
   * def:Origin Type/Source -> 2.0 Type: Collected+Vendor -> eDT, any other Collected -> CRF; Derived, Assigned,
     Protocol, Predecessor keep their Type; @Source dropped; def:PDFPageRef/@Title dropped (2.1 only);
   * children re-ordered to the 2.0 / ODM 1.3.2 content models.
+  Not converted, on purpose: the ODM header attributes (FileOID, CreationDateTime, SourceSystem,
+  SourceSystemVersion, ...) are copied as the 2.1 file has them, so both derived files keep the 2.1 example's
+  FileOID ("…/Define-XML_2.1.0") and creation time. The 2.1 file's second IG standard (SDTMIG-MD 1.1, which no
+  dataset references) has no place in 2.0's one MetaDataVersion standard, so 2.0 and 1.0 name SDTM-IG 3.3 only.
 
 2.0 -> 1.0 (CRT-DDS; the 1.0 constructs are the ones the CDISC 2.0 schema lists as deprecated)
   * namespaces odm/v1.3 -> odm/v1.2, def/v2.0 -> def/v1.0; ODMVersion 1.2; def:DefineVersion 1.0.0;
