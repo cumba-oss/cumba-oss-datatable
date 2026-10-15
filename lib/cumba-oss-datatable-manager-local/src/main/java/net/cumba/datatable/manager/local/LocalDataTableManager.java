@@ -230,7 +230,9 @@ public class LocalDataTableManager implements IDataTableManager
      * The lookup (or load) and the count are two steps; the count is taken only if the instance is
      * still the one cached under the URI and not retired. A reload, an eviction or a last release
      * that landed in between makes the join fail, and the door looks up again - so it never hands
-     * out a closed or superseded instance, and never counts on another instance (PACK G 17).
+     * out a closed or superseded instance, and never counts on another instance (PACK G 17). The
+     * retry is unbounded: while the library's files keep changing under concurrent openers each
+     * pass may see a fresh reload, but it terminates once the concurrent writes on the URI stop.
      */
     @Override
     public IDataTableLibraryRef getLibraryRef(URI aUri, @Nullable FileInfo aFileInfo)
