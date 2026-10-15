@@ -11,8 +11,8 @@ import net.cumba.datatable.view.IDataTableView;
  * The lazy strategy of a key-table alignment over the shared matching: every base row is probed on
  * demand through a {@link KeyedMatcher} (no per-row map is materialised — O(partner rows) memory
  * whatever the base size), with a one-slot cache for the viewport access pattern that reads one
- * row's cells one after another. The successor of {@code HashLookupView}, which probed its own hash
- * table (MET #10: one matching, two strategies).
+ * row's cells one after another. The successor of the removed {@code HashLookupView}, which probed
+ * its own hash table (MET #10: one matching, two strategies).
  *
  * <p>
  * Safe to read from several threads (T2 review M1): every probe carries its own key array

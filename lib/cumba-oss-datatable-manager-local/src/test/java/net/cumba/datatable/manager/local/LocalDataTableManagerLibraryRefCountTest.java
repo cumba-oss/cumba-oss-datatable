@@ -70,6 +70,14 @@ class LocalDataTableManagerLibraryRefCountTest
     }
 
 
+    private static LocalCacheSupport cacheOf(LocalDataTableManager aManager) throws Exception
+    {
+        java.lang.reflect.Field f = LocalDataTableManager.class.getDeclaredField("cacheSupport");
+        f.setAccessible(true);
+        return (LocalCacheSupport) f.get(aManager);
+    }
+
+
     private LocalCacheSupport cache() throws Exception
     {
         java.lang.reflect.Field f = LocalDataTableManager.class.getDeclaredField("cacheSupport");
@@ -193,7 +201,7 @@ class LocalDataTableManagerLibraryRefCountTest
         {
             manager.releaseLibraryRef(borrowed);
             assertTrue(log.anyMessageContains("is a borrowed view"), log.records().toString());
-            assertEquals(1, log.count(java.util.logging.Level.WARNING),
+            assertEquals(1, log.count(Level.WARNING),
                     "the refusal is reported as a WARNING: " + log.records());
         }
 
@@ -216,8 +224,8 @@ class LocalDataTableManagerLibraryRefCountTest
     {
         URI uri = folder("foreign", "dm.csv");
         LocalDataTableManager other = new LocalDataTableManager();
-        IDataTableLibraryRef mine = manager.getLibraryRef(uri, null, null, null);
-        IDataTableLibraryRef theirs = other.getLibraryRef(uri, null, null, null);
+        IDataTableLibraryRef mine = manager.getLibraryRef(uri, null);
+        IDataTableLibraryRef theirs = other.getLibraryRef(uri, null);
         // the other manager's ref itself is refused earlier ("not supported": its manager is not
         // this one); the token reaches the count only inside a ref of THIS manager
         LocalDataTableLibraryRef smuggled = LocalDataTableLibraryRef.builder().manager(manager)
@@ -235,13 +243,12 @@ class LocalDataTableManagerLibraryRefCountTest
                             .toList().toString());
         }
         assertEquals(1, cache().countOwners(uri), "this manager's holder is untouched");
-        assertEquals(1, manager.getOpenLibraries().count());
-        assertEquals(1, other.getOpenLibraries().count(), "and the other manager's library too");
+        assertEquals(1, cacheOf(other).countOwners(uri), "and the other manager's holder too");
 
         other.releaseLibraryRef(theirs);
-        assertEquals(0, other.getOpenLibraries().count(), "released where it was opened");
+        assertEquals(0, cacheOf(other).countOwners(uri), "released where it was opened");
         manager.releaseLibraryRef(mine);
-        assertEquals(0, manager.getOpenLibraries().count());
+        assertEquals(0, cache().countOwners(uri));
     }
 
 
@@ -254,8 +261,8 @@ class LocalDataTableManagerLibraryRefCountTest
     {
         URI uri = folder("copied", "dm.csv");
         URI otherUri = folder("copied-other", "dm.csv");
-        IDataTableLibraryRef original = manager.getLibraryRef(uri, null, null, null);
-        IDataTableLibraryRef otherLib = manager.getLibraryRef(otherUri, null, null, null);
+        IDataTableLibraryRef original = manager.getLibraryRef(uri, null);
+        IDataTableLibraryRef otherLib = manager.getLibraryRef(otherUri, null);
         LocalDataTableLibraryRef copy = LocalDataTableLibraryRef.builder().manager(manager)
                 .library(((LocalDataTableLibraryRef) otherLib).getLibrary())
                 .ownership(((LocalDataTableLibraryRef) original).getOwnership()).build();
@@ -269,12 +276,13 @@ class LocalDataTableManagerLibraryRefCountTest
                     () -> log.records().stream().map(java.util.logging.LogRecord::getMessage)
                             .toList().toString());
         }
-        assertEquals(2, manager.getOpenLibraries().count(), "nothing closed");
         assertEquals(1, cache().countOwners(uri), "nothing counted down");
+        assertEquals(1, cache().countOwners(otherUri), "nothing closed");
 
         manager.releaseLibraryRef(original);
         manager.releaseLibraryRef(otherLib);
-        assertEquals(0, manager.getOpenLibraries().count(), "the originals release as before");
+        assertEquals(0, cache().countOwners(uri), "the originals release as before");
+        assertEquals(0, cache().countOwners(otherUri));
     }
 
 
