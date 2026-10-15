@@ -681,10 +681,13 @@ public final class CdtWriter
 
     /**
      * Whether the renderer of {@code aKind} writes {@code aValue} exactly: a non-number (a missing
-     * value is its own enum, not a number) or a non-finite value is not the renderer's concern (it
-     * is written as text or as its sentinel); a number must be whole, and a time must lie in [0,
-     * 86400). A whole value outside the representable date range still reaches the renderer, which
-     * refuses it with a descriptive {@link IOException} as before.
+     * value is its own enum, not a number) is not the renderer's concern (it is written as text or
+     * as its sentinel); a number must be finite and whole, and a time must lie in [0, 86400). A
+     * {@code NaN} is not renderable (PACK G 21 review): the temporal renderers read
+     * {@code longValue()}, which is 0 for a NaN, so a NaN in a date column was written
+     * {@code 1960-01-01}; as a Num column it is written {@code ""}, as {@link #renderNumber} writes
+     * every NaN. A whole value outside the representable date range still reaches the renderer,
+     * which refuses it with a descriptive {@link IOException} as before.
      */
     private static boolean isRenderable(CdtKind aKind, @Nullable Object aValue)
     {
@@ -695,7 +698,7 @@ public final class CdtWriter
         double d = n.doubleValue();
         if (!Double.isFinite(d))
         {
-            return true;
+            return false;
         }
         if (Double.compare(d, Math.rint(d)) != 0)
         {

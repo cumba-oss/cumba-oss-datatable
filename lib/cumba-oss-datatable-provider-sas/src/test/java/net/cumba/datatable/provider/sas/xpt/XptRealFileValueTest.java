@@ -311,6 +311,8 @@ class XptRealFileValueTest
         {
             DataTableColumnMeta[] viaLibrary = ((XptLibrary) lib).getMembers().toList().get(0)
                     .getColumns();
+            assertEquals(m.getColumnCount(), viaLibrary.length,
+                    "the library view reads every NAMESTR (the loop below is vacuous otherwise)");
             for (int c = 0; c < viaLibrary.length; c++)
             {
                 assertEquals(m.getColumn(c).getDisplayFormat(), viaLibrary[c].getDisplayFormat(),

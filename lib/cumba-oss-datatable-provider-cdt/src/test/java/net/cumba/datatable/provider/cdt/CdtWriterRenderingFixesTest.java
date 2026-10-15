@@ -13,6 +13,7 @@ import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
+import net.cumba.datatable.impl.support.OverlayDataTable;
 import net.cumba.datatable.values.DataValueType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -124,6 +125,27 @@ class CdtWriterRenderingFixesTest
         assertTrue(text.contains("01:01:01"), text);
         assertTrue(text.contains("00:00:00"), text);
         assertTrue(text.contains("23:59:59"), text);
+    }
+
+
+    /**
+     * PACK G 21 review: a raw {@code NaN} in a date column made the column fall to the DATE
+     * renderer, whose {@code longValue()} of a NaN is 0 - written {@code 1960-01-01}. Not
+     * renderable now: the column is Num and the NaN is written {@code ""}, like every NaN of a Num
+     * column. A raw NaN never comes out of a buffer (a loaded NaN is a MissingValue, NZL), only out
+     * of an edit or a computed cell - here an {@link OverlayDataTable} override.
+     */
+    @Test
+    void aNanInADateColumnMakesItNumAndIsWrittenBlank(@TempDir Path tmp) throws IOException
+    {
+        OverlayDataTable edited = new OverlayDataTable(numTable("ADT", "DATE9.", 20892.0, 1.0));
+        edited.setValue(1, "ADT", Double.NaN);
+        assertTrue(Double.isNaN((Double) edited.getValue(1, 0)), "the override is a raw NaN");
+        String text = writeToString(edited, tmp);
+        assertTrue(text.contains("col ADT type=Num format=DATE9."), text);
+        assertTrue(text.contains("\n20892\n"), text);
+        assertFalse(text.contains("1960-01-01"), "a NaN is no epoch date: " + text);
+        assertFalse(text.contains("2017-03-14"), "the whole column is Num: " + text);
     }
 
     // ---- F-prov-05 ----------------------------------------------------------------------------

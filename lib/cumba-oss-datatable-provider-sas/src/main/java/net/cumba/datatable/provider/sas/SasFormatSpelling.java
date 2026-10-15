@@ -28,6 +28,14 @@ import org.jspecify.annotations.Nullable;
  * {@code BEST12.2}, {@code DATE9.}, {@code BEST.}</td>
  * </tr>
  * <tr>
+ * <td>holds a {@code .}</td>
+ * <td>0</td>
+ * <td>0</td>
+ * <td>any</td>
+ * <td>the name unchanged, e.g. {@code 8.2}, {@code DATE9.} -- another writer stored the whole
+ * spelling as the name (tolerance, see below)</td>
+ * </tr>
+ * <tr>
  * <td>non-blank</td>
  * <td>any</td>
  * <td>any</td>
@@ -77,6 +85,17 @@ import org.jspecify.annotations.Nullable;
  * with a width there is not a shape SAS writes. A negative width or decimal count (a damaged
  * header) counts as none.
  * </p>
+ *
+ * <p>
+ * <b>A name that already holds the whole spelling passes through.</b> ReadStat's SAS7BDAT writer
+ * (R's haven, pyreadstat) stores a format as its text -- {@code 8.2} or {@code DATE9.} as the name,
+ * width and decimals 0 -- a shape SAS never writes; appending the {@code .} made it {@code 8.2.}
+ * (PACK G fold, G11 / G12 review). Owner 2026-10-15: <i>"Accepting wrong input from other sources
+ * is ok. Expecting it wrong is not ok. And writing it wrong is even worse."</i> So a non-blank name
+ * holding a {@code .} with width and decimals 0 is spelled as stored, the same tolerance
+ * {@code cumba-parso}'s {@code ColumnFormat.toString} applies; every SAS-written file (its names
+ * never hold a {@code .}) reads exactly as before, and the writers still spell SAS's own form.
+ * </p>
  */
 public final class SasFormatSpelling
 {
@@ -108,6 +127,11 @@ public final class SasFormatSpelling
         if (name.isEmpty() && (!aNumeric || aWidth <= 0))
         {
             return null;
+        }
+        if (aWidth <= 0 && aDecimals <= 0 && name.indexOf('.') >= 0)
+        {
+            // another writer stored the whole spelling as the name (ReadStat: "8.2", "DATE9.")
+            return name;
         }
 
         StringBuilder sb = new StringBuilder(name);

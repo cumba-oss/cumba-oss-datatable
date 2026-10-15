@@ -58,6 +58,14 @@ class SasFormatSpellingTest
             // BW2 (owner 2026-10-12): width 0, decimals > 0 stays no format
             new Row("", 0, 3, true, null), //
             new Row(null, 0, 1, true, null), //
+            // a name that already holds the whole spelling (ReadStat's writer: haven, pyreadstat)
+            // passes through with width and decimals 0 (owner 2026-10-15: accepting wrong input is
+            // ok, expecting or writing it is not); a width or decimals beside it is spelled as
+            // stored plus the SAS suffix, the shape SAS never writes either
+            new Row("8.2", 0, 0, true, "8.2"), //
+            new Row("DATE9.", 0, 0, true, "DATE9."), //
+            new Row(" 8.2 ", 0, 0, false, "8.2"), //
+            new Row("BEST8", 0, 0, true, "BEST8."), //
             // a blank name on a character column: no format, whatever its width
             new Row(null, 10, 0, false, null), //
             new Row("  ", 10, 2, false, null), //
@@ -91,8 +99,9 @@ class SasFormatSpellingTest
     /**
      * Planted control: the rule the XPT readers had before this plan (a blank name is no format,
      * whatever the width; decimals appended on any column) must fail this table, and exactly on the
-     * rows it got wrong -- the named character format with decimals and the four bare {@code w.d}
-     * rows. If it passed, the table could not tell the fix from the defect.
+     * rows it got wrong -- the named character format with decimals, the four bare {@code w.d} rows
+     * and the three pass-through rows of the PACK G fold (it appended a {@code .} to a name already
+     * holding the whole spelling). If it passed, the table could not tell the fix from the defect.
      */
     @Test
     void theOldDropRuleFailsExactlyTheBareWdRows()
@@ -107,8 +116,9 @@ class SasFormatSpellingTest
                     + (aDecimals > 0 ? aDecimals : "");
         };
         List<String> wrong = mismatches(oldRule);
-        assertEquals(5, wrong.size(), wrong::toString);
-        assertEquals(List.of("$CHAR8.", "8.", "8.1", "3.", "12.2"), wrong.stream()
-                .map(s -> s.substring(s.indexOf("expected=") + 9, s.indexOf(']'))).toList());
+        assertEquals(8, wrong.size(), wrong::toString);
+        assertEquals(List.of("$CHAR8.", "8.", "8.1", "3.", "12.2", "8.2", "DATE9.", "8.2"),
+                wrong.stream().map(s -> s.substring(s.indexOf("expected=") + 9, s.indexOf(']')))
+                        .toList());
     }
 }
