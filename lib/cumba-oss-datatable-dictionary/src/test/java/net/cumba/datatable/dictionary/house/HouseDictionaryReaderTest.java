@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.Collections;
@@ -418,5 +419,20 @@ class HouseDictionaryReaderTest
         assertNull(d.getRetrieved());
         assertEquals("ValueMapDictionary(x, house format 1, FORMAT)", d.toString(),
                 "an untyped file is named by the stem the store bound it as");
+    }
+
+
+    /** PS-D4: a numeric {@code version} is no version, a numeric {@code type} is the file stem. */
+    @Test
+    void aNumericVersionIsNoVersion_aNumericTypeIsTheFileStem() throws IOException
+    {
+        Path file = dir.resolve("x.json");
+        Files.writeString(file, "{\"type\":2,\"version\":2.80,\"levels\":{\"PT\":{\"A\":\"A\"}}}");
+        ValueMapDictionary d = HouseDictionaryReader.read(file);
+        assertEquals("", d.getType());
+        assertNull(d.getVersion());
+        assertEquals("ValueMapDictionary(x, house format 1, FORMAT)", d.toString());
+        assertEquals(new HouseDictionaryReader.Header("", null, null, 1, null),
+                HouseDictionaryReader.readHeader(file));
     }
 }

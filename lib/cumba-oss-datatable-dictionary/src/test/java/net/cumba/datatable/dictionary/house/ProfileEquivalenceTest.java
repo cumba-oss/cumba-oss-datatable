@@ -303,7 +303,8 @@ class ProfileEquivalenceTest
      * belongs is skipped by both (it is no term, no decode, no ancestor), and a blank {@code type}
      * is no type in both (the file stem keys the registry). Before, FULL kept containers as
      * {@code ""} and the blank type verbatim while FORMAT skipped them, so the browser's status
-     * depended on which profile parsed the file first.
+     * depended on which profile parsed the file first. Since PS-D4-T a {@code null} term value is
+     * no term either (only a JSON string is), so the membership oracle is {@code isTextual()}.
      */
     @Test
     void onMalformedInputBothProfilesAgree() throws IOException
@@ -368,8 +369,8 @@ class ProfileEquivalenceTest
                     assertEquals(full.isMember(level, key), format.isMember(level, key),
                             what + " " + level + " " + key);
                     assertEquals(full.isValidTerm(level, key),
-                            levels.path(level).path(key.toUpperCase(Locale.ROOT)).isValueNode(),
-                            "FULL membership holds only scalar terms: " + what + " " + key);
+                            levels.path(level).path(key.toUpperCase(Locale.ROOT)).isTextual(),
+                            "FULL membership holds only string terms: " + what + " " + key);
                     assertEquals(full.decode(level, key), format.decode(level, key),
                             what + " " + level + " " + key);
                 }
@@ -443,5 +444,134 @@ class ProfileEquivalenceTest
         assertEquals(full.houseFormat(), header.houseFormat());
         assertEquals(HouseDictionaryReader.readHeader(file), header,
                 "equal to the header-only streaming read");
+    }
+
+
+    /**
+     * PS-D4 (PLAN-pitest-triage-defects, owner 2026-10-15): a header field ({@code type},
+     * {@code version}, {@code source}, {@code retrieved}) counts only as a non-blank JSON string;
+     * any other JSON value reads as ABSENT, the same in {@link ValueMapDictionary#load}, in
+     * {@link HouseDictionaryReader#read} and in {@link HouseDictionaryReader#readHeader}. Before,
+     * {@code "version": 2.80} read as {@code "2.80"} in one and {@code "2.8"} in the other, and
+     * {@code true} as nothing in one and {@code "true"} in the other. PS-D4-R2: an integral
+     * {@code house_format} outside {@code int} is malformed, so it is format 1 in all three
+     * (before: the streaming read threw, the tree read truncated).
+     */
+    @Test
+    void onNonStringHeaderValuesAllReadersAgree() throws IOException
+    {
+        List<String> values = List.of("2.80", "2", "true", "false", "{}", "[]", "null", "\"  \"");
+        int n = 0;
+        for (String field : List.of("version", "source", "retrieved", "type"))
+        {
+            List<String> heads = new ArrayList<>();
+            for (String v : values)
+            {
+                heads.add("\"" + field + "\":" + v + ",");
+            }
+            heads.add("");
+            for (String head : heads)
+            {
+                String text = "{" + head + "\"levels\":{\"PT\":{\"HEADACHE\":\"Headache\"}}}";
+                Path file = Files.createDirectories(tmp.resolve("hdr" + n++))
+                        .resolve("meddra.json");
+                Files.writeString(file, text);
+                ValueMapDictionary full = ValueMapDictionary.load(file);
+                ValueMapDictionary format = HouseDictionaryReader.read(file);
+                HouseDictionaryReader.Header header = HouseDictionaryReader.readHeader(file);
+                // the absent value: null for the three provenance fields, "" (the stem keys) for
+                // type
+                assertNull(full.getVersion(), text);
+                assertNull(format.getVersion(), text);
+                assertNull(header.version(), text);
+                assertNull(full.getSource(), text);
+                assertNull(format.getSource(), text);
+                assertNull(header.source(), text);
+                assertNull(full.getRetrieved(), text);
+                assertNull(format.getRetrieved(), text);
+                assertNull(header.retrieved(), text);
+                assertEquals("", full.getType(), text);
+                assertEquals("", format.getType(), text);
+                assertEquals("", header.type(), text);
+                assertEquals("ValueMapDictionary(meddra, house format 1, FULL)", full.toString(),
+                        text);
+                assertEquals("ValueMapDictionary(meddra, house format 1, FORMAT)",
+                        format.toString(), text);
+                assertTrue(full.isMember("PT", "Headache") && format.isMember("PT", "Headache"),
+                        text);
+            }
+        }
+        assertEquals(4 * (values.size() + 1), n);
+        // a sensitivity control: a string is still read, by all three
+        Path good = Files.createDirectories(tmp.resolve("hdr-good")).resolve("meddra.json");
+        Files.writeString(good, "{\"type\":\"meddra\",\"version\":\"2.80\",\"source\":\"s\","
+                + "\"retrieved\":\"2026-10-15\",\"levels\":{}}");
+        assertEquals("2.80", ValueMapDictionary.load(good).getVersion());
+        assertEquals("2.80", HouseDictionaryReader.read(good).getVersion());
+        assertEquals(new HouseDictionaryReader.Header("meddra", "2.80", "2026-10-15", 1, "s"),
+                HouseDictionaryReader.readHeader(good));
+
+        // PS-D4-R2: house_format outside int, or not integral, is format 1 in all three readers
+        for (String hf : List.of("2147483648", "-2147483649", "1e3", "2.0", "\"2\""))
+        {
+            String text = "{\"type\":\"meddra\",\"house_format\":" + hf + ",\"levels\":{}}";
+            Path file = Files.createDirectories(tmp.resolve("hf" + n++)).resolve("meddra.json");
+            Files.writeString(file, text);
+            int expected = "\"2\"".equals(hf) ? 2 : ValueMapDictionary.HOUSE_FORMAT_1;
+            assertEquals(expected, ValueMapDictionary.load(file).houseFormat(), text);
+            assertEquals(expected, HouseDictionaryReader.read(file).houseFormat(), text);
+            assertEquals(expected, HouseDictionaryReader.readHeader(file).houseFormat(), text);
+        }
+    }
+
+
+    /**
+     * PS-D4-T (owner 2026-10-15, ⓘ): the same rule for the term VALUES of the sections both
+     * profiles read ({@code levels}, {@code pairs}, {@code decodes}) — a non-string scalar is no
+     * term, as a container already is (B-T LOW-4). Before, the streaming reader kept the raw token
+     * text ({@code 2.80}) and the tree reader {@code asText()} ({@code 2.8}).
+     */
+    @Test
+    void onNonStringSectionValuesBothProfilesAgree_andTheValueIsNoTerm() throws IOException
+    {
+        int n = 0;
+        // the two containers carry a string INSIDE: a reader that forgot to skip the container
+        // would read "x" as the next entry (the sensitivity control for the skip)
+        for (String v : List.of("2.80", "2", "true", "false", "null", "{\"x\":\"y\"}", "[\"y\"]"))
+        {
+            String text = "{\"type\":\"meddra\",\"house_format\":2,"
+                    + "\"levels\":{\"PT\":{\"HEADACHE\":" + v + ",\"NAUSEA\":\"Nausea\"},"
+                    + "\"PTCD\":{\"1\":\"1\",\"2\":\"2\",\"x\":\"x\"}},"
+                    + "\"decodes\":{\"PTCD\":{\"1\":" + v + ",\"2\":\"Nausea\"}}}";
+            Path file = Files.createDirectories(tmp.resolve("sec" + n++)).resolve("meddra.json");
+            Files.writeString(file, text);
+            ValueMapDictionary full = ValueMapDictionary.load(file);
+            ValueMapDictionary format = HouseDictionaryReader.read(file);
+            for (ValueMapDictionary d : List.of(full, format))
+            {
+                // the key is the fold, the value the spelling: a non-string value is no entry
+                assertFalse(d.isValidTerm("PT", "HEADACHE"), text + " " + d);
+                assertFalse(d.isValidTerm("PT", "x"), text + " " + d);
+                assertTrue(d.isMember("PT", "Nausea"), text + " " + d);
+                assertNull(d.decode("PTCD", "1"), text + " " + d);
+                assertNull(d.decode("PTCD", "x"), text + " " + d);
+                assertEquals("Nausea", d.decode("PTCD", "2"), text + " " + d);
+            }
+            assertEquals(full.toString().replace("FULL", "?"),
+                    format.toString().replace("FORMAT", "?"), text);
+            // the pairs registry of a house format 1 file: the non-string decode is no decode
+            String loinc = "{\"type\":\"loinc\",\"levels\":{\"LOINC\":{\"1-1\":\"1-1\",\"1-2\":\"1-2\","
+                    + "\"x\":\"x\"}},\"pairs\":{\"loinc\":{\"1-1\":" + v
+                    + ",\"1-2\":\"Glucose\"}}}";
+            Path lfile = Files.createDirectories(tmp.resolve("sec" + n++)).resolve("loinc.json");
+            Files.writeString(lfile, loinc);
+            for (ValueMapDictionary d : List.of(ValueMapDictionary.load(lfile),
+                    HouseDictionaryReader.read(lfile)))
+            {
+                assertNull(d.decode("LOINC", "1-1"), loinc + " " + d);
+                assertNull(d.decode("LOINC", "x"), loinc + " " + d);
+                assertEquals("Glucose", d.decode("LOINC", "1-2"), loinc + " " + d);
+            }
+        }
     }
 }

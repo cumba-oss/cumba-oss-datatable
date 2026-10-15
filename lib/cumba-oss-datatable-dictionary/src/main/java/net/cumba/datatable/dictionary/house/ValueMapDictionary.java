@@ -60,6 +60,20 @@ import org.jspecify.annotations.Nullable;
  * </p>
  *
  * <p>
+ * <b>The header rule</b> (PS-D4, owner 2026-10-15, {@code PLAN-pitest-triage-defects}): a header
+ * field — {@code type}, {@code version}, {@code source}, {@code retrieved} — counts only as a
+ * <b>non-blank JSON string</b>; any other JSON value (a number, a boolean, {@code null}, an object,
+ * an array) reads as <b>absent</b>, exactly as a missing key does: {@code version} / {@code source}
+ * / {@code retrieved} are {@code null} ({@link Provenance#NONE}), {@code type} is {@code ""} and
+ * the file stem keys the dictionary. The same rule holds for the term values of the sections
+ * ({@code levels}, {@code pairs}, {@code decodes}, {@code attributes}; PS-D4-T): a non-string value
+ * is no entry. {@value #HOUSE_FORMAT} is an integer field: an integer outside {@code int} is
+ * malformed and reads as {@value #HOUSE_FORMAT_1} (PS-D4-R2). {@link HouseDictionaryReader} and
+ * {@link HouseFormatValidator} apply the same rule, so the data browser, the engine and the
+ * installer's validation never disagree on a hand-made header.
+ * </p>
+ *
+ * <p>
  * <b>Format-path read API</b> (Phase A's, taken over by this class in B1 — D1: the engine's class
  * is the survivor): {@link #isMember}, {@link #decode}, {@link #hasLevel}, {@link #decodes},
  * {@link #houseFormat}, {@link #getRetrieved} — answered identically by {@link Profile#FULL} and
@@ -536,9 +550,12 @@ public final class ValueMapDictionary
      */
     private static ValueMapDictionary parse(JsonNode root, String fileStem, Profile aProfile)
     {
-        // a blank type is no type, as the streaming reader reads it (B-T lane 1 LOW-4)
-        String t = root.hasNonNull("type") && !root.get("type").isContainerNode()
-                && !root.get("type").asText().isBlank() ? root.get("type").asText() : "";
+        // only a non-blank JSON string is a type (the header rule in the class javadoc)
+        String t = text(root, "type");
+        if (t == null)
+        {
+            t = "";
+        }
         // R5 PB-M1: ONE intern map for the term-bearing sections — a PT name is a `levels` value
         // and a hierarchy_by_level key, a SOC name recurs on every PT row; the decodes of house
         // format 2 share it (a PT name in levels.PT and decodes.PTCD is held once), and so do pairs
@@ -559,7 +576,8 @@ public final class ValueMapDictionary
 
     /**
      * The {@value #HOUSE_FORMAT} field: an integer (or a numeric string); anything else — absent,
-     * malformed — is {@value #HOUSE_FORMAT_1}, the version of every file written before the field.
+     * malformed, an integer outside {@code int} (PS-D4-R2: malformed, not truncated) — is
+     * {@value #HOUSE_FORMAT_1}, the version of every file written before the field.
      */
     static int readHouseFormat(@Nullable JsonNode node)
     {
@@ -569,7 +587,7 @@ public final class ValueMapDictionary
         }
         if (node.isIntegralNumber())
         {
-            return node.asInt();
+            return node.canConvertToInt() ? node.intValue() : HOUSE_FORMAT_1;
         }
         if (node.isTextual())
         {
@@ -586,7 +604,10 @@ public final class ValueMapDictionary
     }
 
 
-    /** The {@value #DECODES} section, verbatim, interned through {@code canonical}. */
+    /**
+     * The {@value #DECODES} section, verbatim, interned through {@code canonical}; a non-string
+     * decode is no entry (PS-D4-T; the streaming reader skips it too).
+     */
     private static Map<String, Map<String, String>> readDecodes(@Nullable JsonNode node,
             Map<String, String> canonical)
     {
@@ -603,7 +624,7 @@ public final class ValueMapDictionary
             {
                 for (Map.Entry<String, JsonNode> e : innerNode.properties())
                 {
-                    if (!e.getValue().isContainerNode())
+                    if (e.getValue().isTextual())
                     {
                         inner.put(LevelScopedHierarchy.canonical(canonical, e.getKey()),
                                 LevelScopedHierarchy.canonical(canonical, e.getValue().asText()));
@@ -624,14 +645,18 @@ public final class ValueMapDictionary
     }
 
 
-    /** A non-blank string field, or {@code null}. */
+    /**
+     * A header field that counts: a non-blank JSON string, else {@code null} (the header rule in
+     * the class javadoc — a number, boolean, {@code null}, object or array is absent).
+     */
     private static @Nullable String text(JsonNode root, String field)
     {
-        if (!root.hasNonNull(field))
+        JsonNode node = root.path(field);
+        if (!node.isTextual())
         {
             return null;
         }
-        String value = root.get(field).asText();
+        String value = node.asText();
         return value.isBlank() ? null : value;
     }
 
@@ -657,8 +682,9 @@ public final class ValueMapDictionary
             {
                 for (Map.Entry<String, JsonNode> e : innerNode.properties())
                 {
-                    // a container is no term (B-T lane 1 LOW-4: the streaming reader skips it too)
-                    if (!e.getValue().isContainerNode())
+                    // a non-string value is no term (PS-D4-T; a container: B-T lane 1 LOW-4) — the
+                    // streaming reader skips it too
+                    if (e.getValue().isTextual())
                     {
                         inner.put(
                                 LevelScopedHierarchy.canonical(canonical,
@@ -675,7 +701,8 @@ public final class ValueMapDictionary
 
     /**
      * Nested string map read verbatim — keys and values exactly as authored in the file, interned
-     * through {@code canonical}; a container value is no entry (the streaming reader skips it too).
+     * through {@code canonical}; a non-string value is no entry (PS-D4-T; the streaming reader
+     * skips it too).
      */
     private static Map<String, Map<String, String>> readNestedStringMap(@Nullable JsonNode node,
             Map<String, String> canonical)
@@ -693,7 +720,7 @@ public final class ValueMapDictionary
             {
                 for (Map.Entry<String, JsonNode> e : innerNode.properties())
                 {
-                    if (!e.getValue().isContainerNode())
+                    if (e.getValue().isTextual())
                     {
                         inner.put(LevelScopedHierarchy.canonical(canonical, e.getKey()),
                                 LevelScopedHierarchy.canonical(canonical, e.getValue().asText()));

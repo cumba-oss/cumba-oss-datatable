@@ -28,7 +28,9 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * Like the engine's reader, an absent, {@code null} or mis-shaped section degrades to empty
  * <b>silently</b>; the file's emptiness is then {@link ValueMapDictionary#hasContent()}'s business.
- * Unknown top-level keys are skipped, so a file written by a newer installer still loads its known
+ * The header fields and the term values follow {@link ValueMapDictionary}'s header rule (PS-D4):
+ * only a non-blank JSON string counts, anything else is absent — in both readers alike. Unknown
+ * top-level keys are skipped, so a file written by a newer installer still loads its known
  * sections.
  * </p>
  * <p>
@@ -245,11 +247,14 @@ public final class HouseDictionaryReader
     }
 
 
+    /**
+     * A header field that counts: a non-blank JSON string, else {@code null} — the header rule of
+     * {@link ValueMapDictionary} (PS-D4), so both readers spell a hand-made header the same way.
+     */
     private static @Nullable String textOrNull(JsonParser aParser, JsonToken aToken)
         throws IOException
     {
-        if (aToken == JsonToken.VALUE_STRING || aToken == JsonToken.VALUE_NUMBER_INT
-                || aToken == JsonToken.VALUE_NUMBER_FLOAT)
+        if (aToken == JsonToken.VALUE_STRING)
         {
             String s = aParser.getText();
             return s.isBlank() ? null : s;
@@ -262,11 +267,16 @@ public final class HouseDictionaryReader
     }
 
 
+    /**
+     * {@link ValueMapDictionary#readHouseFormat} for the stream: an integer outside {@code int} is
+     * malformed, so format 1 (PS-D4-R2), never a parse failure.
+     */
     private static int houseFormat(JsonParser aParser, JsonToken aToken) throws IOException
     {
         if (aToken == JsonToken.VALUE_NUMBER_INT)
         {
-            return aParser.getIntValue();
+            return aParser.getNumberType() == JsonParser.NumberType.INT ? aParser.getIntValue()
+                    : ValueMapDictionary.HOUSE_FORMAT_1;
         }
         if (aToken == JsonToken.VALUE_STRING)
         {
@@ -320,9 +330,10 @@ public final class HouseDictionaryReader
                 {
                     String key = aParser.currentName();
                     JsonToken valueToken = aParser.nextToken();
-                    if (valueToken.isStructStart())
+                    if (valueToken != JsonToken.VALUE_STRING)
                     {
-                        aParser.skipChildren();
+                        // a non-string value is no term (PS-D4-T), as the tree reader reads it
+                        skipValue(aParser, valueToken);
                         continue;
                     }
                     String value = aParser.getText();
@@ -372,9 +383,10 @@ public final class HouseDictionaryReader
                 {
                     String key = aParser.currentName();
                     JsonToken valueToken = aParser.nextToken();
-                    if (valueToken.isStructStart())
+                    if (valueToken != JsonToken.VALUE_STRING)
                     {
-                        aParser.skipChildren();
+                        // a non-string value is no pair (PS-D4-T), as the tree reader reads it
+                        skipValue(aParser, valueToken);
                         continue;
                     }
                     inner.put(canonical(aCanonical, key), canonical(aCanonical, aParser.getText()));
@@ -424,14 +436,9 @@ public final class HouseDictionaryReader
         while (aParser.nextToken() == JsonToken.FIELD_NAME)
         {
             JsonToken valueToken = aParser.nextToken();
-            if (valueToken.isStructStart())
-            {
-                aParser.skipChildren();
-            }
-            else
-            {
-                content = true;
-            }
+            // the engine's reader keeps a string value only (PS-D4-T)
+            content |= valueToken == JsonToken.VALUE_STRING;
+            skipValue(aParser, valueToken);
         }
         return content;
     }

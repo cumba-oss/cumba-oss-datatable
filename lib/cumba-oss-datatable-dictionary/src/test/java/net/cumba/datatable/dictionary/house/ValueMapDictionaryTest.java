@@ -3,7 +3,9 @@ package net.cumba.datatable.dictionary.house;
 // OSS-IDENTITY datatable-dictionary: byte-identical in cumba-datatable and cumba-oss-datatable.
 // Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -365,5 +367,22 @@ class ValueMapDictionaryTest
         assertTrue(p.isAvailable("myloinc"), "type defaults to the file stem 'myloinc'");
         assertTrue(p.isValidTerm("myloinc", "CODE", "1234-5"));
         assertFalse(p.isAvailable("readme"), "non-JSON files are not loaded");
+    }
+
+
+    /**
+     * PS-D4: a numeric {@code type} and {@code version} read as absent — the stem keys the file.
+     */
+    @Test
+    void aNumericTypeAndVersionReadAsAbsent(@TempDir Path dir) throws Exception
+    {
+        Files.writeString(dir.resolve("myloinc.json"),
+                "{\"type\":2,\"version\":2.80,\"levels\":{\"CODE\":{\"1234-5\":\"1234-5\"}}}",
+                StandardCharsets.UTF_8);
+        ValueMapDictionary d = ValueMapDictionary.load(dir.resolve("myloinc.json"));
+        assertEquals("", d.getType());
+        assertNull(d.getVersion());
+        RuntimeDictionaryProvider p = RuntimeDictionaryProvider.loadDirectory(dir);
+        assertTrue(p.isAvailable("myloinc"), "a numeric type is no type: the stem keys the file");
     }
 }

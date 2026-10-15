@@ -451,4 +451,18 @@ class HouseFormatValidatorTest
         return MAPPER.readTree(aJson);
     }
 
+
+    /** PS-D4-R3: a declared type is a non-blank JSON string; a number or a blank declares none. */
+    @Test
+    void aNonStringOrBlankTypeDeclaresNoType() throws IOException
+    {
+        assertEquals(List.of(),
+                HouseFormatValidator.completenessViolations("icd10", json("{\"type\":2}")));
+        assertEquals(List.of(),
+                HouseFormatValidator.completenessViolations("icd10", json("{\"type\":true}")));
+        assertEquals(List.of(),
+                HouseFormatValidator.completenessViolations("icd10", json("{\"type\":\"  \"}")));
+        assertEquals(1, HouseFormatValidator
+                .completenessViolations("icd10", json("{\"type\":\"meddra\"}")).size());
+    }
 }

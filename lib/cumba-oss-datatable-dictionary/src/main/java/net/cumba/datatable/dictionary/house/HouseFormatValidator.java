@@ -182,7 +182,11 @@ public final class HouseFormatValidator
     public static List<String> completenessViolations(String aDict, JsonNode aRoot)
     {
         List<String> out = new ArrayList<>();
-        String declared = aRoot.hasNonNull("type") ? aRoot.get("type").asText() : "";
+        // a declared type is a non-blank JSON string, else none (the header rule of
+        // ValueMapDictionary, PS-D4-R3: the readers would ignore any other value)
+        JsonNode typeNode = aRoot.path("type");
+        String declared = typeNode.isTextual() && !typeNode.asText().isBlank() ? typeNode.asText()
+                : "";
         if (!declared.isEmpty() && !declared.equalsIgnoreCase(aDict))
         {
             out.add(aDict + ": the document declares type '" + declared
