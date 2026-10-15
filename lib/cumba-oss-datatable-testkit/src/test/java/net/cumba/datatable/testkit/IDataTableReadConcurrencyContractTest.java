@@ -101,7 +101,7 @@ class IDataTableReadConcurrencyContractTest
         // 1 table answer + 1 per column (content) + per row 3 + 4 per cell
         assertEquals(1 + 2 + 2 * (3 + 2 * 4), answers.size());
         assertEquals("2 rows, 2 columns, [ID:STRING, N:LONG]", answers.get(0));
-        int row1 = 1 + 2 + (3 + 2 * 4);
+        int row1 = 1 + 2 + 3 + 2 * 4;
         assertEquals("2", answers.get(row1));
         assertEquals("1", answers.get(row1 + 1));
         assertTrue(answers.get(row1 + 2).startsWith("1@1 ["), answers.get(row1 + 2));

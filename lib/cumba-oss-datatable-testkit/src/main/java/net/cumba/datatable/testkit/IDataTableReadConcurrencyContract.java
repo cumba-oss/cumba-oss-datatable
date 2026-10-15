@@ -101,6 +101,9 @@ public final class IDataTableReadConcurrencyContract
         AtomicInteger reading = new AtomicInteger();
         AtomicInteger maxReading = new AtomicInteger();
         ConcurrentLinkedQueue<String> mismatches = new ConcurrentLinkedQueue<>();
+        // shutdownNow in the finally below, never close(): close() waits for the workers, and a
+        // reader that hangs is exactly what this check must report rather than wait for.
+        @SuppressWarnings("PMD.CloseResource")
         ExecutorService pool = Executors.newFixedThreadPool(aThreads, r ->
         {
             Thread thread = new Thread(r, "IDataTableReadConcurrencyContract");
@@ -124,7 +127,7 @@ public final class IDataTableReadConcurrencyContract
                                 || (maxReading.get() < 2 && System.nanoTime() < deadline); pass++)
                         {
                             maxReading.accumulateAndGet(reading.get(), Math::max);
-                            compare(reference, read(aTable, thread + pass, thread % 2 == 1),
+                            compare(reference, read(aTable, thread + pass, thread % 2 != 0),
                                     "thread " + thread + " pass " + pass, mismatches);
                         }
                     }
