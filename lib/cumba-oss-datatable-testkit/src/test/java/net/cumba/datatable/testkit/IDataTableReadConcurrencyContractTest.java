@@ -8,8 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import net.cumba.datatable.ColumnContent;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
+import net.cumba.datatable.IDataTableRow;
 import net.cumba.datatable.values.DataValueType;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -49,7 +55,7 @@ class IDataTableReadConcurrencyContractTest
     {
         AssertionError error = assertThrows(AssertionError.class,
                 () -> IDataTableReadConcurrencyContract.check(table(3), 1,
-                        java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(50)));
+                        TimeUnit.MILLISECONDS.toNanos(50)));
         assertTrue(error.getMessage().startsWith("vacuous"), error.getMessage());
     }
 
@@ -82,6 +88,86 @@ class IDataTableReadConcurrencyContractTest
     }
 
 
+    @Test
+    void twoThreadsAreEnoughAndStopOnceTheyHaveMet()
+    {
+        long start = System.nanoTime();
+        assertDoesNotThrow(() -> IDataTableReadConcurrencyContract.check(table(6), 2,
+                TimeUnit.SECONDS.toNanos(5)));
+        assertTrue(System.nanoTime() - start < TimeUnit.SECONDS.toNanos(4),
+                "two threads that met must not keep reading until the overlap deadline");
+    }
+
+
+    @Test
+    void aLoneThreadKeepsTryingUntilTheOverlapDeadline()
+    {
+        long start = System.nanoTime();
+        assertThrows(AssertionError.class, () -> IDataTableReadConcurrencyContract.check(table(3),
+                1, TimeUnit.MILLISECONDS.toNanos(300)));
+        assertTrue(System.nanoTime() - start >= TimeUnit.MILLISECONDS.toNanos(250),
+                "the check gave up before the overlap deadline");
+    }
+
+
+    @Test
+    void withoutADeadlineAThreadReadsExactlyTheMinimumPasses()
+    {
+        RecordingTable recording = new RecordingTable(table(5));
+        assertThrows(AssertionError.class,
+                () -> IDataTableReadConcurrencyContract.check(recording, 1, 0));
+        assertEquals(IDataTableReadConcurrencyContract.MIN_PASSES * 5,
+                recording.workerRowNames.size());
+        assertEquals(List.of(true), recording.workerDaemon.stream().distinct().toList(),
+                "the reading threads must be daemons, so a hung read cannot keep the JVM alive");
+    }
+
+
+    @Test
+    void aRowStreamThatDisagreesWithGetRowIsRejected()
+    {
+        IDataTable other = table(12);
+        IDataTable table = new Delegating(
+                new SyntheticDataTable("T", List.of("ID", "N"), new String[]
+                {
+                        "x", "y"
+                }, 12))
+        {
+
+            @Override
+            public Stream<IDataTableRow> getRows()
+            {
+                return other.getRows();
+            }
+        };
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> IDataTableReadConcurrencyContract.check(table));
+        assertTrue(error.getMessage().contains("getRows().parallel()"), error.getMessage());
+    }
+
+
+    /** Rows from {@code 7 * firstRow}, wrapping; every other thread reverses the columns. */
+    @Test
+    void eachThreadReadsInItsOwnOrder()
+    {
+        assertEquals(5, IDataTableReadConcurrencyContract.firstRow(2, 3));
+        assertEquals(List.of(false, true, false, true), IntStream.range(0, 4)
+                .mapToObj(IDataTableReadConcurrencyContract::reverseColumns).toList());
+
+        RecordingTable forward = new RecordingTable(table(10));
+        IDataTableReadConcurrencyContract.read(forward, 1, false);
+        assertEquals(List.of(7L, 8L, 9L, 0L, 1L, 2L, 3L, 4L, 5L, 6L), forward.rowNames);
+        assertEquals(List.of(0, 1), forward.contentColumns);
+        assertEquals(List.of(0, 1), forward.hashColumns.subList(0, 2));
+
+        RecordingTable reversed = new RecordingTable(table(10));
+        IDataTableReadConcurrencyContract.read(reversed, 0, true);
+        assertEquals(0L, reversed.rowNames.get(0));
+        assertEquals(List.of(1, 0), reversed.contentColumns);
+        assertEquals(List.of(1, 0), reversed.hashColumns.subList(0, 2));
+    }
+
+
     /** Every answer sits at its canonical place, whatever order a thread reads in. */
     @Test
     void theReadOrderDoesNotMoveAnAnswer()
@@ -101,6 +187,8 @@ class IDataTableReadConcurrencyContractTest
         // 1 table answer + 1 per column (content) + per row 3 + 4 per cell
         assertEquals(1 + 2 + 2 * (3 + 2 * 4), answers.size());
         assertEquals("2 rows, 2 columns, [ID:STRING, N:LONG]", answers.get(0));
+        assertEquals(List.of(String.valueOf(table.getColumnContent(0)),
+                String.valueOf(table.getColumnContent(1))), answers.subList(1, 3));
         int row1 = 1 + 2 + 3 + 2 * 4;
         assertEquals("2", answers.get(row1));
         assertEquals("1", answers.get(row1 + 1));
@@ -174,6 +262,67 @@ class IDataTableReadConcurrencyContractTest
         public @Nullable Object getValue(long aRow, int aColumn)
         {
             return delegate.getValue(aRow, aColumn);
+        }
+    }
+
+
+    /** Records the reads that show a thread's order, and who read on which thread. */
+    private static final class RecordingTable extends Delegating
+    {
+
+        final List<Long> rowNames = new CopyOnWriteArrayList<>();
+
+        final List<Integer> contentColumns = new CopyOnWriteArrayList<>();
+
+        final List<Integer> hashColumns = new CopyOnWriteArrayList<>();
+
+        final List<Long> workerRowNames = new CopyOnWriteArrayList<>();
+
+        final List<Boolean> workerDaemon = new CopyOnWriteArrayList<>();
+
+        private final Thread owner = Thread.currentThread();
+
+        RecordingTable(IDataTable aDelegate)
+        {
+            super(aDelegate);
+        }
+
+
+        @Override
+        public String getRowName(long aRowIndex)
+        {
+            if (Thread.currentThread() == owner)
+            {
+                rowNames.add(aRowIndex);
+            }
+            else
+            {
+                workerRowNames.add(aRowIndex);
+                workerDaemon.add(Thread.currentThread().isDaemon());
+            }
+            return delegate.getRowName(aRowIndex);
+        }
+
+
+        @Override
+        public ColumnContent getColumnContent(int aColumn)
+        {
+            if (Thread.currentThread() == owner)
+            {
+                contentColumns.add(aColumn);
+            }
+            return delegate.getColumnContent(aColumn);
+        }
+
+
+        @Override
+        public int hashCodeAt(long aRow, int aColumn)
+        {
+            if (Thread.currentThread() == owner)
+            {
+                hashColumns.add(aColumn);
+            }
+            return delegate.hashCodeAt(aRow, aColumn);
         }
     }
 

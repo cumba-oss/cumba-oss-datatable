@@ -1,7 +1,9 @@
 package net.cumba.datatable.testkit;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
@@ -127,7 +129,8 @@ public final class IDataTableReadConcurrencyContract
                                 || (maxReading.get() < 2 && System.nanoTime() < deadline); pass++)
                         {
                             maxReading.accumulateAndGet(reading.get(), Math::max);
-                            compare(reference, read(aTable, thread + pass, thread % 2 != 0),
+                            compare(reference,
+                                    read(aTable, firstRow(thread, pass), reverseColumns(thread)),
                                     "thread " + thread + " pass " + pass, mismatches);
                         }
                     }
@@ -170,6 +173,20 @@ public final class IDataTableReadConcurrencyContract
                     + " concurrent reads answered differently from the serial read; first: "
                     + mismatches.stream().limit(REPORTED_MISMATCHES).toList());
         }
+    }
+
+
+    /** The row a thread starts a pass at (scaled by 7 in {@link #read}): each pass elsewhere. */
+    static int firstRow(int aThread, int aPass)
+    {
+        return aThread + aPass;
+    }
+
+
+    /** Every other thread reads the columns right to left. */
+    static boolean reverseColumns(int aThread)
+    {
+        return aThread % 2 != 0;
     }
 
 
@@ -231,16 +248,22 @@ public final class IDataTableReadConcurrencyContract
         String[] out = new String[(int) aTable.getRowCount()];
         aTable.getRows().parallel()
                 .forEach(row -> out[(int) row.getIndex()] = answer(() -> row(row)));
-        return List.of(out);
+        return Arrays.asList(out);
     }
 
 
     private static void compare(List<String> aReference, List<String> aActual, String aWho,
             ConcurrentLinkedQueue<String> aMismatches)
     {
+        if (aReference.size() != aActual.size())
+        {
+            aMismatches
+                    .add(aWho + ": " + aActual.size() + " answers instead of " + aReference.size());
+            return;
+        }
         for (int i = 0; i < aReference.size(); i++)
         {
-            if (!aReference.get(i).equals(aActual.get(i)))
+            if (!Objects.equals(aReference.get(i), aActual.get(i)))
             {
                 aMismatches.add(aWho + ", answer " + i + ": " + aActual.get(i) + " instead of "
                         + aReference.get(i));
