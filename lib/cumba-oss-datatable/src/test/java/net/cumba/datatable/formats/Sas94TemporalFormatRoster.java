@@ -26,19 +26,27 @@ import java.util.List;
  * {@code JULDATE}, {@code MINGUO}, {@code RSTDO*}, {@code TWMDY}, {@code UNXEPOCH},
  * {@code XYYMMDD}) carry {@code FMTINFO} as their entry. FMTINFO corrected the reference reading in
  * four rows: {@code PDJULG} / {@code PDJULI} are {@code binary} (packed Julian), not dates, and are
- * not in the roster; {@code E8601LX} / {@code B8601LX} are {@code time}, not datetime.
+ * not in the roster; {@code E8601LX} / {@code B8601LX} are {@code time} by FMTINFO, but the owner
+ * ruled them datetimes on SAS's own {@code PUT} output ({@code E8601LX.} of 45296 is
+ * {@code 1960-01-01T12:34:56+00:00}; SC14 exception, 2026-10-15), so the roster carries them as
+ * such: 302 date, 77 datetime, 25 time names.
  *
  * <p>
- * Each row carries the name {@link DisplayFormatCategory} matches, the kind, whether the format
- * documents a <b>duration</b> (SC11: {@code TIME} <i>"can exceed 23:59:59, and it can also be a
- * negative value"</i>, {@code MMSS}, and {@code HHMM} / {@code HOUR}, which <i>"use asterisks to
- * format values that are outside the time range 0–24 hours"</i>), the reference entry, its page in
- * the <i>Formats by Category</i> table (0 for an FMTINFO-only row), and the deciding sentence. The
- * separator families {@code DDMMYYx} / {@code MMDDYYx} / {@code YYMMDDx} admit {@code x} in B C D N
- * P S, {@code MMYYx} / {@code YYMMx} / {@code YYQx} / {@code YYQRx} in C D N P S (FMTINFO lists
- * exactly those); the {@code IS8601*} names are the aliases each {@code E8601*} entry prints.
- * {@code TOD}, {@code TIMEAMPM}, {@code E8601TX} and {@code B8601TX} are documented for time
- * <b>and</b> datetime values and are times (owner ruling SC4, 2026-10-15; FMTINFO agrees).
+ * Each row carries the name {@link DisplayFormatCategory} matches, the kind, whether SAS does
+ * <b>not wrap</b> a value outside one day under the format (SC11 and its PACK G 21 review fold: the
+ * durations {@code TIME} <i>"can exceed 23:59:59, and it can also be a negative value"</i>,
+ * {@code MMSS}, and {@code HHMM} / {@code HOUR}, which <i>"use asterisks to format values that are
+ * outside the time range 0–24 hours"</i>; and the fifteen ISO 8601 / Japanese time formats
+ * {@code *TM}, {@code *TZ}, {@code *LZ} and {@code JTIME*}, which the owner's SAS 9.4M9 {@code PUT}
+ * oracle shows printing asterisks for 95400, -3600 and 1e8 at every width, and {@code *TX}, which
+ * the owner ruled to stay times that do not wrap (2026-10-15) — only {@code TOD}, {@code TIMEAMPM},
+ * {@code NLTIME} and {@code NLTIMAP} wrap), the reference entry, its page in the <i>Formats by
+ * Category</i> table (0 for an FMTINFO-only row), and the deciding sentence. The separator families
+ * {@code DDMMYYx} / {@code MMDDYYx} / {@code YYMMDDx} admit {@code x} in B C D N P S, {@code MMYYx}
+ * / {@code YYMMx} / {@code YYQx} / {@code YYQRx} in C D N P S (FMTINFO lists exactly those); the
+ * {@code IS8601*} names are the aliases each {@code E8601*} entry prints. {@code TOD},
+ * {@code TIMEAMPM}, {@code E8601TX} and {@code B8601TX} are documented for time <b>and</b> datetime
+ * values and are times (owner ruling SC4, 2026-10-15; FMTINFO agrees).
  * </p>
  *
  * <p>
@@ -51,7 +59,7 @@ public final class Sas94TemporalFormatRoster
 {
 
     /** One roster row. */
-    public record Entry(String name, DisplayFormatCategory kind, boolean duration, String entry,
+    public record Entry(String name, DisplayFormatCategory kind, boolean unwrapped, String entry,
             int page, String sentence)
     {
     }
@@ -86,15 +94,15 @@ public final class Sas94TemporalFormatRoster
                     "Adjusts a Coordinated Universal Time (UTC) datetime value to the user’s local date and time."),
             new Entry("B8601DZ", DATETIME_SAS, false, "B8601DZw.", 156,
                     "Writes datetime values for the zero meridian Coordinated Universal Time (UTC) time by using the ISO 8601 datetime and time zone basic notation yyyymmddThhmmss+0000."),
-            new Entry("B8601LX", TIME_SAS, false, "B8601LXw.", 158,
+            new Entry("B8601LX", DATETIME_SAS, false, "B8601LXw.", 158,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; SC14, FMTINFO wins over the entry's \"Writes datetime values as local time by appending a time zone offset difference between the local time and UTC, using the ISO 8601 basic notation yyyymmddThhmmss+|– hhmm.\")"),
-            new Entry("B8601LZ", TIME_SAS, false, "B8601LZw.", 159,
+            new Entry("B8601LZ", TIME_SAS, true, "B8601LZw.", 159,
                     "Writes time values as local time by appending a time zone offset difference between the local time and UTC, using the ISO 8601 basic time notation hhmmss+|–hhmm."),
-            new Entry("B8601TM", TIME_SAS, false, "B8601TMw.d", 161,
+            new Entry("B8601TM", TIME_SAS, true, "B8601TMw.d", 161,
                     "Writes time values by using the ISO 8601 basic notation hhmmss<ffff>."),
-            new Entry("B8601TX", TIME_SAS, false, "B8601TXw.", 163,
+            new Entry("B8601TX", TIME_SAS, true, "B8601TXw.", 163,
                     "Adjusts a Coordinated Universal Time (UTC) value to the user’s local time. Then, writes the local time by using the ISO 8601 basic time notation hhmmss+|-hhmm."),
-            new Entry("B8601TZ", TIME_SAS, false, "B8601TZw.", 164,
+            new Entry("B8601TZ", TIME_SAS, true, "B8601TZw.", 164,
                     "Adjusts time values to the Coordinated Universal Time (UTC) and writes the time values by using the ISO 8601 basic time notation hhmmss+|–hhmm."),
             new Entry("CATDFDD", DATE_SAS, false, "FMTINFO", 0,
                     "FMTINFO category date (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
@@ -248,15 +256,15 @@ public final class Sas94TemporalFormatRoster
                     "Adjusts a Coordinated Universal Time (UTC) datetime value to the user’s local date and time."),
             new Entry("E8601DZ", DATETIME_SAS, false, "E8601DZw.", 204,
                     "Writes datetime values for the zero meridian Coordinated Universal Time (UTC) by using the ISO 8601 datetime and time zone extended notation yyyy-mm-ddThh:mm:ss +00:00."),
-            new Entry("E8601LX", TIME_SAS, false, "E8601LXw.", 206,
+            new Entry("E8601LX", DATETIME_SAS, false, "E8601LXw.", 206,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; SC14, FMTINFO wins over the entry's \"Writes datetime values as local time by appending a time zone offset difference between the local time and UTC, using the ISO 8601 extended notation yyyy-mm- ddThh:mm:ss+|–hh:mm.\")"),
-            new Entry("E8601LZ", TIME_SAS, false, "E8601LZw.", 207,
+            new Entry("E8601LZ", TIME_SAS, true, "E8601LZw.", 207,
                     "Writes time values as local time, appending the Coordinated Universal Time (UTC) offset for the local SAS session, using the ISO 8601 extended time notation hh:mm:ss+|–hh:mm."),
-            new Entry("E8601TM", TIME_SAS, false, "E8601TMw.d", 209,
+            new Entry("E8601TM", TIME_SAS, true, "E8601TMw.d", 209,
                     "Writes time values by using the ISO 8601 extended notation hh:mm:ss.ffffff."),
-            new Entry("E8601TX", TIME_SAS, false, "E8601TXw.", 211,
+            new Entry("E8601TX", TIME_SAS, true, "E8601TXw.", 211,
                     "Adjusts a Coordinated Universal Time (UTC) value to the user’s local time. Then, writes the local time by using the ISO 8601 extended time notation hh:mm:ss+|–hh:mm."),
-            new Entry("E8601TZ", TIME_SAS, false, "E8601TZw.d", 213,
+            new Entry("E8601TZ", TIME_SAS, true, "E8601TZw.d", 213,
                     "Adjusts time values to the Coordinated Universal Time (UTC) and writes the time values by using the ISO 8601 extended notation hh:mm:ss.<fff>+|–hh:mm."),
             new Entry("ENGDFDD", DATE_SAS, false, "FMTINFO", 0,
                     "FMTINFO category date (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
@@ -400,11 +408,11 @@ public final class Sas94TemporalFormatRoster
                     "Alias of E8601DTw.d: Writes datetime values by using the ISO 8601 extended notation yyyy-mm-ddThh:mm:ss.ffffff."),
             new Entry("IS8601DZ", DATETIME_SAS, false, "E8601DZw.", 204,
                     "Alias of E8601DZw.: Writes datetime values for the zero meridian Coordinated Universal Time (UTC) by using the ISO 8601 datetime and time zone extended notation yyyy-mm-ddThh:mm:ss +00:00."),
-            new Entry("IS8601LZ", TIME_SAS, false, "E8601LZw.", 207,
+            new Entry("IS8601LZ", TIME_SAS, true, "E8601LZw.", 207,
                     "Alias of E8601LZw.: Writes time values as local time, appending the Coordinated Universal Time (UTC) offset for the local SAS session, using the ISO 8601 extended time notation hh:mm:ss+|–hh:mm."),
-            new Entry("IS8601TM", TIME_SAS, false, "E8601TMw.d", 209,
+            new Entry("IS8601TM", TIME_SAS, true, "E8601TMw.d", 209,
                     "Alias of E8601TMw.d: Writes time values by using the ISO 8601 extended notation hh:mm:ss.ffffff."),
-            new Entry("IS8601TZ", TIME_SAS, false, "E8601TZw.d", 213,
+            new Entry("IS8601TZ", TIME_SAS, true, "E8601TZw.d", 213,
                     "Alias of E8601TZw.d: Adjusts time values to the Coordinated Universal Time (UTC) and writes the time values by using the ISO 8601 extended notation hh:mm:ss.<fff>+|–hh:mm."),
             new Entry("ITADFDD", DATE_SAS, false, "FMTINFO", 0,
                     "FMTINFO category date (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
@@ -462,17 +470,17 @@ public final class Sas94TemporalFormatRoster
                     "FMTINFO category datetime (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
             new Entry("JNENGOW", DATE_SAS, false, "FMTINFO", 0,
                     "FMTINFO category date (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
-            new Entry("JTIMEH", TIME_SAS, false, "FMTINFO", 0,
+            new Entry("JTIMEH", TIME_SAS, true, "FMTINFO", 0,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
-            new Entry("JTIMEHM", TIME_SAS, false, "FMTINFO", 0,
+            new Entry("JTIMEHM", TIME_SAS, true, "FMTINFO", 0,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
-            new Entry("JTIMEHMS", TIME_SAS, false, "FMTINFO", 0,
+            new Entry("JTIMEHMS", TIME_SAS, true, "FMTINFO", 0,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
-            new Entry("JTIMEHW", TIME_SAS, false, "FMTINFO", 0,
+            new Entry("JTIMEHW", TIME_SAS, true, "FMTINFO", 0,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
-            new Entry("JTIMEMW", TIME_SAS, false, "FMTINFO", 0,
+            new Entry("JTIMEMW", TIME_SAS, true, "FMTINFO", 0,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
-            new Entry("JTIMESW", TIME_SAS, false, "FMTINFO", 0,
+            new Entry("JTIMESW", TIME_SAS, true, "FMTINFO", 0,
                     "FMTINFO category time (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),
             new Entry("JULDATE", DATE_SAS, false, "FMTINFO", 0,
                     "FMTINFO category date (owner SAS 9.4M9 FMTINFO run, 2026-10-15; not an entry of the Formats and Informats Reference)"),

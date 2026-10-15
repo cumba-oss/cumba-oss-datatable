@@ -50,8 +50,6 @@ class RelrecLinksTest
         assertTrue(cm.recordLevel());
         assertEquals("S1", cm.study());
         assertEquals("S1", cm.studyKey());
-        assertEquals("01-001", cm.srcSubject());
-        assertEquals("01-001", cm.tgtSubjectKey());
         assertEquals(List.of(new SubjectId("USUBJID", "01-001")), cm.srcIdentity());
         assertEquals(List.of(new SubjectId("USUBJID", "01-001")), cm.tgtIdentity());
         assertEquals("AESEQ", cm.srcIdvar());
@@ -135,12 +133,30 @@ class RelrecLinksTest
         assertEquals(1, links.relationshipCount());
         List<Link> lb = links.domains().get(0).links();
         assertEquals(2, lb.size());
-        assertEquals("A1", lb.get(0).srcSubject());
         assertEquals(List.of(new SubjectId("USUBJID", "A1")), lb.get(0).srcIdentity());
-        assertEquals("P1", lb.get(0).tgtSubject());
         assertEquals(List.of(new SubjectId("POOLID", "P1")), lb.get(0).tgtIdentity());
-        assertEquals("", lb.get(1).tgtSubject(), "neither USUBJID nor POOLID: no subject named");
-        assertEquals(List.of(), lb.get(1).tgtIdentity());
+        assertEquals(List.of(), lb.get(1).tgtIdentity(),
+                "neither USUBJID nor POOLID: no subject named");
+    }
+
+
+    /**
+     * SEND widens the identity like SDTM (G7-R1 (a); PACK G fold, G7 review): a row populating both
+     * {@code USUBJID} and {@code POOLID} identifies its record by both, not by "USUBJID or POOLID".
+     */
+    @Test
+    void send_aRowPopulatingSubjectAndPool_isIdentifiedByBoth()
+    {
+        IDataTable rr = new ListTable("RELREC",
+                "STUDYID,RDOMAIN,USUBJID,POOLID,IDVAR,IDVARVAL,RELID", "S1,CL,S1,P1,CLSEQ,1,R1",
+                "S1,LB,,P1,LBSEQ,1,R1");
+        Links links = RelrecLinks.collect(rr, "CL", null, MergeStandard.SEND);
+        assertTrue(links.send());
+        List<Link> lb = links.domains().get(0).links();
+        assertEquals(1, lb.size());
+        assertEquals(List.of(new SubjectId("USUBJID", "S1"), new SubjectId("POOLID", "P1")),
+                lb.get(0).srcIdentity());
+        assertEquals(List.of(new SubjectId("POOLID", "P1")), lb.get(0).tgtIdentity());
     }
 
 
@@ -161,11 +177,9 @@ class RelrecLinksTest
         List<Link> dt = links.domains().get(0).links();
         assertEquals(3, dt.size(), "D1-D1, D2-D2, U1-U1; the APID A1 and SPDEVID A1 rows differ");
         assertEquals(List.of(new SubjectId("SPDEVID", "D1")), dt.get(0).srcIdentity());
-        assertEquals("D1", dt.get(0).srcSubject());
         assertEquals(List.of(new SubjectId("SPDEVID", "D2")), dt.get(1).tgtIdentity());
         assertEquals(List.of(new SubjectId("USUBJID", "U1"), new SubjectId("SPDEVID", "D1")),
                 dt.get(2).srcIdentity(), "a device record of a subject: identified by both");
-        assertEquals("U1", dt.get(2).srcSubject());
         assertEquals(List.of(new SubjectId("USUBJID", "U1")), dt.get(2).tgtIdentity());
     }
 
@@ -183,8 +197,10 @@ class RelrecLinksTest
         assertNull(cm.get(0).study());
         assertEquals("", cm.get(1).studyKey());
         assertEquals("", cm.get(1).study());
-        assertEquals(MissingValue.MIS_A, cm.get(2).srcSubjectKey());
-        assertNull(cm.get(2).srcSubject());
+        // the two MIS_A rows formed one relationship (3 links above): a missing marker is its own
+        // grouping key, and it populates no identifier
+        assertEquals(List.of(), cm.get(2).srcIdentity());
+        assertEquals(List.of(), cm.get(2).tgtIdentity());
         IDataTable noStudy = new ListTable("RELREC", "RDOMAIN,USUBJID,IDVAR,IDVARVAL,RELID",
                 "AE,01-001,AESEQ,1,R1", "CM,01-001,CMSEQ,1,R1");
         assertEquals("",

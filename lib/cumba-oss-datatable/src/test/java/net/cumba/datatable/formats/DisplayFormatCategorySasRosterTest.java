@@ -57,7 +57,7 @@ class DisplayFormatCategorySasRosterTest
     /**
      * The roster is well-formed: unique names, a kind per row, a reference entry and page, a
      * deciding sentence that names the value kind (or the Details sentence for the week formats),
-     * and the SC11 duration flag only on time formats.
+     * and the SC11 not-wrapped flag only on time formats.
      */
     @Test
     void rosterRowsAreWellFormed()
@@ -78,16 +78,18 @@ class DisplayFormatCategorySasRosterTest
             default -> "time";
             };
             assertTrue(s.contains(expectedWord), e.name() + ": " + e.sentence());
-            assertFalse(e.duration() && e.kind() != DisplayFormatCategory.TIME_SAS, e.name());
+            assertFalse(e.unwrapped() && e.kind() != DisplayFormatCategory.TIME_SAS, e.name());
         }
     }
 
 
     /**
      * The counts of the owner's SAS 9.4M9 FMTINFO run (2026-10-15, SC14): 302 date, 75 datetime, 27
-     * time names, 404 in all, four of them durations; 161 of them are entries of the SAS 9.4
-     * reference. Exact, so that a name added to or dropped from either side is seen here as well as
-     * in the bijection.
+     * time names, 404 in all — read as 302 / 77 / 25 since the owner ruled {@code E8601LX} /
+     * {@code B8601LX} datetimes (SC14 exception, 2026-10-15); twenty-one of the names are not
+     * wrapped (four durations, the fifteen asterisk formats and {@code *TX}, PACK G 21 review
+     * fold); 161 of them are entries of the SAS 9.4 reference. Exact, so that a name added to or
+     * dropped from either side is seen here as well as in the bijection.
      */
     @Test
     void rosterCountsMatchTheReference()
@@ -97,14 +99,17 @@ class DisplayFormatCategorySasRosterTest
                         Collectors.counting()));
         assertEquals(404, Sas94TemporalFormatRoster.ENTRIES.size());
         assertEquals(302L, byKind.get(DisplayFormatCategory.DATE_SAS));
-        assertEquals(75L, byKind.get(DisplayFormatCategory.DATETIME_SAS));
-        assertEquals(27L, byKind.get(DisplayFormatCategory.TIME_SAS));
+        assertEquals(77L, byKind.get(DisplayFormatCategory.DATETIME_SAS));
+        assertEquals(25L, byKind.get(DisplayFormatCategory.TIME_SAS));
         assertEquals(161L, Sas94TemporalFormatRoster.ENTRIES.stream()
                 .filter(e -> !"FMTINFO".equals(e.entry())).count(), "reference entries");
-        assertEquals(Set.of("TIME", "MMSS", "HHMM", "HOUR"),
+        assertEquals(Set.of("TIME", "MMSS", "HHMM", "HOUR", "E8601TM", "B8601TM", "IS8601TM",
+                "E8601TZ", "B8601TZ", "IS8601TZ", "E8601LZ", "B8601LZ", "IS8601LZ", "JTIMEH",
+                "JTIMEHM", "JTIMEHMS", "JTIMEHW", "JTIMEMW", "JTIMESW", "E8601TX", "B8601TX"),
                 Sas94TemporalFormatRoster.ENTRIES.stream()
-                        .filter(Sas94TemporalFormatRoster.Entry::duration)
-                        .map(Sas94TemporalFormatRoster.Entry::name).collect(Collectors.toSet()));
+                        .filter(Sas94TemporalFormatRoster.Entry::unwrapped)
+                        .map(Sas94TemporalFormatRoster.Entry::name).collect(Collectors.toSet()),
+                "SC11 + PACK G 21 review fold: the formats SAS does not wrap");
     }
 
 
@@ -183,13 +188,13 @@ class DisplayFormatCategorySasRosterTest
     }
 
 
-    /** {@code isSasDuration} is exactly the roster's duration flag. */
+    /** {@code isSasUnwrappedTime} is exactly the roster's not-wrapped flag. */
     @ParameterizedTest
     @MethodSource("roster")
-    void durationFlagMatchesIsSasDuration(Sas94TemporalFormatRoster.Entry aEntry)
+    void unwrappedFlagMatchesIsSasUnwrappedTime(Sas94TemporalFormatRoster.Entry aEntry)
     {
-        assertEquals(aEntry.duration(), DisplayFormatCategory.isSasDuration(aEntry.name() + "8."),
-                aEntry.name());
+        assertEquals(aEntry.unwrapped(),
+                DisplayFormatCategory.isSasUnwrappedTime(aEntry.name() + "8."), aEntry.name());
     }
 
 

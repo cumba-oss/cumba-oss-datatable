@@ -36,7 +36,9 @@ class DisplayFormatCategoryTest
     @ValueSource(strings =
     {
             "DATETIME20.", "DATETIME.", "DATEAMPM.", "B8601DT.", "IS8601DT.", "E8601DT.",
-            "datetime20.0", "DTDATE9.", "E8601DN10.", "MDYAMPM.", "NLDATM."
+            "datetime20.0", "DTDATE9.", "E8601DN10.", "MDYAMPM.", "NLDATM.",
+            // owner 2026-10-15 (SC14 exception): E8601LX. of 45296 PUTs 1960-01-01T12:34:56+00:00
+            "E8601LX.", "B8601LX.", "e8601lx10."
     })
     void classifiesSasDateTimeFormats(String fmt)
     {
@@ -275,18 +277,29 @@ class DisplayFormatCategoryTest
     }
 
 
-    /** SC11: the four duration formats, and no other name. */
+    /**
+     * SC11 and the PACK G 21 review fold: the four duration formats, the fifteen ISO 8601 /
+     * Japanese time formats SAS prints as asterisks outside one day, and {@code *TX} (owner
+     * 2026-10-15: times that do not wrap); the four wrapping formats ({@code TOD},
+     * {@code TIMEAMPM}, {@code NLTIME}, {@code NLTIMAP}) are not flagged, nor is {@code *LX} (a
+     * datetime since the same ruling) or any other name.
+     */
     @ParameterizedTest
     @CsvSource(
     {
             "TIME8., true", "time., true", "TIME12.2, true", "MMSS., true", "HHMM., true",
-            "HOUR5., true", "HOUR., true", "TOD8., false", "E8601TM., false", "TIMEAMPM11., false",
-            "E8601TZ., false", "NLTIME., false", "DATETIME20., false", "DATE9., false",
-            "$TIME., false", "TIMEX., false", "BEST12., false", ", false", "'', false"
+            "HOUR5., true", "HOUR., true", "E8601TM8., true", "e8601tm., true", "B8601TM., true",
+            "IS8601TM., true", "E8601TZ., true", "B8601TZ., true", "IS8601TZ., true",
+            "E8601LZ., true", "B8601LZ., true", "IS8601LZ., true", "JTIMEH., true",
+            "JTIMEHM., true", "JTIMEHMS., true", "JTIMEHW., true", "JTIMEMW., true",
+            "JTIMESW., true", "TOD8., false", "TIMEAMPM11., false", "NLTIME., false",
+            "NLTIMAP., false", "E8601TX., true", "B8601TX., true", "E8601LX., false",
+            "B8601LX., false", "DATETIME20., false", "DATE9., false", "$TIME., false",
+            "TIMEX., false", "BEST12., false", ", false", "'', false"
     })
-    void isSasDurationNamesTheDurationFormats(String aFormat, boolean aExpected)
+    void isSasUnwrappedTimeNamesTheFormatsSasDoesNotWrap(String aFormat, boolean aExpected)
     {
-        assertEquals(aExpected, DisplayFormatCategory.isSasDuration(aFormat),
+        assertEquals(aExpected, DisplayFormatCategory.isSasUnwrappedTime(aFormat),
                 String.valueOf(aFormat));
     }
 }

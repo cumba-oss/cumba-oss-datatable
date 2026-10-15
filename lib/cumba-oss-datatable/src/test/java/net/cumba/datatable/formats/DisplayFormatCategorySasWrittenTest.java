@@ -37,13 +37,15 @@ import org.junit.jupiter.params.provider.MethodSource;
  * stored a day count under every format the reference calls a date format ({@code MONNAME},
  * {@code MONTH}, {@code JULIAN}, {@code YEAR}, the separator variants included) and seconds since
  * 1960 under every datetime format ({@code DTDATE}, {@code E8601DN}, {@code MDYAMPM} included). The
- * pinned exceptions: {@code TOD} — SAS stored a datetime under it, and it classifies
- * {@code TIME_SAS} by the owner's ruling SC4 (the format writes the time of day of either value) —
- * and {@code E8601LX} / {@code B8601LX}, under which SAS 9.4M4 also stored a datetime (their
- * entries write <i>"datetime values as local time"</i> in the form yyyy-mm-ddThh:mm:ss+hh:mm), yet
- * SAS's own {@code FMTINFO} category is {@code time} and wins (SC14, owner SAS 9.4M9 FMTINFO run,
- * 2026-10-15): they classify {@code TIME_SAS}, so a Dataset-JSON export writes their time of day
- * (one WARNING per column). Recorded here as a disagreement between two SAS sources, not hidden.
+ * pinned exception: {@code TOD} — SAS stored a datetime under it, and it classifies
+ * {@code TIME_SAS} by the owner's ruling SC4 (the format writes the time of day of either value).
+ * {@code E8601LX} / {@code B8601LX}, under which SAS 9.4M4 also stored a datetime (their entries
+ * write <i>"datetime values as local time"</i> in the form yyyy-mm-ddThh:mm:ss+hh:mm), are
+ * {@code time} by SAS's own {@code FMTINFO} category (SC14, owner SAS 9.4M9 FMTINFO run,
+ * 2026-10-15), but the owner ruled them datetimes on SAS's {@code PUT} output ({@code E8601LX.} of
+ * 45296 is {@code 1960-01-01T12:34:56+00:00}; SC14 exception, 2026-10-15), so they classify
+ * {@code DATETIME_SAS} as their stored value says. Recorded here as a disagreement between two SAS
+ * sources, decided by the one that writes, not hidden.
  * </p>
  */
 class DisplayFormatCategorySasWrittenTest
@@ -55,9 +57,11 @@ class DisplayFormatCategorySasWrittenTest
 
     private static final double SECONDS_OF_DAY = 36610;
 
-    /** The formats SAS stored a datetime under that classify as time: *LX (SC14), TOD (SC4). */
-    private static final List<String> TIME_BY_RULING_UNDER_A_DATETIME = List.of("E8601LX",
-            "B8601LX", "TOD");
+    /**
+     * The formats SAS stored a datetime under that classify as time: {@code TOD} (SC4) alone since
+     * the owner ruled {@code E8601LX} / {@code B8601LX} datetimes (SC14 exception, 2026-10-15).
+     */
+    private static final List<String> TIME_BY_RULING_UNDER_A_DATETIME = List.of("TOD");
 
     /** A column of the SAS-written file: its format name and the value SAS stored. */
     record Witness(String format, double stored)
@@ -108,7 +112,10 @@ class DisplayFormatCategorySasWrittenTest
     }
 
 
-    /** The kind the stored value proves, with the one pinned exception ({@code TOD}, SC4). */
+    /**
+     * The kind the stored value proves, with the pinned exceptions of
+     * {@link #TIME_BY_RULING_UNDER_A_DATETIME}.
+     */
     private static DisplayFormatCategory kindOf(Witness aWitness)
     {
         if (TIME_BY_RULING_UNDER_A_DATETIME.contains(aWitness.format()))
@@ -138,8 +145,8 @@ class DisplayFormatCategorySasWrittenTest
 
 
     /**
-     * The census is the whole file: 49 + 18 and 7 columns, and TOD is the only datetime-valued
-     * time.
+     * The census is the whole file: 49 + 18 and 7 columns, and
+     * {@link #TIME_BY_RULING_UNDER_A_DATETIME} is exactly the set of datetime-valued times.
      */
     @Test
     void censusCoversBothFilesWhole()

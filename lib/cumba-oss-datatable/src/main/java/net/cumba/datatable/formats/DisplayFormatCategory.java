@@ -32,13 +32,16 @@ import org.jspecify.annotations.Nullable;
  * {@code datetime} or {@code time} (owner SAS 9.4M9 FMTINFO run, 2026-10-15: 302 date, 75 datetime
  * and 27 time names, the separator families, the {@code IS8601*} aliases and the language-prefixed
  * NLS forms included — tested as a bijection against the roster test data; SC14: FMTINFO's category
- * wins where the reference reads differently, e.g. {@code E8601LX} / {@code B8601LX} are times and
- * {@code PDJULG} / {@code PDJULI} are {@code binary}, not dates). Only a documented name
- * classifies: the <b>exact base name</b> after {@link FormatSpec} strips width and decimals,
- * case-insensitively; a {@code $} character format never; a user format ({@code MYDATE.},
- * {@code DATEFMT.}) never, whatever its name contains (SC8). The four formats SAS documents for
- * time <b>and</b> datetime values — {@code TOD}, {@code TIMEAMPM}, {@code E8601TX}, {@code B8601TX}
- * — are times (owner ruling SC4, 2026-10-15: the writers show the time of day; FMTINFO agrees).
+ * wins where the reference reads differently, e.g. {@code PDJULG} / {@code PDJULI} are
+ * {@code binary}, not dates — with one owner-ruled exception, 2026-10-15: {@code E8601LX} /
+ * {@code B8601LX}, FMTINFO {@code time}, are <b>datetimes</b>, because SAS's own {@code PUT} writes
+ * a datetime for them ({@code E8601LX.} of 45296 gives {@code 1960-01-01T12:34:56+00:00}), so the
+ * roster is 302 / 77 / 25). Only a documented name classifies: the <b>exact base name</b> after
+ * {@link FormatSpec} strips width and decimals, case-insensitively; a {@code $} character format
+ * never; a user format ({@code MYDATE.}, {@code DATEFMT.}) never, whatever its name contains (SC8).
+ * The four formats SAS documents for time <b>and</b> datetime values — {@code TOD},
+ * {@code TIMEAMPM}, {@code E8601TX}, {@code B8601TX} — are times (owner ruling SC4, 2026-10-15: the
+ * writers show the time of day; FMTINFO agrees).
  * </p>
  *
  * <p>
@@ -56,8 +59,9 @@ import org.jspecify.annotations.Nullable;
  * answers for a format string, {@link #classify(DataTableColumnMeta)} for a column (numeric-first:
  * a preserved Dataset-JSON {@code dataType} wins over the display format, SC10),
  * {@link #preservedKind(DataTableColumnMeta)} reads that preserved type alone, and
- * {@link #isSasDuration(String)} names the time formats SAS documents for durations (values of 24
- * hours or more, or negative), which a writer of times of day falls back from (SC11).
+ * {@link #isSasUnwrappedTime(String)} names the time formats SAS does not wrap — the durations
+ * (values of 24 hours or more, or negative) and the ISO 8601 / Japanese time formats that print
+ * asterisks outside one day — which a writer of times of day falls back from (SC11).
  * </p>
  */
 public enum DisplayFormatCategory
@@ -137,28 +141,39 @@ public enum DisplayFormatCategory
             "NLDATMMDS", "NLDATMMN", "NLDATMS", "NLDATMTM", "NLDATMTZ", "NLDATMW", "NLDATMWN",
             "NLDATMWZ", "NLDATMYM", "NLDATMYML", "NLDATMYMM", "NLDATMYMS", "NLDATMYQ", "NLDATMYQL",
             "NLDATMYQM", "NLDATMYQS", "NLDATMYR", "NLDATMYW", "NLDATMZ", "NLDDFDT", "NORDFDT",
-            "POLDFDT", "PTGDFDT", "RUSDFDT", "SLODFDT", "SVEDFDT", "TWMDY", "UNXEPOCH");
+            "POLDFDT", "PTGDFDT", "RUSDFDT", "SLODFDT", "SVEDFDT", "TWMDY", "UNXEPOCH",
+            // FMTINFO files these two under time; the owner ruled them datetimes on SAS's own PUT
+            // output (2026-10-15, SC14 exception): E8601LX. of 45296 is 1960-01-01T12:34:56+00:00.
+            "B8601LX", "E8601LX");
 
     /**
      * The time formats ({@code FMTINFO} category {@code time}: <i>"Writes time values …"</i>),
      * including the four SAS documents for time and datetime values ({@code TOD}, {@code TIMEAMPM},
-     * {@code E8601TX}, {@code B8601TX}; SC4) and {@code E8601LX} / {@code B8601LX} (FMTINFO: time;
-     * SC14).
+     * {@code E8601TX}, {@code B8601TX}; SC4). {@code E8601LX} / {@code B8601LX} (FMTINFO: time) are
+     * datetimes by the owner's ruling (SC14 exception, see {@link #SAS_DATETIME_NAMES}).
      */
-    private static final Set<String> SAS_TIME_NAMES = Set.of("B8601LX", "B8601LZ", "B8601TM",
-            "B8601TX", "B8601TZ", "E8601LX", "E8601LZ", "E8601TM", "E8601TX", "E8601TZ", "HHMM",
-            "HOUR", "IS8601LZ", "IS8601TM", "IS8601TZ", "JTIMEH", "JTIMEHM", "JTIMEHMS", "JTIMEHW",
-            "JTIMEMW", "JTIMESW", "MMSS", "NLTIMAP", "NLTIME", "TIME", "TIMEAMPM", "TOD");
+    private static final Set<String> SAS_TIME_NAMES = Set.of("B8601LZ", "B8601TM", "B8601TX",
+            "B8601TZ", "E8601LZ", "E8601TM", "E8601TX", "E8601TZ", "HHMM", "HOUR", "IS8601LZ",
+            "IS8601TM", "IS8601TZ", "JTIMEH", "JTIMEHM", "JTIMEHMS", "JTIMEHW", "JTIMEMW",
+            "JTIMESW", "MMSS", "NLTIMAP", "NLTIME", "TIME", "TIMEAMPM", "TOD");
 
     /**
-     * The time formats whose entry documents a <b>duration</b> (SC11): {@code TIME} <i>"can also
-     * represent a time duration … can exceed 23:59:59, and it can also be a negative value"</i>;
-     * {@code MMSS} (minutes and seconds, its example formats {@code '25:42:08't}); {@code HHMM} and
-     * {@code HOUR} <i>"use asterisks to format values that are outside the time range 0–24
-     * hours"</i>. Every other time format writes a time of day and wraps a larger value (e.g.
-     * {@code TOD}: <i>"it takes the MOD of the value and 24:00:00"</i>).
+     * The time formats SAS does <b>not wrap</b> (SC11, and its PACK G 21 review fold): the
+     * durations — {@code TIME} <i>"can also represent a time duration … can exceed 23:59:59, and it
+     * can also be a negative value"</i>; {@code MMSS} (minutes and seconds, its example formats
+     * {@code '25:42:08't}); {@code HHMM} and {@code HOUR} <i>"use asterisks to format values that
+     * are outside the time range 0–24 hours"</i> — and the fifteen ISO 8601 / Japanese time formats
+     * ({@code E8601TM} / {@code B8601TM} / {@code IS8601TM}, {@code *TZ}, {@code *LZ},
+     * {@code JTIME*}) that the owner's SAS 9.4M9 {@code PUT} oracle shows printing asterisks for
+     * 95400, -3600 and 1e8 at every width, plus {@code E8601TX} / {@code B8601TX}, which the owner
+     * ruled to stay times that do not wrap (2026-10-15): a wrap there would invent a time SAS never
+     * displays. Only {@code TOD}, {@code TIMEAMPM}, {@code NLTIME} and {@code NLTIMAP} wrap a
+     * larger value ({@code TOD}: <i>"it takes the MOD of the value and 24:00:00"</i>).
      */
-    private static final Set<String> SAS_DURATION_NAMES = Set.of("TIME", "MMSS", "HHMM", "HOUR");
+    private static final Set<String> SAS_UNWRAPPED_TIME_NAMES = Set.of("TIME", "MMSS", "HHMM",
+            "HOUR", "B8601LZ", "B8601TM", "B8601TX", "B8601TZ", "E8601LZ", "E8601TM", "E8601TX",
+            "E8601TZ", "IS8601LZ", "IS8601TM", "IS8601TZ", "JTIMEH", "JTIMEHM", "JTIMEHMS",
+            "JTIMEHW", "JTIMEMW", "JTIMESW");
 
     /**
      * Classify the given display-format string. Accepts:
@@ -259,18 +274,21 @@ public enum DisplayFormatCategory
 
 
     /**
-     * Whether the format is one of the SAS time formats documented for durations ({@code TIME},
-     * {@code MMSS}, {@code HHMM}, {@code HOUR}; SC11): a value of 24 hours or more, or a negative
-     * one, is a duration there, not a time of day to wrap.
+     * Whether the format is one of the SAS time formats that do not wrap a value outside one day
+     * (SC11 and the PACK G 21 review fold): the durations {@code TIME}, {@code MMSS}, {@code HHMM},
+     * {@code HOUR}, where a value of 24 hours or more, or a negative one, is a duration; and the
+     * ISO 8601 / Japanese time formats ({@code *TM}, {@code *TZ}, {@code *LZ}, {@code JTIME*}),
+     * which SAS prints as asterisks there, and {@code *TX} (owner 2026-10-15: a time that does not
+     * wrap). A writer of times of day writes such a column as a number instead of inventing a time.
      *
      * @param aDisplayFormat
      *            the display format string, may be {@code null}.
-     * @return {@code true} for a duration format.
+     * @return {@code true} for a time format SAS does not wrap.
      */
-    public static boolean isSasDuration(@Nullable String aDisplayFormat)
+    public static boolean isSasUnwrappedTime(@Nullable String aDisplayFormat)
     {
         String base = sasBaseName(aDisplayFormat);
-        return base != null && SAS_DURATION_NAMES.contains(base);
+        return base != null && SAS_UNWRAPPED_TIME_NAMES.contains(base);
     }
 
 

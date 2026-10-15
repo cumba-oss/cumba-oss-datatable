@@ -39,7 +39,9 @@ import org.jspecify.annotations.Nullable;
  * <li><b>SEND (OD-3):</b> a RELREC read under SEND ({@link MergeStandard}; under
  * {@link MergeStandard#UNKNOWN} one carrying a {@code POOLID} column) is read as SENDIG 3.1.1 §8.2
  * defines it: a relationship is the rows sharing {@code (STUDYID, RELID)}, and each row identifies
- * its record by {@code USUBJID} <em>or</em> {@code POOLID}.</li>
+ * its record by every one of {@code USUBJID} and {@code POOLID} it populates — one of them for a
+ * subject's or a pool's record, both when a row carries both (G7-R1 (a) applies under SEND too; the
+ * grouping alone ignores the subject).</li>
  * <li>A link is <b>record-level</b> when both of its rows carry an {@code IDVARVAL} (it joins the
  * records whose {@code IDVAR} column equals it), else <b>dataset-level</b> (it joins within the
  * subject on equal {@code IDVAR} values).</li>
@@ -118,20 +120,10 @@ public final class RelrecLinks
      *            study when non-blank.
      * @param studyKey
      *            the left row's {@code STUDYID} key identity.
-     * @param srcSubject
-     *            the raw subject text of the left row — its first populated subject identifier in
-     *            {@link #SUBJECT_COLUMNS} order, else its {@code USUBJID} — {@code null} when
-     *            missing.
-     * @param srcSubjectKey
-     *            its key identity.
      * @param srcIdentity
      *            every subject identifier the left row populates, in {@link #SUBJECT_COLUMNS}
      *            order: the primary's record carries each of them (G7-R1 (a)). Empty when the row
      *            populates none; the join is then within the subject ({@code USUBJID}).
-     * @param tgtSubject
-     *            the raw subject text of the right row.
-     * @param tgtSubjectKey
-     *            its key identity.
      * @param tgtIdentity
      *            every subject identifier the right row populates, likewise.
      * @param srcIdvar
@@ -154,11 +146,10 @@ public final class RelrecLinks
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
     public record Link(String rdomain, String relid, int relationship, boolean recordLevel,
-            @Nullable String study, Object studyKey, @Nullable String srcSubject,
-            Object srcSubjectKey, List<SubjectId> srcIdentity, @Nullable String tgtSubject,
-            Object tgtSubjectKey, List<SubjectId> tgtIdentity, String srcIdvar,
-            @Nullable String srcIdvarval, String tgtIdvar, @Nullable String tgtIdvarval,
-            long leftRow, long rightRow, @Nullable String srcReltype, @Nullable String tgtReltype)
+            @Nullable String study, Object studyKey, List<SubjectId> srcIdentity,
+            List<SubjectId> tgtIdentity, String srcIdvar, @Nullable String srcIdvarval,
+            String tgtIdvar, @Nullable String tgtIdvarval, long leftRow, long rightRow,
+            @Nullable String srcReltype, @Nullable String tgtReltype)
     {
 
         /** Canonical constructor: the identities are copied. */
@@ -508,9 +499,9 @@ public final class RelrecLinks
                     Subject tgt = subjectOf(aRelrec, cSubjects, rrr);
                     Link link = new Link(rdom, cellOrEmpty(aRelrec, cRelid, lrr), ordinal,
                             recordLevel, cell(aRelrec, cStudy, lrr), keyCell(aRelrec, cStudy, lrr),
-                            src.text(), src.key(), src.identity(), tgt.text(), tgt.key(),
-                            tgt.identity(), srcIdvar, srcIdvarval, tgtIdvar, tgtIdvarval, lrr, rrr,
-                            reltype(aRelrec, cReltype, lrr), reltype(aRelrec, cReltype, rrr));
+                            src.identity(), tgt.identity(), srcIdvar, srcIdvarval, tgtIdvar,
+                            tgtIdvarval, lrr, rrr, reltype(aRelrec, cReltype, lrr),
+                            reltype(aRelrec, cReltype, rrr));
                     byDomain.computeIfAbsent(rdom, _ -> new ArrayList<>()).add(link);
                     boolean[] hasMode = modes.computeIfAbsent(rdom, _ -> new boolean[2]);
                     hasMode[recordLevel ? 0 : 1] = true;
@@ -542,19 +533,18 @@ public final class RelrecLinks
     }
 
     /**
-     * The subject a RELREC row names: the raw text and key identity of its first populated subject
-     * identifier (else of its {@code USUBJID} cell), the SDTM grouping key, and every identifier it
-     * populates.
+     * The subject a RELREC row names: the SDTM grouping key (its first populated subject
+     * identifier, else its {@code USUBJID} cell — a missing marker is its own key) and every
+     * identifier it populates. The raw text and key of the first identifier used to travel on the
+     * {@link Link} too ({@code srcSubject} …); nothing read them (PACK G fold, G7 review).
      */
-    private record Subject(@Nullable String text, Object key, Object groupKey,
-            List<SubjectId> identity)
+    private record Subject(Object groupKey, List<SubjectId> identity)
     {
     }
 
     private static Subject subjectOf(IDataTable aRelrec, int[] aCSubjects, long aRow)
     {
         List<SubjectId> identity = List.of();
-        String text = null;
         for (int i = 0; i < aCSubjects.length; i++)
         {
             String value = cell(aRelrec, aCSubjects[i], aRow);
@@ -566,7 +556,6 @@ public final class RelrecLinks
                     keyCell(aRelrec, aCSubjects[i], aRow));
             if (identity.isEmpty())
             {
-                text = value;
                 identity = List.of(id);
             }
             else
@@ -578,12 +567,10 @@ public final class RelrecLinks
         }
         if (identity.isEmpty())
         {
-            Object usubj = keyCell(aRelrec, aCSubjects[0], aRow);
-            return new Subject(cell(aRelrec, aCSubjects[0], aRow), usubj,
-                    new SubjectId(USUBJID, usubj), identity);
+            return new Subject(new SubjectId(USUBJID, keyCell(aRelrec, aCSubjects[0], aRow)),
+                    identity);
         }
-        SubjectId first = identity.get(0);
-        return new Subject(text, first.key(), first, identity);
+        return new Subject(identity.get(0), identity);
     }
 
 

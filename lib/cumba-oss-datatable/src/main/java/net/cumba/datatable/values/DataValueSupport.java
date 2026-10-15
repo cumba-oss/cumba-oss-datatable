@@ -720,6 +720,16 @@ public class DataValueSupport
      * each).
      * </p>
      *
+     * <p>
+     * <b>A number against a number of the other type</b> ({@code LONG} against {@code DOUBLE}) is
+     * compared on the <b>raw</b> doubles, without that cleaning — so this comparator is not
+     * transitive across the types: {@code LONG 5} equals {@code DOUBLE 5.0}, {@code DOUBLE 5.0}
+     * equals {@code DOUBLE 4.9999999999991} (cleaned), yet {@code LONG 5} and
+     * {@code DOUBLE 4.9999999999991} differ here. Cell comparison cleans that pair itself
+     * ({@code CellEquality}, owner ruling G6-C1); value-list sorting and the comparer's key pairing
+     * keep this arm as it is, by design (PACK G 13).
+     * </p>
+     *
      * @param aValue1
      *            the first value to compare.
      * @param aValue2
@@ -758,10 +768,13 @@ public class DataValueSupport
 
         if (val1.getType() != val2.getType())
         {
-            // both values have different type (this should not occur)
+            // Two types: a LONG against a DOUBLE is an everyday pair (a loaded integer column
+            // against a computed one, a compare of two files). The old comment's "this should not
+            // occur" was wrong (PACK G 13 review).
             if (val1 instanceof IDataValueNumber n1 && val2 instanceof IDataValueNumber n2)
             {
-                // both are numeric --> compare as number
+                // both numeric: the RAW doubles, not the cleaned ones the DOUBLE arm compares; see
+                // the javadoc (not transitive across the types, CellEquality cleans the pair)
                 return Double.compare(n1.getValueAsDouble(), n2.getValueAsDouble());
             }
             // fallback to compare as string
