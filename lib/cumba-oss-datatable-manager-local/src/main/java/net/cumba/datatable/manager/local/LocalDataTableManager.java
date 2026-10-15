@@ -272,7 +272,10 @@ public class LocalDataTableManager implements IDataTableManager
      * its behalf would be exactly the use-after-close this change removes;</li>
      * <li>an owning ref released again - at any time, also after its library was closed and evicted
      * - would otherwise consume a count, close an instance or unlock a library that belongs to
-     * another holder.</li>
+     * another holder;</li>
+     * <li>a ref whose token another manager minted, or a ref built with a copied token whose
+     * instance is not this ref's library (PACK G fold, G17 review) - the count it would consume
+     * belongs to another manager or another instance.</li>
      * </ul>
      */
     @Override
@@ -288,6 +291,24 @@ public class LocalDataTableManager implements IDataTableManager
                             + "reference count. Only the ref returned by getLibraryRef(URI, ...) "
                             + "may be released.").formatted(ref.getName()),
                     new IllegalStateException("release of a borrowed library ref"));
+            return;
+        }
+        if (!cacheSupport.owns(ownership))
+        {
+            LOGGER.log(Level.WARNING,
+                    ("Ignoring releaseLibraryRef for library \"%s\": the ref's token was minted "
+                            + "by another manager. Nothing is closed, evicted or unlocked here; "
+                            + "release it on the manager that opened it.").formatted(ref.getName()),
+                    new IllegalStateException("release of another manager's library ref"));
+            return;
+        }
+        if (!ownership.getOwners().isOf(ref.getLibrary()))
+        {
+            LOGGER.log(Level.WARNING,
+                    ("Ignoring releaseLibraryRef for library \"%s\": the ref carries a token "
+                            + "of another library instance (a copied token). Nothing is closed, "
+                            + "evicted or unlocked.").formatted(ref.getName()),
+                    new IllegalStateException("release of a copied library ref token"));
             return;
         }
         if (!ownership.markReleased())

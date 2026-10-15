@@ -118,8 +118,10 @@ public class LocalDataTableLibraryRef implements IDataTableLibraryRef
      * <p>
      * The constructor is package-private on purpose: only {@link LocalCacheSupport} mints tokens,
      * so a token cannot be minted outside this package even though the builder property is public.
-     * An existing token can be copied into another ref; the copy shares its released flag, so
-     * releasing the copy is refused as a repeat.
+     * An existing token can be copied into another ref: the copy shares its released flag, so
+     * releasing the copy after the original is refused as a repeat, and a copy carried by a ref
+     * whose library is not the token's instance, or minted by another manager, is refused before it
+     * can count anything down (PACK G fold, G17 review).
      */
     public static final class Ownership
     {

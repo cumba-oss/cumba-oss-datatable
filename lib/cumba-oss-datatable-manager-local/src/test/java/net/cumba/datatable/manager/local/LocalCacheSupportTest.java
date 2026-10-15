@@ -550,11 +550,117 @@ class LocalCacheSupportTest
         ClosingLibrary unjoined = new ClosingLibrary(uri);
         ClosingLibrary successor = new ClosingLibrary(uri);
         storeAt(uri, unjoined, 1L);
+        // the lock arm (PACK G fold, G17 review): the unjoined instance's memory lock goes with it
+        cache.lockLibrary(unjoined, List.of());
+        assertTrue(cache.isLocked(unjoined), "precondition: locked");
         storeAt(uri, successor, 2L);
         assertEquals(1, unjoined.closeCount(), "an instance nobody joined closes as it leaves");
+        assertFalse(cache.isLocked(unjoined), "its lock is dropped as it leaves");
+        assertFalse(cache.isLocked(successor), "the successor's URI holds no lock of its own");
         storeAt(uri, successor, 3L);
         assertEquals(0, successor.closeCount(), "a re-store is not a supersede");
         assertEquals(1, unjoined.closeCount(), "closed exactly once");
+    }
+
+
+    /**
+     * T4's close-failure branch (PACK G fold, G17 review): an unjoined instance whose
+     * {@code close()} throws is logged at WARNING, and the store that superseded it completes.
+     */
+    @Test
+    @SuppressWarnings("PMD.CloseResource")
+    void storeLibrary_aSupersededInstanceWhoseCloseThrows_isLoggedNotThrown()
+    {
+        URI uri = URI.create("file:///unjoined-throws/");
+        IDataTableLibrary throwing = new ThrowingCloseLibrary(uri);
+        ClosingLibrary successor = new ClosingLibrary(uri);
+        storeAt(uri, throwing, 1L);
+        try (net.cumba.datatable.manager.local.testsupport.LogCapture logs = net.cumba.datatable.manager.local.testsupport.LogCapture
+                .of(LocalCacheSupport.class))
+        {
+            storeAt(uri, successor, 2L);
+            assertEquals(1, logs.count(java.util.logging.Level.WARNING), logs.records()::toString);
+            assertTrue(
+                    logs.records().stream()
+                            .anyMatch(r -> r.getMessage().contains("left the cache failed")),
+                    () -> logs.records().stream().map(java.util.logging.LogRecord::getMessage)
+                            .toList().toString());
+        }
+        assertSame(successor, cache.lookupLibrary(uri, 2L), "the store completed");
+    }
+
+
+    /**
+     * isLocked answers for THIS instance (PACK G fold, G17 review): a superseded instance is not
+     * locked by its successor's lock, and the successor not by the old one's.
+     */
+    @Test
+    void isLocked_answersByInstanceNotByUri()
+    {
+        URI uri = URI.create("file:///locked/");
+        try (IDataTableLibrary old = stubLibrary(uri);
+                IDataTableLibrary successor = stubLibrary(uri))
+        {
+            cache.lockLibrary(old, List.of());
+            assertTrue(cache.isLocked(old));
+            assertFalse(cache.isLocked(successor), "another instance under the URI is not locked");
+            cache.unlockLibrary(successor);
+            assertTrue(cache.isLocked(old), "a superseded holder cannot unlock its successor");
+            cache.unlockLibrary(old);
+            assertFalse(cache.isLocked(old));
+        }
+        catch (IOException ex)
+        {
+            throw new AssertionError(ex);
+        }
+    }
+
+
+    /** A token minted by another cache is refused, not counted down (PACK G fold, G17 review). */
+    @Test
+    void release_aTokenOfAnotherCache_isRefused() throws IOException
+    {
+        URI uri = URI.create("file:///foreign/");
+        LocalCacheSupport other = new LocalCacheSupport();
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            other.storeLibrary(uri, lib, null, 1L);
+            storeAt(uri, lib, 1L);
+            LocalDataTableLibraryRef.Ownership theirs = other.acquireIfCurrent(uri, lib);
+            assertNotNull(theirs);
+            assertTrue(other.owns(theirs));
+            assertFalse(cache.owns(theirs));
+            assertThrows(IllegalArgumentException.class, () -> cache.release(theirs));
+            assertEquals(1, other.countOwners(uri), "nothing counted down over there");
+            assertTrue(theirs.markReleased());
+            assertEquals(new LocalCacheSupport.Released(0, true), other.release(theirs));
+        }
+    }
+
+
+    /**
+     * I8 (PACK G fold, G17 review): a retired owner set still indexed is a bug, and
+     * {@code acquireIfCurrent} says so instead of answering {@code null} and letting the caller
+     * spin on a key that never changes. Planted by reflection: no API path reaches the state.
+     */
+    @Test
+    void acquireIfCurrent_aRetiredSetStillIndexed_throwsInsteadOfSpinning() throws Exception
+    {
+        URI uri = URI.create("file:///retired-indexed/");
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            storeAt(uri, lib, 1L);
+            assertSame(lib, cache.indexedInstance(uri));
+            java.lang.reflect.Field map = LocalCacheSupport.class.getDeclaredField("libraryOwners");
+            map.setAccessible(true);
+            Object owners = ((java.util.Map<?, ?>) map.get(cache)).get(uri);
+            java.lang.reflect.Field retired = owners.getClass().getDeclaredField("retired");
+            retired.setAccessible(true);
+            retired.setBoolean(owners, true);
+            IllegalStateException ex = assertThrows(IllegalStateException.class,
+                    () -> cache.acquireIfCurrent(uri, lib));
+            assertTrue(ex.getMessage().contains("I8"), ex.getMessage());
+        }
     }
 
 
@@ -710,9 +816,10 @@ class LocalCacheSupportTest
 
 
     /**
-     * T11: a holder of a superseded instance attaches and looks up under the same URI as the
-     * successor. Nothing it attaches may land on the successor, and it reads none of the
-     * successor's metadata.
+     * T11, as re-ruled in the PACK G fold (G17 review, option (i)): a holder of a superseded
+     * instance attaches and looks up under the same URI as the successor. Nothing it attaches may
+     * land on the successor; its READS fall back to the successor's entry (the pre-G17 behaviour:
+     * the lookup half that answered null cut a superseded holder off from the define metadata).
      */
     @Test
     void aSupersededHoldersAttachNeverReachesTheSuccessor() throws IOException
@@ -729,9 +836,10 @@ class LocalCacheSupportTest
             cache.updateMetadata(old, new NamedMetadata("old"));
 
             assertSame(successorMeta, cache.lookupMetadata(successor), "successor's metadata kept");
-            assertNull(cache.lookupMetadata(old), "the old holder reads no successor metadata");
-            assertNull(cache.lookupMetadata(stubMember("dm", old)),
-                    "a member of the old instance reads no successor metadata");
+            assertSame(successorMeta, cache.lookupMetadata(old),
+                    "the old holder READS the successor's metadata (option (i))");
+            assertSame(successorMeta, cache.lookupMetadata(stubMember("dm", old)),
+                    "a member of the old instance reads the successor's metadata");
             assertSame(successorMeta, cache.lookupMetadata(stubMember("dm", successor)));
         }
     }
@@ -1002,4 +1110,50 @@ class LocalCacheSupportTest
         };
     }
 
+    /** A library whose {@code close()} throws: the T4 close-failure branch's double. */
+    private static final class ThrowingCloseLibrary implements IDataTableLibrary
+    {
+
+        private final URI uri;
+
+        ThrowingCloseLibrary(URI aUri)
+        {
+            uri = aUri;
+        }
+
+
+        @Override
+        public String getName()
+        {
+            return "throwing";
+        }
+
+
+        @Override
+        public String getLabel()
+        {
+            return getName();
+        }
+
+
+        @Override
+        public URI getUri()
+        {
+            return uri;
+        }
+
+
+        @Override
+        public String getType()
+        {
+            return "throwing";
+        }
+
+
+        @Override
+        public void close() throws IOException
+        {
+            throw new IOException("close refused");
+        }
+    }
 }

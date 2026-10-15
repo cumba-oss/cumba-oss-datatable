@@ -17,6 +17,7 @@ import java.nio.file.attribute.FileTime;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Level;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.manager.IDataTableLibraryRef;
 import net.cumba.datatable.manager.local.testsupport.ClosingLibrary;
@@ -202,6 +203,78 @@ class LocalDataTableManagerLibraryRefCountTest
 
         manager.releaseLibraryRef(owner);
         assertEquals(0, openLibraries().size());
+    }
+
+
+    /**
+     * PACK G fold (G17 review): a ref whose token another manager minted is refused with a WARNING
+     * - nothing of this manager's is counted down, closed or unlocked, and the token still releases
+     * on its own manager.
+     */
+    @Test
+    void releasingAnotherManagersRef_isRefusedAndCountsNothingDown() throws Exception
+    {
+        URI uri = folder("foreign", "dm.csv");
+        LocalDataTableManager other = new LocalDataTableManager();
+        IDataTableLibraryRef mine = manager.getLibraryRef(uri, null, null, null);
+        IDataTableLibraryRef theirs = other.getLibraryRef(uri, null, null, null);
+        // the other manager's ref itself is refused earlier ("not supported": its manager is not
+        // this one); the token reaches the count only inside a ref of THIS manager
+        LocalDataTableLibraryRef smuggled = LocalDataTableLibraryRef.builder().manager(manager)
+                .library(((LocalDataTableLibraryRef) theirs).getLibrary())
+                .ownership(((LocalDataTableLibraryRef) theirs).getOwnership()).build();
+
+        try (LogCapture log = LogCapture.of(LocalDataTableManager.class))
+        {
+            manager.releaseLibraryRef(smuggled);
+            assertEquals(1, log.count(Level.WARNING), log.records()::toString);
+            assertTrue(
+                    log.records().stream()
+                            .anyMatch(r -> r.getMessage().contains("minted by another manager")),
+                    () -> log.records().stream().map(java.util.logging.LogRecord::getMessage)
+                            .toList().toString());
+        }
+        assertEquals(1, cache().countOwners(uri), "this manager's holder is untouched");
+        assertEquals(1, manager.getOpenLibraries().count());
+        assertEquals(1, other.getOpenLibraries().count(), "and the other manager's library too");
+
+        other.releaseLibraryRef(theirs);
+        assertEquals(0, other.getOpenLibraries().count(), "released where it was opened");
+        manager.releaseLibraryRef(mine);
+        assertEquals(0, manager.getOpenLibraries().count());
+    }
+
+
+    /**
+     * PACK G fold (G17 review, lane b item 5): a ref built with a COPIED token whose library is not
+     * the token's instance is refused with a WARNING, and the original still releases.
+     */
+    @Test
+    void releasingARefWithACopiedTokenOfAnotherLibrary_isRefused() throws Exception
+    {
+        URI uri = folder("copied", "dm.csv");
+        URI otherUri = folder("copied-other", "dm.csv");
+        IDataTableLibraryRef original = manager.getLibraryRef(uri, null, null, null);
+        IDataTableLibraryRef otherLib = manager.getLibraryRef(otherUri, null, null, null);
+        LocalDataTableLibraryRef copy = LocalDataTableLibraryRef.builder().manager(manager)
+                .library(((LocalDataTableLibraryRef) otherLib).getLibrary())
+                .ownership(((LocalDataTableLibraryRef) original).getOwnership()).build();
+
+        try (LogCapture log = LogCapture.of(LocalDataTableManager.class))
+        {
+            manager.releaseLibraryRef(copy);
+            assertEquals(1, log.count(Level.WARNING), log.records()::toString);
+            assertTrue(
+                    log.records().stream().anyMatch(r -> r.getMessage().contains("copied token")),
+                    () -> log.records().stream().map(java.util.logging.LogRecord::getMessage)
+                            .toList().toString());
+        }
+        assertEquals(2, manager.getOpenLibraries().count(), "nothing closed");
+        assertEquals(1, cache().countOwners(uri), "nothing counted down");
+
+        manager.releaseLibraryRef(original);
+        manager.releaseLibraryRef(otherLib);
+        assertEquals(0, manager.getOpenLibraries().count(), "the originals release as before");
     }
 
 

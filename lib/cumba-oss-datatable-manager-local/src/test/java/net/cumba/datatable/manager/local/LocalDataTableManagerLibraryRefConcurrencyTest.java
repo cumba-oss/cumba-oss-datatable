@@ -68,8 +68,16 @@ class LocalDataTableManagerLibraryRefConcurrencyTest
         CyclicBarrier start = new CyclicBarrier(WORKERS + 1);
         CyclicBarrier end = new CyclicBarrier(WORKERS + 1,
                 () -> checkQuiescent(cache, uri, planted, violations));
-        try (LogCapture log = LogCapture.of(LocalDataTableManager.class);
-                ExecutorService pool = Executors.newFixedThreadPool(WORKERS + 1))
+        // shutdownNow in the finally, never close(): close() waits for the workers without bound,
+        // and a hung worker is what this test must report (PACK G fold, G17 review).
+        @SuppressWarnings("PMD.CloseResource")
+        ExecutorService pool = Executors.newFixedThreadPool(WORKERS + 1, r ->
+        {
+            Thread thread = new Thread(r, "LibraryRefConcurrency");
+            thread.setDaemon(true);
+            return thread;
+        });
+        try (LogCapture log = LogCapture.of(LocalDataTableManager.class))
         {
             List<Future<?>> futures = new ArrayList<>();
             for (int w = 0; w < WORKERS; w++)
@@ -115,6 +123,11 @@ class LocalDataTableManagerLibraryRefConcurrencyTest
                     + violations.stream().distinct().limit(8).toList());
             assertEquals(0, log.count(Level.WARNING),
                     () -> "every ref was released exactly once: " + log.records());
+        }
+        finally
+        {
+            pool.shutdownNow();
+            assertTrue(pool.awaitTermination(5, TimeUnit.SECONDS), "a worker is still running");
         }
     }
 
@@ -164,6 +177,16 @@ class LocalDataTableManagerLibraryRefConcurrencyTest
         if (cached.size() > 1)
         {
             aViolations.add("I7: " + cached.size() + " instances cached under one URI");
+        }
+        // I7 proper (PACK G fold, G17 review): the index and the cache agree on the instance
+        IDataTableLibrary indexed = aCache.indexedInstance(aUri);
+        if (cached.size() == 1 && indexed != cached.get(0))
+        {
+            aViolations.add("I7: the index holds " + indexed + " but the cache " + cached.get(0));
+        }
+        if (cached.isEmpty() && indexed != null)
+        {
+            aViolations.add("I7: the index holds an instance the cache does not");
         }
         for (ClosingLibrary lib : aPlanted)
         {
