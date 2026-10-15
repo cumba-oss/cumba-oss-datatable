@@ -403,10 +403,10 @@ public final class HouseDictionaryReader
 
 
     /**
-     * Skips an {@code outer → inner key → scalar} section unread.
+     * Skips an {@code outer → inner key → string} section unread.
      *
      * @return whether {@link #readNestedMap} would have kept an entry: some inner object holds a
-     *         scalar value.
+     *         string value (PS-D4-T / PS-D4-U: a value counts only as a JSON string).
      */
     private static boolean skipNestedMap(JsonParser aParser, JsonToken aToken) throws IOException
     {
@@ -424,7 +424,7 @@ public final class HouseDictionaryReader
     }
 
 
-    /** Skips one inner object; whether it holds a scalar value (a nested value is no entry). */
+    /** Skips one inner object; whether it holds a string value (anything else is no entry). */
     private static boolean skipInner(JsonParser aParser, JsonToken aToken) throws IOException
     {
         if (aToken != JsonToken.START_OBJECT)
@@ -447,8 +447,8 @@ public final class HouseDictionaryReader
     /**
      * Skips the bare-name {@code term → [ancestor, …]} hierarchy unread.
      *
-     * @return whether some term has an ancestor list with a scalar element (the engine's non-empty
-     *         list).
+     * @return whether some term has an ancestor list with a string element (the engine's non-empty
+     *         list; PS-D4-U: an ancestor counts only as a JSON string).
      */
     private static boolean skipStringLists(JsonParser aParser, JsonToken aToken) throws IOException
     {
@@ -473,8 +473,9 @@ public final class HouseDictionaryReader
                 {
                     aParser.skipChildren();
                 }
-                else
+                else if (t == JsonToken.VALUE_STRING)
                 {
+                    // PS-D4-U: only a string element is an ancestor, as the FULL load reads it
                     content = true;
                 }
             }
@@ -486,9 +487,10 @@ public final class HouseDictionaryReader
     /**
      * Skips {@code level → term → ancestor level → [ancestor, …]} unread.
      *
-     * @return whether some term names an ancestor level with at least one scalar ancestor — the
+     * @return whether some term names an ancestor level with at least one string ancestor — the
      *         entry {@code LevelScopedHierarchy.read} keeps (B-T lane 1 LOW-4: a term mapping to an
-     *         empty object, or to lists of containers only, is no entry in either profile).
+     *         empty object, or to lists of containers only, is no entry in either profile; PS-D4-U:
+     *         nor is a list of nulls, numbers or booleans).
      */
     private static boolean skipByLevel(JsonParser aParser, JsonToken aToken) throws IOException
     {
@@ -524,7 +526,7 @@ public final class HouseDictionaryReader
     }
 
 
-    /** Skips one value; whether it is an array holding a scalar element. */
+    /** Skips one value; whether it is an array holding a string element (PS-D4-U). */
     private static boolean skipScalarList(JsonParser aParser, JsonToken aToken) throws IOException
     {
         if (aToken != JsonToken.START_ARRAY)
@@ -540,7 +542,7 @@ public final class HouseDictionaryReader
             {
                 aParser.skipChildren();
             }
-            else
+            else if (t == JsonToken.VALUE_STRING)
             {
                 content = true;
             }

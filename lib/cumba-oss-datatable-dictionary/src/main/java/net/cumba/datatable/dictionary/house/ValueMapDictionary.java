@@ -733,7 +733,11 @@ public final class ValueMapDictionary
     }
 
 
-    /** Hierarchy read verbatim — term keys and ancestor values exactly as authored. */
+    /**
+     * Hierarchy read verbatim — term keys and ancestor values exactly as authored. An ancestor
+     * counts only as a JSON string (PS-D4-U, owner 2026-10-15): a container, a {@code null}, a
+     * number or a boolean is no ancestor, and a list of nothing else is an empty list — no entry.
+     */
     private static Map<String, List<String>> readNestedStringList(@Nullable JsonNode node)
     {
         Map<String, List<String>> out = new LinkedHashMap<>();
@@ -748,8 +752,8 @@ public final class ValueMapDictionary
             {
                 for (JsonNode item : outer.getValue())
                 {
-                    // a container is no ancestor (the streaming reader skips it too)
-                    if (!item.isContainerNode())
+                    // only a JSON string is an ancestor (the streaming reader counts the same)
+                    if (item.isTextual())
                     {
                         values.add(item.asText());
                     }

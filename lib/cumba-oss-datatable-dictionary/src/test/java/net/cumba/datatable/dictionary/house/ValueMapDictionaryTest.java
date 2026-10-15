@@ -229,6 +229,41 @@ class ValueMapDictionaryTest
 
 
     /**
+     * PS-D4-U (owner, 2026-10-15): an ancestor counts only as a JSON string. A {@code null}, a
+     * number or a boolean in an ancestor list is no ancestor — it used to be read through
+     * {@code asText()} as the terms {@code "null"} / {@code "5"} / {@code "true"} — and a list of
+     * nothing else is no entry, in the level-scoped and the bare-name section and in both load
+     * profiles (the streaming reader counts content the same way).
+     */
+    @Test
+    void hierarchyAncestorsCountOnlyAsJsonStrings(@TempDir Path dir) throws Exception
+    {
+        ValueMapDictionary d = ValueMapDictionary.parse(MAPPER.readTree("{\"type\":\"meddra\","
+                + "\"hierarchy_by_level\":{\"PT\":{\"X\":{\"SOC\":[null,5,true,\"S1\"]},"
+                + "\"Y\":{\"SOC\":[null,7]}}}}"));
+        assertTrue(d.onHierarchyPath("PT", "X", "SOC", "S1", true));
+        assertFalse(d.onHierarchyPath("PT", "X", "SOC", "null", true), "a JSON null is no term");
+        assertFalse(d.onHierarchyPath("PT", "X", "SOC", "5", true), "a JSON number is no term");
+        assertFalse(d.onHierarchyPath("PT", "X", "SOC", "true", true), "a JSON boolean is no term");
+        assertFalse(d.onHierarchyPath("PT", "Y", "SOC", "null", true), "Y names no ancestor");
+
+        Path byLevel = dir.resolve("meddra.json");
+        Files.writeString(byLevel, "{\"type\":\"meddra\",\"hierarchy_by_level\":"
+                + "{\"PT\":{\"Y\":{\"SOC\":[null,7]}}}}");
+        assertFalse(ValueMapDictionary.load(byLevel).hasContent(),
+                "non-string ancestors only: no entry (full profile)");
+        assertFalse(HouseDictionaryReader.read(byLevel).hasContent(),
+                "non-string ancestors only: no entry (streaming profile)");
+        Path bare = dir.resolve("snomed.json");
+        Files.writeString(bare, "{\"type\":\"snomed\",\"hierarchy\":{\"A\":[null,7]}}");
+        assertFalse(ValueMapDictionary.load(bare).hasContent(),
+                "bare-name section, non-string ancestors only: no entry (full profile)");
+        assertFalse(HouseDictionaryReader.read(bare).hasContent(),
+                "bare-name section, non-string ancestors only: no entry (streaming profile)");
+    }
+
+
+    /**
      * Runbook W2 DI1 — the level-scoped section at the dictionary's own API: each lookup reads its
      * own level ({@code X} is a PT under {@code S1} and an HLT under {@code S2}), the parent level
      * is scoped, an LLT is read through its PT, and a section alone is content. Runbook W4 DI2: a

@@ -404,6 +404,21 @@ class HouseFormatValidatorTest
     }
 
 
+    /**
+     * PS-D4-U: a decode counts only as a JSON string. A number, boolean or null decode is reported
+     * as not a string — it used to be read through {@code asText()} and judged as the text
+     * {@code "5"}, the way the G14 review found (PACK G fold).
+     */
+    @Test
+    void theValidatorRefusesADecodeThatIsNoJsonString() throws IOException
+    {
+        List<String> v = HouseFormatValidator.caseContractViolations("meddra",
+                json("{" + MEDDRA_LEVELS + ",\"decodes\":{\"PTCD\":{\"10019211\":5}}}"));
+        assertEquals(1, v.size(), v.toString());
+        assertTrue(v.get(0).contains("decode of '10019211' is not a JSON string"), v.get(0));
+    }
+
+
     @Test
     void theValidatorRefusesANonMemberCodeAndABlankDecode() throws IOException
     {

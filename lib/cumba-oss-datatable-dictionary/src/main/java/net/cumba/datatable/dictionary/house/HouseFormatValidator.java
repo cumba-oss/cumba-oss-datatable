@@ -470,8 +470,14 @@ public final class HouseFormatValidator
             for (Map.Entry<String, JsonNode> e : fields(level.getValue()))
             {
                 checkLevelTerm(aOut, aDict, where + "code", levels, codeLevel, e.getKey());
-                String decode = e.getValue().isValueNode() ? e.getValue().asText() : "";
-                if (decode.isBlank())
+                // PS-D4-U: a decode counts only as a JSON string (the readers keep nothing else);
+                // isValueNode read a number or boolean through asText() and judged its text
+                if (!e.getValue().isTextual())
+                {
+                    aOut.add(aDict + ": " + where + "decode of '" + e.getKey()
+                            + "' is not a JSON string");
+                }
+                else if (e.getValue().asText().isBlank())
                 {
                     aOut.add(aDict + ": " + where + "decode of '" + e.getKey() + "' is blank");
                 }
@@ -479,7 +485,7 @@ public final class HouseFormatValidator
                         || e.getKey().endsWith(DRUG_CODE_PREFERRED_SUFFIX)))
                 {
                     checkLevelTerm(aOut, aDict, where + "decode of '" + e.getKey() + "'", levels,
-                            nameLevel, decode);
+                            nameLevel, e.getValue().asText());
                 }
             }
         }

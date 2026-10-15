@@ -345,6 +345,14 @@ class ProfileEquivalenceTest
         {
                 "unii", "{\"type\":\"unii\",\"levels\":{\"UNII\":{\"A\":null}},"
                         + "\"pairs\":{\"unii\":{\"A\":null},\"other\":{\"B\":{}}}}"
+        }, new String[]
+        {
+                // PS-D4-U: an ancestor counts only as a JSON string, in both profiles
+                "snomed", "{\"type\":\"snomed\",\"hierarchy\":{\"A\":[null,5,true]}}"
+        }, new String[]
+        {
+                "meddra", "{\"type\":\"meddra\",\"hierarchy_by_level\":"
+                        + "{\"PT\":{\"X\":{\"SOC\":[null,7]}}}}"
         });
         int compared = 0;
         for (String[] c : cases)
@@ -392,6 +400,13 @@ class ProfileEquivalenceTest
                 ValueMapDictionary.load(tmp.resolve("case6").resolve("meddra.json")).hasContent());
         assertFalse(
                 ValueMapDictionary.load(tmp.resolve("case7").resolve("meddra.json")).hasContent());
+        // PS-D4-U: lists of non-string ancestors are no content in either profile (the last two)
+        assertFalse(ValueMapDictionary
+                .load(tmp.resolve("case" + (cases.size() - 2)).resolve("snomed.json")).hasContent(),
+                "bare-name ancestors null / 5 / true");
+        assertFalse(ValueMapDictionary
+                .load(tmp.resolve("case" + (cases.size() - 1)).resolve("meddra.json")).hasContent(),
+                "level-scoped ancestors null / 7");
     }
 
 

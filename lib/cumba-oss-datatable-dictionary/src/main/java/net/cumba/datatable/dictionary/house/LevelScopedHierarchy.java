@@ -141,7 +141,8 @@ final class LevelScopedHierarchy
                 {
                     for (JsonNode term : parent.getValue())
                     {
-                        if (!term.isContainerNode())
+                        // PS-D4-U: an ancestor counts only as a JSON string
+                        if (term.isTextual())
                         {
                             terms.add(canonical(aCanonical, term.asText()));
                         }
