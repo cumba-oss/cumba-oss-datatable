@@ -133,7 +133,6 @@ only. Central deletes snapshots after 90 days.
 | `PMD`               | unless `-DskipPmd`        | runs PMD at `verify`, **report-only** by default |
 | `SpotBugs`          | unless `-DskipSpotbugs`   | runs SpotBugs at `verify`, **report-only** by default |
 | `Pitest`            | `-P Pitest` or `-Dpitest.enabled=true` | **opt-in** mutation testing at `verify`, **report-only** by default |
-| `ecj`               | `-P ecj`                  | second ECJ compile at `verify`                |
 | `ErrPrn`            | `-P ErrPrn`               | Error Prone as a javac plugin                 |
 | `spotless-check-mode` | `-Dspotless.check=true` | swaps Spotless from `apply` to `check`        |
 | `pitest-fail-on-error` | `-Dpitest.failOnError=true` | promotes per-module `pitest.*.target` to the effective threshold (no-op without `Pitest` active) |
