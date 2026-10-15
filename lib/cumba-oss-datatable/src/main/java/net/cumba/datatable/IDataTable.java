@@ -17,6 +17,23 @@ import org.jspecify.annotations.Nullable;
  * <p>
  * <b>Every {@link IDataTable} is immutable unless it implements a mutable sub-interface.</b>
  * </p>
+ * <p>
+ * <b>Concurrent reads.</b> A table that is not being modified may be read from several threads at
+ * once. Every method of this interface is a read — the metadata ({@code getMetaData},
+ * {@code getRowCount}, {@code getColumnCount}, {@code getColumnIndex}), the rows ({@code getRow},
+ * {@code getRows} — including a {@code parallel()} stream over it —, {@code getRowName},
+ * {@code getRealRowIndex}, {@code getDisplayRowIndex}), the columns and cells ({@code getColumn},
+ * {@code getColumns}, {@code getValue}, {@code getDataValue}, {@code hashCodeAt}), the blankness
+ * queries ({@code isMissingOrNull}, {@code isEmptyOrMissing}, {@code isSupplied}) and the content
+ * status ({@code getColumnContent}, {@code getColumnContents}, {@code contentGeneration}) — and
+ * each returns the same answer whatever other threads read at the same time; no read changes what
+ * another read returns. An implementation that loads or caches lazily must publish what it loads
+ * safely and must not keep per-call cursor state in shared fields. The readers must receive the
+ * table through a happens-before edge (it is built before the executor task or parallel stream that
+ * reads it starts, or handed over through a concurrent collection). <b>Any mutation</b> — through a
+ * mutable sub-interface or any mutator method — while other threads read is <b>not</b> covered;
+ * such a caller must provide its own exclusion.
+ * </p>
  */
 public interface IDataTable
 {

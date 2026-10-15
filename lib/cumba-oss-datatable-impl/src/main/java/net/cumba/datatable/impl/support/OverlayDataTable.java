@@ -549,12 +549,20 @@ public class OverlayDataTable extends AbstractDataTable
     @Override
     public DataTableMeta getMetaData()
     {
-        if (metaDirty || cachedMeta == null)
+        // IDataTable's concurrent-reads contract (§3.10): ONE read of the racy field into a local.
+        // Reading cachedMeta again for the return is the String.hashCode double-read trap — under
+        // the JMM the second read may see null even after the first saw a built meta. What any
+        // read sees is null (rebuild) or a complete DataTableMeta: every field is final and the
+        // arrays it holds are never written after construction, and the rebuild is idempotent for
+        // an unmodified table. A mutator racing a reader is outside the contract.
+        DataTableMeta meta = cachedMeta;
+        if (metaDirty || meta == null)
         {
-            cachedMeta = buildMetaData();
+            meta = buildMetaData();
+            cachedMeta = meta;
             metaDirty = false;
         }
-        return cachedMeta;
+        return meta;
     }
 
     // ---- Internal helpers ----

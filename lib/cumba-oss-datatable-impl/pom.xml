@@ -98,6 +98,14 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- IDataTableReadConcurrencyContract, applied to this module's tables (IDataTable's
+             concurrent-reads contract). Test scope only; the testkit depends on the API module
+             alone, so no cycle. -->
+        <dependency>
+            <groupId>net.cumba</groupId>
+            <artifactId>cumba-oss-datatable-testkit</artifactId>
+            <scope>test</scope>
+        </dependency>
 
     </dependencies>
 
