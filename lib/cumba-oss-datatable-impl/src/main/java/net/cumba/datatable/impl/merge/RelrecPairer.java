@@ -50,7 +50,8 @@ import org.jspecify.annotations.Nullable;
  * {@code SPDEVID}; owner ruling G7-R1 (a)): each side is probed on the columns its own row names,
  * so an associated person's records are found by {@code APID}, a device's by {@code SPDEVID}, a
  * device record of a subject by both {@code USUBJID} and {@code SPDEVID}. A row populating none
- * joins within the subject ({@code USUBJID}).</li>
+ * joins within the subject ({@code USUBJID}) — and a table lacking {@code USUBJID} is then a
+ * {@link DomainIssue} like a lacking named column (G7 review, PACK G fold), not a silent miss.</li>
  * <li><b>The link value compares by the {@code IDVAR} column's type</b> on each side
  * ({@link JoinToken#normalize}, as the SUPP and Child pointers do, §3.5.2): a numeric column
  * canonicalises ({@code 01}, {@code 1.0} are {@code 1}), a character column compares the stripped
@@ -66,9 +67,9 @@ import org.jspecify.annotations.Nullable;
  * {@code keyCell(primary.STUDYID) == keyCell(related.STUDYID)} on every path, and when the RELREC
  * row names a study both rows are in <i>that</i> study. A blank RELREC {@code STUDYID} names no
  * study.</li>
- * <li><b>SEND</b> (OD-3): a link's subject is {@code USUBJID} or {@code POOLID}, each side probed
- * on the column it names, so a relationship may span subjects and pools; pool records never take
- * part in dataset-level relationships.</li>
+ * <li><b>SEND</b> (OD-3): a link's subject is every one of {@code USUBJID} and {@code POOLID} its
+ * row populates, each side probed on the columns it names, so a relationship may span subjects and
+ * pools; pool records never take part in dataset-level relationships.</li>
  * <li>A related domain lacking the {@code IDVAR} column or a subject identifier column RELREC names
  * (or the primary lacking the one the RELREC row names for it) is reported as a {@link DomainIssue}
  * — the merge flags that domain's columns (OD-7) — and those links pair nothing. Before W1 a
@@ -330,18 +331,30 @@ final class RelrecPairer
         Map<String, List<Long>> primaryLacks = new LinkedHashMap<>();
         DataTableMeta tm = aTarget.getMetaData();
         DataTableMeta pm = aPrimary.getMetaData();
+        Map<String, List<Long>> targetLacksSubject = new LinkedHashMap<>();
+        Map<String, List<Long>> primaryLacksSubject = new LinkedHashMap<>();
         for (Link link : aLinks)
         {
             // OD-7: the IDVAR column and every subject identifier column the row names (G7-R1).
+            // A row naming none joins within the subject, so USUBJID is then the column it needs:
+            // a table without it was a silent miss (G7 review, PACK G fold).
             boolean usable = hasColumn(tm, link.tgtIdvar(), link.rightRow(), targetLacks);
             for (SubjectId id : link.tgtIdentity())
             {
                 usable &= hasColumn(tm, id.column(), link.rightRow(), targetLacks);
             }
+            if (link.tgtIdentity().isEmpty())
+            {
+                usable &= hasColumn(tm, USUBJID, link.rightRow(), targetLacksSubject);
+            }
             usable &= hasColumn(pm, link.srcIdvar(), link.leftRow(), primaryLacks);
             for (SubjectId id : link.srcIdentity())
             {
                 usable &= hasColumn(pm, id.column(), link.leftRow(), primaryLacks);
+            }
+            if (link.srcIdentity().isEmpty())
+            {
+                usable &= hasColumn(pm, USUBJID, link.leftRow(), primaryLacksSubject);
             }
             if (!usable)
             {
@@ -372,6 +385,22 @@ final class RelrecPairer
                     + KeyedMatcher.nameOf(aPrimary) + " for its relationship with " + aRdomain
                     + ", which it does not have (RELREC rows " + rowList(e.getValue()) + ")",
                     e.getValue()));
+        }
+        for (Map.Entry<String, List<Long>> e : targetLacksSubject.entrySet())
+        {
+            aIssues.add(new DomainIssue(aRdomain,
+                    "RELREC names no subject identifier for related" + " domain " + aRdomain
+                            + ", so the link joins within " + e.getKey() + ", which "
+                            + KeyedMatcher.nameOf(aTarget) + " does not have (RELREC rows "
+                            + rowList(e.getValue()) + ")",
+                    e.getValue()));
+        }
+        for (Map.Entry<String, List<Long>> e : primaryLacksSubject.entrySet())
+        {
+            aIssues.add(new DomainIssue(aRdomain, "RELREC names no subject identifier for "
+                    + KeyedMatcher.nameOf(aPrimary) + " in its relationship with " + aRdomain
+                    + ", so the link joins within " + e.getKey() + ", which it does not have"
+                    + " (RELREC rows " + rowList(e.getValue()) + ")", e.getValue()));
         }
     }
 

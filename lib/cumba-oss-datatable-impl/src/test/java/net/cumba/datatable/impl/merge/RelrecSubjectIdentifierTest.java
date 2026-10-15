@@ -38,7 +38,11 @@ import org.junit.jupiter.api.Test;
  * <li>F5 — a RELREC carrying {@code POOLID} read under {@link MergeStandard#UNKNOWN} is read as
  * SEND: the owner's ruling {@code PLAN-merge-followups} FU-2 (a), pinned;</li>
  * <li>F6 — a related domain or primary lacking a subject identifier column the RELREC row populates
- * is a {@code DomainIssue} (owner ruling G7-R1 (a), OD-7), not a silent miss.</li>
+ * is a {@code DomainIssue} (owner ruling G7-R1 (a), OD-7), not a silent miss;</li>
+ * <li>F7 — a RELREC row populating no subject identifier joins within {@code USUBJID}, so a table
+ * lacking {@code USUBJID} is a {@code DomainIssue} too (G7 review, PACK G fold): the relaxed gate
+ * lets such a link reach the pairer, and it used to miss silently — the merge then returned the
+ * table unchanged as a success.</li>
  * </ul>
  *
  * Every blank identifier is built as {@code ""} in a text column.
@@ -311,6 +315,57 @@ class RelrecSubjectIdentifierTest
                 () -> pairing.issues().get(0).message());
         assertEquals(List.of(1L), pairing.issues().get(0).relrecRows());
         assertTrue(pairing.addressed().isEmpty(), "the DE record of device D1 cannot be found");
+    }
+
+    // ---- F7: no identifier on the RELREC row, no USUBJID on the table (G7 review) ----
+
+
+    @Test
+    void f7_relatedLackingUsubjidWhenTheRowNamesNoIdentifier_isADomainIssueNotASilentMiss()
+    {
+        IDataTable de = table("DE", cols("STUDYID", "DOMAIN", "USUBJID", "DESEQ", "DETERM"),
+                row("S1", "DE", "U1", "1", "FISSURE"));
+        // a related domain without any subject identifier column
+        IDataTable dx = table("DX", cols("STUDYID", "DOMAIN", "DXSEQ", "DXTERM"),
+                row("S1", "DX", "1", "CALIBRATION"));
+        IDataTable relrec = table("RELREC",
+                cols("STUDYID", "RDOMAIN", "USUBJID", "SPDEVID", "IDVAR", "IDVARVAL", "RELTYPE",
+                        "RELID"),
+                row("S1", "DE", "", "", "DESEQ", "1", "", "1"),
+                row("S1", "DX", "", "", "DXSEQ", "1", "", "1"));
+        RelrecPairer.Pairing pairing = pair(relrec, de, "DE", Map.of("DX", dx));
+
+        assertEquals(List.of(), pairs(pairing));
+        assertEquals(1, pairing.issues().size(), () -> "one issue expected: " + pairing.issues());
+        RelrecPairer.DomainIssue issue = pairing.issues().get(0);
+        assertEquals("DX", issue.rdomain());
+        assertTrue(issue.message().contains("names no subject identifier")
+                && issue.message().contains("joins within USUBJID")
+                && issue.message().contains("DX does not have"), issue::message);
+        assertEquals(List.of(1L), issue.relrecRows());
+    }
+
+
+    @Test
+    void f7b_primaryLackingUsubjidWhenTheRowNamesNoIdentifier_isADomainIssueNotASilentMiss()
+    {
+        IDataTable dx = table("DX", cols("STUDYID", "DOMAIN", "DXSEQ", "DXTERM"),
+                row("S1", "DX", "1", "CALIBRATION"));
+        IDataTable ae = table("AE", cols("STUDYID", "DOMAIN", "USUBJID", "AESEQ", "AETERM"),
+                row("S1", "AE", "U1", "3", "INCISION SITE INFLAMMATION"));
+        IDataTable relrec = table("RELREC",
+                cols("STUDYID", "RDOMAIN", "USUBJID", "IDVAR", "IDVARVAL", "RELTYPE", "RELID"),
+                row("S1", "DX", "", "DXSEQ", "1", "", "1"),
+                row("S1", "AE", "", "AESEQ", "3", "", "1"));
+        RelrecPairer.Pairing pairing = pair(relrec, dx, "DX", Map.of("AE", ae));
+
+        assertEquals(List.of(), pairs(pairing));
+        assertEquals(1, pairing.issues().size(), () -> "one issue expected: " + pairing.issues());
+        assertTrue(
+                pairing.issues().get(0).message().contains("names no subject identifier for DX")
+                        && pairing.issues().get(0).message().contains("joins within USUBJID"),
+                () -> pairing.issues().get(0).message());
+        assertEquals(List.of(0L), pairing.issues().get(0).relrecRows());
     }
 
     // ---- F5: POOLID column under UNKNOWN is read as SEND (FU-2 (a), ruled) ----
