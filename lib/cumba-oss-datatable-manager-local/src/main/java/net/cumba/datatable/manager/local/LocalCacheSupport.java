@@ -7,6 +7,7 @@ import java.lang.ref.WeakReference;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import lombok.Builder;
@@ -33,6 +34,15 @@ class LocalCacheSupport
     private final Map<URI, LibraryCacheEntryWeak> libraryCache = new ConcurrentHashMap<>();
 
     private final Map<URI, MemoryLock> memoryLocks = new ConcurrentHashMap<>();
+
+    /**
+     * Live acquisitions per cached library URI (Q44). One entry per {@code getLibraryRef(URI, ...)}
+     * call that has not been released yet; the library is closed and evicted only when the last one
+     * goes away. The sets are identity sets ({@link LocalDataTableLibraryRef.Ownership} does not
+     * override {@code equals}), so a release matches exactly the acquisition it came from.
+     */
+    private final Map<URI, Set<LocalDataTableLibraryRef.Ownership>> libraryOwners = //
+            new ConcurrentHashMap<>();
 
     /**
      * Returns the last-modified timestamp of the given URI, or {@code -1} if unknown or not a file
@@ -151,6 +161,12 @@ class LocalCacheSupport
             long aLastModified)
     {
         cleanCache();
+        // A brand new instance takes over this key, so any acquisition still registered here
+        // belongs to a library that is no longer the cached one. Dropping them is what keeps the
+        // count honest when a weakly-cached entry was collected without ever being released —
+        // otherwise the stale acquisitions would be added to the new instance's count and it
+        // could never reach zero again (i.e. never be closed).
+        libraryOwners.remove(aUri);
         LibraryCacheEntry entry = LibraryCacheEntry.builder()//
                 .uri(aUri)//
                 .library(aLibrary)//
@@ -216,7 +232,103 @@ class LocalCacheSupport
     {
         libraryCache.remove(aUri);
         memoryLocks.remove(aUri);
+        libraryOwners.remove(aUri);
         cleanCache();
+    }
+
+
+    /**
+     * Remove the library entry for {@code aUri}, but only if {@code aLibrary} is still the instance
+     * cached under that key. A library that was superseded (reloaded after its file changed, or
+     * re-opened after its weak entry was collected) must not evict its successor when its last
+     * owner finally releases it.
+     *
+     * @param aUri
+     *            the key the library was acquired under.
+     * @param aLibrary
+     *            the instance being released.
+     * @return {@code true} if the entry was removed, {@code false} if a different instance now
+     *         holds the key.
+     */
+    boolean removeLibraryIfCurrent(URI aUri, IDataTableLibrary aLibrary)
+    {
+        if (!isCurrentLibrary(aUri, aLibrary))
+        {
+            return false;
+        }
+        removeLibrary(aUri);
+        return true;
+    }
+
+
+    /**
+     * Whether {@code aLibrary} is still the instance cached under {@code aUri}. A key with no live
+     * entry answers {@code false} — nothing is current there any more.
+     */
+    boolean isCurrentLibrary(URI aUri, IDataTableLibrary aLibrary)
+    {
+        LibraryCacheEntry entry = getLibraryEntry(aUri);
+        return entry != null && entry.getLibrary() == aLibrary;
+    }
+
+    // ------------------------------------------------------------------
+    // Library reference counting (Q44)
+    // ------------------------------------------------------------------
+
+
+    /**
+     * Register one acquisition of the library cached under {@code aUri} and return its token. The
+     * token is what {@link #releaseOwnership(LocalDataTableLibraryRef.Ownership)} matches against,
+     * so it must be handed to the ref the caller receives.
+     *
+     * @param aUri
+     *            the key the library is cached under.
+     * @return the token identifying this acquisition; never {@code null}.
+     */
+    LocalDataTableLibraryRef.Ownership acquireLibrary(URI aUri)
+    {
+        LocalDataTableLibraryRef.Ownership ownership = new LocalDataTableLibraryRef.Ownership(aUri);
+        libraryOwners.computeIfAbsent(aUri, _ -> ConcurrentHashMap.newKeySet()).add(ownership);
+        return ownership;
+    }
+
+
+    /**
+     * Give back one acquisition.
+     *
+     * @param aOwnership
+     *            the token handed out by {@link #acquireLibrary(URI)}.
+     * @return the number of acquisitions still outstanding for that key, or {@code -1} when this
+     *         token was not registered (any more) — a double release, or a token whose library has
+     *         since been superseded in the cache. {@code -1} is deliberately distinguishable from
+     *         {@code 0}: the caller must report it rather than treat it as the last release.
+     */
+    int releaseOwnership(LocalDataTableLibraryRef.Ownership aOwnership)
+    {
+        int[] remaining =
+        {
+                -1
+        };
+        libraryOwners.computeIfPresent(aOwnership.getUri(), (_, owners) ->
+        {
+            if (!owners.remove(aOwnership))
+            {
+                return owners;
+            }
+            remaining[0] = owners.size();
+            return owners.isEmpty() ? null : owners;
+        });
+        return remaining[0];
+    }
+
+
+    /**
+     * The number of outstanding acquisitions for a key. Diagnostics and tests only.
+     */
+    int countOwners(URI aUri)
+    {
+        Set<LocalDataTableLibraryRef.Ownership> owners = libraryOwners.get(aUri);
+        return owners != null ? owners.size() : 0;
     }
 
     // ------------------------------------------------------------------

@@ -124,6 +124,9 @@ public interface IDataTableManager
 
     /**
      * Retrieve a {@link IDataTableLibrary} for the given URI.
+     * <p>
+     * The returned ref holds one <b>reference</b> on the library: give it back exactly once with
+     * {@link #releaseLibraryRef(IDataTableLibraryRef)} when it is no longer needed.
      *
      * @param aUri
      *            the URI to retrieve the library for.
@@ -135,6 +138,32 @@ public interface IDataTableManager
      */
     IDataTableLibraryRef getLibraryRef(@NonNull URI aUri, @Nullable FileInfo aFileInfo)
         throws IOException;
+
+
+    /**
+     * Give back one reference to the given library, closing it once the last one is gone.
+     * <p>
+     * Only a ref obtained from {@code getLibraryRef(URI, ...)} is a reference; that door may be
+     * used more than once for the same library (and then answers the same underlying instance), so
+     * it must be released as often as it was called. Each such ref must be released <b>exactly
+     * once</b>; after releasing it, no further access to that ref or its members is allowed. The
+     * library itself is closed, and no longer served as an open library, only when its <b>last</b>
+     * reference has been released — so releasing your own ref never pulls the library out from
+     * under another holder.
+     * <p>
+     * Borrowed views — refs that were not handed out by {@code getLibraryRef(URI, ...)}, such as a
+     * library derived from one of its members or one taken from an enumeration of the open
+     * libraries (doors this interface does not expose) — hold no reference and must not be passed
+     * here. An implementation must report such a call (and a repeated release) rather than obeying
+     * it or ignoring it silently; it must never close a library on behalf of a ref that never took
+     * a reference.
+     *
+     * @param aLibrary
+     *            the library reference to give back.
+     * @throws IOException
+     *             in case of any issues when releasing the library.
+     */
+    void releaseLibraryRef(@NonNull IDataTableLibraryRef aLibrary) throws IOException;
 
 
     /**

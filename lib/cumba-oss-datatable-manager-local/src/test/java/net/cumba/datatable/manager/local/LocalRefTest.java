@@ -190,7 +190,7 @@ class LocalRefTest
         URI uri = URI.create("file:///lib/");
         try (IDataTableLibrary lib = createStubLibrary("MyLib", "My Library", uri))
         {
-            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib, null);
 
             assertEquals("MyLib", ref.getName());
         }
@@ -202,7 +202,7 @@ class LocalRefTest
     {
         try (IDataTableLibrary lib = createStubLibrary("Lib", "Label", null))
         {
-            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib, null);
 
             assertEquals("Label", ref.getLabel());
         }
@@ -214,7 +214,7 @@ class LocalRefTest
     {
         try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
         {
-            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib, null);
 
             assertSame(manager, ref.getManager());
         }
@@ -227,7 +227,7 @@ class LocalRefTest
         URI uri = URI.create("file:///lib/");
         try (IDataTableLibrary lib = createStubLibrary("Lib", null, uri))
         {
-            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib, null);
 
             assertEquals("file:///lib/", ref.getUri());
         }
@@ -239,7 +239,7 @@ class LocalRefTest
     {
         try (IDataTableLibrary lib = createStubLibrary("Lib", null, null))
         {
-            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib);
+            LocalDataTableLibraryRef ref = new LocalDataTableLibraryRef(manager, lib, null);
 
             assertNull(ref.getUri());
         }

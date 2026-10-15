@@ -235,13 +235,32 @@ class LibraryLoadSupportTest
         cache.storeLibrary(libUri, lib, null, lm);
         assertSame(lib, cache.lookupLibrary(libUri, lm), "precondition: library is cached");
 
-        support.releaseLibrary(lib);
+        support.releaseLibrary(lib, libUri);
 
         // The cache entry must be gone …
         assertNull(cache.lookupLibrary(libUri, lm),
                 "releaseLibrary must evict the library from the cache");
         // … and the library must have been closed exactly once.
         verify(lib).close();
+    }
+
+
+    @Test
+    void releaseLibrary_ofASupersededInstance_keepsTheSuccessorCached() throws IOException
+    {
+        URI libUri = URI.create("file:///reloaded-lib");
+        try (IDataTableLibrary old = new StubLibrary(libUri);
+                IDataTableLibrary successor = new StubLibrary(libUri))
+        {
+            cache.storeLibrary(libUri, old, null, 1L);
+            // The file changed and the uri was opened again: a new instance under the same key.
+            cache.storeLibrary(libUri, successor, null, 2L);
+
+            support.releaseLibrary(old, libUri);
+
+            assertSame(successor, cache.lookupLibrary(libUri, 2L),
+                    "releasing the superseded instance must not evict its successor");
+        }
     }
 
     // ------------------------------------------------------------------

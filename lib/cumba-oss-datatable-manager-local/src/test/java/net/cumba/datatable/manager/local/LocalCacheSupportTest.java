@@ -455,6 +455,85 @@ class LocalCacheSupportTest
     }
 
     // ====================================================================
+    // Library reference counting (Q44): owner sets
+    // ====================================================================
+
+
+    @Test
+    void ownership_eachAcquisitionCountsOnce_andAReleasedTokenIsUnmatchedAfterwards()
+    {
+        URI uri = URI.create("file:///owned");
+        LocalDataTableLibraryRef.Ownership first = cache.acquireLibrary(uri);
+        LocalDataTableLibraryRef.Ownership second = cache.acquireLibrary(uri);
+        assertEquals(2, cache.countOwners(uri), "two acquisitions, two owners");
+
+        assertEquals(1, cache.releaseOwnership(first), "one owner remains");
+        assertEquals(-1, cache.releaseOwnership(first),
+                "the same token released again is unmatched, never another holder's count");
+        assertEquals(1, cache.countOwners(uri), "the double release consumed nothing");
+
+        assertEquals(0, cache.releaseOwnership(second), "the last owner leaves zero behind");
+        assertEquals(0, cache.countOwners(uri));
+        assertEquals(-1, cache.releaseOwnership(second),
+                "a token of an emptied key is unmatched too");
+    }
+
+
+    @Test
+    void storeLibrary_dropsTheOwnersOfThePreviousInstanceUnderTheSameKey() throws IOException
+    {
+        URI uri = URI.create("file:///reloaded");
+        try (IDataTableLibrary old = stubLibrary(uri); IDataTableLibrary fresh = stubLibrary(uri))
+        {
+            cache.storeLibrary(uri, old, null, 100L);
+            LocalDataTableLibraryRef.Ownership stale = cache.acquireLibrary(uri);
+            cache.storeLibrary(uri, fresh, null, 100L);
+            assertEquals(0, cache.countOwners(uri),
+                    "a new instance under the key must not inherit the old instance's owners");
+            assertEquals(-1, cache.releaseOwnership(stale), "so the old token is unmatched");
+        }
+    }
+
+
+    @Test
+    void removeLibrary_dropsTheOwnersOfThatKeyOnly() throws IOException
+    {
+        URI uri = URI.create("file:///evicted");
+        URI other = URI.create("file:///kept");
+        try (IDataTableLibrary lib = stubLibrary(uri))
+        {
+            cache.storeLibrary(uri, lib, null, 100L);
+            cache.acquireLibrary(uri);
+            cache.acquireLibrary(other);
+            cache.removeLibrary(uri);
+            assertEquals(0, cache.countOwners(uri), "an evicted key keeps no owners");
+            assertEquals(1, cache.countOwners(other), "other keys are untouched");
+        }
+    }
+
+
+    @Test
+    void removeLibraryIfCurrent_evictsOnlyTheInstanceStillCachedUnderTheKey() throws IOException
+    {
+        URI uri = URI.create("file:///superseded");
+        try (IDataTableLibrary old = stubLibrary(uri); IDataTableLibrary fresh = stubLibrary(uri))
+        {
+            assertFalse(cache.isCurrentLibrary(uri, old), "an empty key has no current instance");
+            cache.storeLibrary(uri, old, null, 100L);
+            assertTrue(cache.isCurrentLibrary(uri, old));
+            cache.storeLibrary(uri, fresh, null, 100L);
+            assertFalse(cache.isCurrentLibrary(uri, old), "the reload superseded the old instance");
+
+            assertFalse(cache.removeLibraryIfCurrent(uri, old),
+                    "a superseded instance must not evict its successor");
+            assertSame(fresh, cache.lookupLibrary(uri, 100L), "the successor stays cached");
+
+            assertTrue(cache.removeLibraryIfCurrent(uri, fresh));
+            assertNull(cache.lookupLibrary(uri, 100L), "the current instance is evicted");
+        }
+    }
+
+    // ====================================================================
     // streamLibraries
     // ====================================================================
 
