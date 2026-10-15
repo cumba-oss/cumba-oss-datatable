@@ -32,8 +32,8 @@ import org.jspecify.annotations.Nullable;
  * a {@code Long} no {@code double} holds) for a one-component join, and a {@link CompositeKey} of
  * identities for a multi-component one — never a {@code List}, and no {@code KeyPart} wrapper
  * ({@code PLAN-key-match-index-identity-rekey}, ruling {@code SKI-P-R3});</li>
- * <li>a lookup allocates nothing: {@link #find(Object[])} compares a caller-owned scratch array
- * against the stored composite keys without building one.</li>
+ * <li>a lookup allocates nothing: {@link #findComposite(Object[])} compares a caller-owned scratch
+ * array against the stored composite keys without building one.</li>
  * </ul>
  *
  * <p>
@@ -153,13 +153,15 @@ public final class KeyMatchIndex
 
     /**
      * The id of a multi-component key, given as a scratch array the caller owns and may reuse — no
-     * {@link CompositeKey} is built for the lookup.
+     * {@link CompositeKey} is built for the lookup. Its own name, not an overload of
+     * {@link #find(Object)}: an {@code Object[]} probe handed to {@code find} would silently take
+     * the single-component path and answer {@link #NOT_FOUND} (PACK G 18 review).
      *
      * @param aParts
      *            the key's component identities, in key order.
      * @return its key id, or {@link #NOT_FOUND}.
      */
-    public int find(Object[] aParts)
+    public int findComposite(Object[] aParts)
     {
         int hash = Arrays.hashCode(aParts);
         for (int slot = spread(hash) & slotMask;; slot = (slot + 1) & slotMask)
@@ -246,8 +248,9 @@ public final class KeyMatchIndex
     /**
      * A multi-component join key: the component identities in key order and their hash, computed
      * once. The hash is {@link Arrays#hashCode(Object[])} of the components, so
-     * {@link #find(Object[])} can compute it from a scratch array. Equality is component-wise
-     * {@code Object.equals} on the identities — {@code KeyPart.equals} by the bijection.
+     * {@link #findComposite(Object[])} can compute it from a scratch array. Equality is
+     * component-wise {@code Object.equals} on the identities — {@code KeyPart.equals} by the
+     * bijection.
      *
      * <p>
      * ⚠ A class and not a record: a record's generated {@code equals} would compare the array by

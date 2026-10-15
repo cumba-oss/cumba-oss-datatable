@@ -19,9 +19,12 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code IDataTable}'s concurrent-reads contract (§3.10) on the engine's merged evaluation table: a
- * {@code MergedTableImpl} whose keyed part is a lazy key-match view (one volatile probe cache) over
- * a union partner ({@code KeyCellReader.Union}'s lazily filled per-member readers), plus the SUPP
- * part and the matched flags. The engine's rule pool reads one such table from several threads.
+ * {@code MergedTableImpl} whose keyed part is a lazy key-match view (one volatile probe cache) with
+ * a union on both sides — the primary split in two members and a union partner — so the
+ * {@code KeyCellReader.Union} readers of the record side and the partner side are both built on
+ * first use, plus the SUPP part and the matched flags. The engine's rule pool reads one such table
+ * from several threads; the harness's cold arm first-touches a fresh merge under contention (PACK G
+ * fold, G4 review).
  */
 class MergedTableReadConcurrencyTest
 {
@@ -31,14 +34,26 @@ class MergedTableReadConcurrencyTest
     @Test
     void aKeyedSuppAndFlaggedMergedTable()
     {
-        List<String> aeRows = new ArrayList<>();
+        MergedTable merged = merged();
+        // the fixture really merged: the keyed, SUPP and flag parts all carry columns
+        assertEquals(SUBJECTS, merged.getRowCount());
+        assertEquals(List.of(), merged.issues());
+
+        IDataTableReadConcurrencyContract.checkCold(MergedTableReadConcurrencyTest::merged);
+    }
+
+
+    private static MergedTable merged()
+    {
+        List<String> aeA = new ArrayList<>();
+        List<String> aeB = new ArrayList<>();
         List<String> suppRows = new ArrayList<>();
         List<String> dmA = new ArrayList<>();
         List<String> dmB = new ArrayList<>();
         for (int s = 0; s < SUBJECTS; s++)
         {
             String subject = "01-%03d".formatted(s);
-            aeRows.add("S1," + subject + "," + (s + 1) + ",TERM" + (s % 5));
+            (s % 2 == 0 ? aeA : aeB).add("S1," + subject + "," + (s + 1) + ",TERM" + (s % 5));
             if (s % 3 != 0)
             {
                 suppRows.add("S1,AE," + subject + ",AESEQ," + (s + 1) + ",AETRTEM,"
@@ -51,22 +66,19 @@ class MergedTableReadConcurrencyTest
                         .add("S1," + subject + "," + (s % 2 == 0 ? "F" : "M"));
             }
         }
-        IDataTable ae = table("AE", "STUDYID,USUBJID,AESEQ:N,AETERM",
-                aeRows.toArray(String[]::new));
+        // the primary split in two members (a split domain), so its readers are union readers
+        IDataTable ae = new UnionDataTable("AE",
+                table("AE", "STUDYID,USUBJID,AESEQ:N,AETERM", aeA.toArray(String[]::new)),
+                table("AE", "STUDYID,USUBJID,AESEQ:N,AETERM", aeB.toArray(String[]::new)));
         IDataTable supp = table("SUPPAE", "STUDYID,RDOMAIN,USUBJID,IDVAR,IDVARVAL,QNAM,QVAL",
                 suppRows.toArray(String[]::new));
         IDataTable dm = new UnionDataTable("DM",
                 table("DM", "STUDYID,USUBJID,SEX", dmA.toArray(String[]::new)),
                 table("DM", "STUDYID,USUBJID,SEX", dmB.toArray(String[]::new)));
 
-        MergedTable merged = MergedTables.build(request(ae, dm, supp)
+        return MergedTables.build(request(ae, dm, supp)
                 .keyed(KeyedMergeSpec.builder().qualifier("DM").key(KeyColumn.of("STUDYID"))
                         .key(KeyColumn.of("USUBJID")).joinType(JoinType.LEFT).build())
                 .supp(SuppMergeSpec.builder().build()).matchedFlags(true).build());
-        // the fixture really merged: the keyed, SUPP and flag parts all carry columns
-        assertEquals(SUBJECTS, merged.getRowCount());
-        assertEquals(List.of(), merged.issues());
-
-        IDataTableReadConcurrencyContract.check(merged);
     }
 }

@@ -13,9 +13,11 @@ import org.junit.jupiter.api.Test;
 /**
  * {@code IDataTable}'s concurrent-reads contract on {@link OverlayDataTable}. Its
  * {@code getMetaData} read the racy cache field twice (a JMM-permitted {@code null} on the second
- * read); it now reads it once. That fix is red-first infeasible on HotSpot, so these cases are a
- * regression guard: the overrides are set before the reads start (a mutation during the reads is
- * outside the contract).
+ * read), then kept a separate dirty flag beside it (a stale meta between a rebuild and the flag
+ * reset); it now reads one field once and the mutators null it. Neither fix is red-first feasible
+ * on HotSpot, so these cases are a regression guard on the harness's cold arm: the overrides are
+ * set before the reads start (a mutation during the reads is outside the contract), and the threads
+ * build the metadata on their first touch together.
  */
 class OverlayDataTableReadConcurrencyTest
 {
@@ -25,21 +27,27 @@ class OverlayDataTableReadConcurrencyTest
     @Test
     void anOverlayOverAColumnCachedTable()
     {
-        OverlayDataTable overlay = new OverlayDataTable(base());
-        overlay.setValue(3, "ID", "overridden");
-        overlay.addColumn("EXTRA", DataValueType.STRING, "Extra");
-        overlay.setValue(5, "EXTRA", "x");
-        IDataTableReadConcurrencyContract.check(overlay);
+        IDataTableReadConcurrencyContract.checkCold(() ->
+        {
+            OverlayDataTable overlay = new OverlayDataTable(base());
+            overlay.setValue(3, "ID", "overridden");
+            overlay.addColumn("EXTRA", DataValueType.STRING, "Extra");
+            overlay.setValue(5, "EXTRA", "x");
+            return overlay;
+        });
     }
 
 
     @Test
     void anEmptyOverlay()
     {
-        OverlayDataTable overlay = OverlayDataTable.empty("SS", "Subject status", 6);
-        overlay.addColumn("SSSTRESC");
-        overlay.setValue(2, "SSSTRESC", "ALIVE");
-        IDataTableReadConcurrencyContract.check(overlay);
+        IDataTableReadConcurrencyContract.checkCold(() ->
+        {
+            OverlayDataTable overlay = OverlayDataTable.empty("SS", "Subject status", 6);
+            overlay.addColumn("SSSTRESC");
+            overlay.setValue(2, "SSSTRESC", "ALIVE");
+            return overlay;
+        });
     }
 
 

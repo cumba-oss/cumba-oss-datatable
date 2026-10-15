@@ -68,7 +68,7 @@ class KeyMatchIndexTest
     {
         KeyMatchIndex index = KeyMatchIndex.build(2, r -> p("K" + r));
         assertEquals(KeyMatchIndex.NOT_FOUND, index.find(p("nope")));
-        assertEquals(KeyMatchIndex.NOT_FOUND, index.find(new Object[]
+        assertEquals(KeyMatchIndex.NOT_FOUND, index.findComposite(new Object[]
         {
                 p("K0"), p("K1")
         }), "a composite probe never matches a single-component key");
@@ -181,12 +181,14 @@ class KeyMatchIndexTest
         Object[] scratch = new Object[2];
         scratch[0] = p("P1");
         scratch[1] = p("1");
-        assertEquals(List.of(0, 3), rowsOf(index, index.find(scratch)));
+        assertEquals(List.of(0, 3), rowsOf(index, index.findComposite(scratch)));
         scratch[1] = p("2");
-        assertEquals(List.of(1), rowsOf(index, index.find(scratch)), "the scratch array is reused");
+        assertEquals(List.of(1), rowsOf(index, index.findComposite(scratch)),
+                "the scratch array is reused");
         scratch[0] = p("2");
         scratch[1] = p("P1");
-        assertEquals(KeyMatchIndex.NOT_FOUND, index.find(scratch), "component order is identity");
+        assertEquals(KeyMatchIndex.NOT_FOUND, index.findComposite(scratch),
+                "component order is identity");
         assertEquals(KeyMatchIndex.NOT_FOUND, index.find(p("P1")),
                 "a single-component probe never matches a composite key");
     }

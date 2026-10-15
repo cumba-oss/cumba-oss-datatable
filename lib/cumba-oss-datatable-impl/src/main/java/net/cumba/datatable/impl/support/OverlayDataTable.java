@@ -68,9 +68,12 @@ public class OverlayDataTable extends AbstractDataTable
     /** Overridden table-level custom metadata entries. */
     private final Map<String, Object> tableMetaOverrides = new LinkedHashMap<>();
 
+    /**
+     * The built metadata, or {@code null} when it must be rebuilt. Invalidated by nulling, never by
+     * a second flag: a {@code metaDirty} boolean beside it let a reader see a stale meta between
+     * another thread's rebuild and its flag reset (PACK G fold, G4 review) — one field, one read.
+     */
     private @Nullable DataTableMeta cachedMeta;
-
-    private boolean metaDirty;
 
     /**
      * Creates a virtual empty table with the given name, label, and row count. The table starts
@@ -138,7 +141,7 @@ public class OverlayDataTable extends AbstractDataTable
             columnNames.add(delegateMeta.getColumn(c).getName());
         }
 
-        metaDirty = true;
+        cachedMeta = null;
     }
 
     // ---- Value overrides ----
@@ -225,7 +228,7 @@ public class OverlayDataTable extends AbstractDataTable
         // Update column meta override
         DataTableColumnMeta existing = getEffectiveColumnMeta(idx);
         columnMetaOverrides.put(idx, existing.toBuilder().name(aNewName).build());
-        metaDirty = true;
+        cachedMeta = null;
         invalidateColumnContent();
         return true;
     }
@@ -258,7 +261,7 @@ public class OverlayDataTable extends AbstractDataTable
         reindexOverrides(idx);
         reindexColumnMeta(idx);
 
-        metaDirty = true;
+        cachedMeta = null;
         invalidateColumnContent();
         return true;
     }
@@ -285,7 +288,7 @@ public class OverlayDataTable extends AbstractDataTable
                 DataTableColumnMeta.builder().index(newIndex).name(aName)
                         .label(aLabel != null ? aLabel : aName)
                         .type(aType != null ? aType : DataValueType.STRING).build());
-        metaDirty = true;
+        cachedMeta = null;
         invalidateColumnContent();
         return newIndex;
     }
@@ -313,7 +316,7 @@ public class OverlayDataTable extends AbstractDataTable
     public void setTableName(String aName)
     {
         nameOverride = aName;
-        metaDirty = true;
+        cachedMeta = null;
     }
 
 
@@ -326,7 +329,7 @@ public class OverlayDataTable extends AbstractDataTable
     public void setTableLabel(String aLabel)
     {
         labelOverride = aLabel;
-        metaDirty = true;
+        cachedMeta = null;
     }
 
 
@@ -342,7 +345,7 @@ public class OverlayDataTable extends AbstractDataTable
     public void setTableURI(URI aUri)
     {
         uriOverride = aUri;
-        metaDirty = true;
+        cachedMeta = null;
     }
 
 
@@ -357,7 +360,7 @@ public class OverlayDataTable extends AbstractDataTable
     public void setTableMetaData(String aKey, Object aValue)
     {
         tableMetaOverrides.put(aKey, aValue);
-        metaDirty = true;
+        cachedMeta = null;
     }
 
 
@@ -376,7 +379,7 @@ public class OverlayDataTable extends AbstractDataTable
         {
             DataTableColumnMeta existing = getEffectiveColumnMeta(idx);
             columnMetaOverrides.put(idx, existing.toBuilder().label(aNewLabel).build());
-            metaDirty = true;
+            cachedMeta = null;
         }
     }
 
@@ -396,7 +399,7 @@ public class OverlayDataTable extends AbstractDataTable
         {
             DataTableColumnMeta existing = getEffectiveColumnMeta(idx);
             columnMetaOverrides.put(idx, existing.toBuilder().displayFormat(aNewFormat).build());
-            metaDirty = true;
+            cachedMeta = null;
         }
     }
 
@@ -416,7 +419,7 @@ public class OverlayDataTable extends AbstractDataTable
         {
             DataTableColumnMeta existing = getEffectiveColumnMeta(idx);
             columnMetaOverrides.put(idx, existing.toBuilder().type(aNewType).build());
-            metaDirty = true;
+            cachedMeta = null;
             invalidateColumnContent();
         }
     }
@@ -437,7 +440,7 @@ public class OverlayDataTable extends AbstractDataTable
         {
             DataTableColumnMeta existing = getEffectiveColumnMeta(idx);
             columnMetaOverrides.put(idx, existing.toBuilder().length(aNewLength).build());
-            metaDirty = true;
+            cachedMeta = null;
         }
     }
 
@@ -554,13 +557,14 @@ public class OverlayDataTable extends AbstractDataTable
         // the JMM the second read may see null even after the first saw a built meta. What any
         // read sees is null (rebuild) or a complete DataTableMeta: every field is final and the
         // arrays it holds are never written after construction, and the rebuild is idempotent for
-        // an unmodified table. A mutator racing a reader is outside the contract.
+        // an unmodified table. The mutators invalidate by nulling this one field (no separate
+        // dirty flag, whose reset after the rebuild let a plain interleaving return a meta built
+        // before the mutation). A mutator racing a reader is outside the contract.
         DataTableMeta meta = cachedMeta;
-        if (metaDirty || meta == null)
+        if (meta == null)
         {
             meta = buildMetaData();
             cachedMeta = meta;
-            metaDirty = false;
         }
         return meta;
     }

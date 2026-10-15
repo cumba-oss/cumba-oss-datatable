@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import net.cumba.datatable.ColumnContent;
+import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.IDataTableRow;
@@ -22,9 +23,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The harness itself: it accepts a table that is safe to read concurrently, and it must reject the
- * shape the {@link IDataTable} contract forbids — per-call cursor state in a shared field — or a
- * green result elsewhere proves nothing. Its vacuity control must fire when the reads cannot
- * overlap. (The internal twin also rejects a format with shared scratch state; this IDataTable has
+ * two shapes the {@link IDataTable} contract forbids — per-call cursor state in a shared field, and
+ * a check-then-act first-touch cache (the cold arm; the warm arm is blind to it by construction,
+ * and a test here says so) — or a green result elsewhere proves nothing. Its vacuity control must
+ * fire when the reads cannot overlap, and the cold arm must refuse a supplier that repeats an
+ * instance. (The internal twin also rejects a format with shared scratch state; this IDataTable has
  * no formatted reads.)
  */
 class IDataTableReadConcurrencyContractTest
@@ -37,6 +40,56 @@ class IDataTableReadConcurrencyContractTest
     void anImmutableTablePasses()
     {
         assertDoesNotThrow(() -> IDataTableReadConcurrencyContract.check(table(12)));
+    }
+
+
+    @Test
+    void theColdArmAcceptsAnImmutableTable()
+    {
+        assertDoesNotThrow(() -> IDataTableReadConcurrencyContract.checkCold(() -> table(12)));
+    }
+
+
+    /**
+     * The planted first-touch control (PACK G fold, G4 review): a per-column cache filled on first
+     * use, published before it is filled (check-then-act on a plain field, no synchronisation). The
+     * warm arm's serial reference read fills every cache before the threads start, so it accepts
+     * the table — that is the vacuity the cold arm exists for — and the cold arm, whose threads
+     * first-touch an untouched instance together, must reject it.
+     */
+    @Test
+    void aFirstTouchCacheIsInvisibleToTheWarmArmAndRejectedByTheColdArm()
+    {
+        assertDoesNotThrow(
+                () -> IDataTableReadConcurrencyContract.check(new FirstTouchCacheTable(table(12))),
+                "the warm arm cannot see a first-touch race: the reference read warms the cache");
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> IDataTableReadConcurrencyContract
+                        .checkCold(() -> new FirstTouchCacheTable(table(12))));
+        assertTrue(error.getMessage().contains("answered differently from the serial read"),
+                error.getMessage());
+    }
+
+
+    @Test
+    void theColdArmRefusesASupplierThatRepeatsAnInstance()
+    {
+        IDataTable one = table(6);
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> IDataTableReadConcurrencyContract.checkCold(() -> one));
+        assertTrue(error.getMessage().contains("same instance twice"), error.getMessage());
+    }
+
+
+    /**
+     * The whole {@code DataTableMeta} is compared: a column label that differs per thread fails.
+     */
+    @Test
+    void aMetaThatDiffersOnAWorkerThreadIsRejected()
+    {
+        AssertionError error = assertThrows(AssertionError.class,
+                () -> IDataTableReadConcurrencyContract.check(new ThreadLabelMetaTable(table(6))));
+        assertTrue(error.getMessage().contains("answer 0:"), error.getMessage());
     }
 
 
@@ -173,7 +226,7 @@ class IDataTableReadConcurrencyContractTest
     void theReadOrderDoesNotMoveAnAnswer()
     {
         IDataTable table = table(5);
-        List<String> canonical = IDataTableReadConcurrencyContract.read(table, 0, false);
+        List<Object> canonical = IDataTableReadConcurrencyContract.read(table, 0, false);
         assertEquals(canonical, IDataTableReadConcurrencyContract.read(table, 3, true));
         assertEquals(canonical, IDataTableReadConcurrencyContract.read(table, 4, false));
     }
@@ -183,25 +236,28 @@ class IDataTableReadConcurrencyContractTest
     void theAnswersCoverEveryReadOnce()
     {
         IDataTable table = table(2);
-        List<String> answers = IDataTableReadConcurrencyContract.read(table, 0, false);
-        // 1 table answer + 1 per column (content) + per row 3 + 4 per cell
-        assertEquals(1 + 2 + 2 * (3 + 2 * 4), answers.size());
-        assertEquals("2 rows, 2 columns, [ID:STRING, N:LONG]", answers.get(0));
+        List<Object> answers = IDataTableReadConcurrencyContract.read(table, 0, false);
+        // 2 table answers (the whole meta, the shape) + 1 per column (content) + per row 3 + 4
+        // per cell
+        assertEquals(2 + 2 + 2 * (3 + 2 * 4), answers.size());
+        assertEquals(table.getMetaData(), answers.get(0), "the whole DataTableMeta, by equals");
+        assertEquals("2 rows, 2 columns", answers.get(1));
         assertEquals(List.of(String.valueOf(table.getColumnContent(0)),
-                String.valueOf(table.getColumnContent(1))), answers.subList(1, 3));
-        int row1 = 1 + 2 + 3 + 2 * 4;
+                String.valueOf(table.getColumnContent(1))), answers.subList(2, 4));
+        int row1 = 2 + 2 + 3 + 2 * 4;
         assertEquals("2", answers.get(row1));
         assertEquals("1", answers.get(row1 + 1));
-        assertTrue(answers.get(row1 + 2).startsWith("1@1 ["), answers.get(row1 + 2));
+        assertTrue(String.valueOf(answers.get(row1 + 2)).startsWith("1@1 ["),
+                String.valueOf(answers.get(row1 + 2)));
         assertEquals(table.getValue(1, 0) == null ? "null" : "String:" + table.getValue(1, 0),
                 answers.get(row1 + 3));
-        assertTrue(answers.get(row1 + 4).startsWith("STRING="), answers.get(row1 + 4));
-        assertTrue(answers.get(row1 + 5).matches("(true|false)/(true|false)/(true|false)"),
-                answers.get(row1 + 5));
+        String dv = String.valueOf(answers.get(row1 + 4));
+        assertTrue(dv.startsWith("STRING="), dv);
+        String blank = String.valueOf(answers.get(row1 + 5));
+        assertTrue(blank.matches("(true|false)/(true|false)/(true|false)"), blank);
         assertEquals(String.valueOf(table.hashCodeAt(1, 0)), answers.get(row1 + 6));
-        assertTrue(
-                answers.get(row1 + 7).startsWith("Long:") || "null".equals(answers.get(row1 + 7)),
-                answers.get(row1 + 7));
+        String next = String.valueOf(answers.get(row1 + 7));
+        assertTrue(next.startsWith("Long:") || "null".equals(next), next);
     }
 
 
@@ -323,6 +379,74 @@ class IDataTableReadConcurrencyContractTest
                 hashColumns.add(aColumn);
             }
             return delegate.hashCodeAt(aRow, aColumn);
+        }
+    }
+
+
+    /**
+     * The planted first-touch control: a per-column value cache built on first use. The slot is
+     * checked, the empty array published into it, and only then filled (with a pause per row that
+     * keeps the window open) — the check-then-act shape of a lazily filled map or array with no
+     * synchronisation. A thread arriving while another fills the column reads its {@code null}s. A
+     * plain array of slots rather than a {@code HashMap} on purpose: the shape under test is the
+     * publication, and a racing {@code HashMap.put} could corrupt the map instead of answering.
+     */
+    private static final class FirstTouchCacheTable extends Delegating
+    {
+
+        // Published before it is filled on purpose: the first-touch race this fixture models.
+        private final @Nullable Object[][] columns;
+
+        FirstTouchCacheTable(IDataTable aDelegate)
+        {
+            super(aDelegate);
+            columns = new Object[aDelegate.getColumnCount()][];
+        }
+
+
+        @Override
+        public @Nullable Object getValue(long aRow, int aColumn)
+        {
+            Object[] cache = columns[aColumn];
+            if (cache == null)
+            {
+                cache = new Object[(int) delegate.getRowCount()];
+                columns[aColumn] = cache;
+                for (int r = 0; r < cache.length; r++)
+                {
+                    hold();
+                    cache[r] = delegate.getValue(r, aColumn);
+                }
+            }
+            return cache[(int) aRow];
+        }
+    }
+
+
+    /** Answers a different column label to every thread but the one that built it. */
+    private static final class ThreadLabelMetaTable extends Delegating
+    {
+
+        private final Thread owner = Thread.currentThread();
+
+        ThreadLabelMetaTable(IDataTable aDelegate)
+        {
+            super(aDelegate);
+        }
+
+
+        @Override
+        public DataTableMeta getMetaData()
+        {
+            DataTableMeta meta = delegate.getMetaData();
+            if (Thread.currentThread() == owner)
+            {
+                return meta;
+            }
+            DataTableColumnMeta[] columns = meta.getColumns().clone();
+            columns[0] = columns[0].toBuilder()
+                    .label("seen from " + Thread.currentThread().getName()).build();
+            return meta.toBuilder().columns(columns).build();
         }
     }
 

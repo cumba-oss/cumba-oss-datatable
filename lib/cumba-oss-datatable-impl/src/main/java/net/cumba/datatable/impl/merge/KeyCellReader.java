@@ -133,8 +133,11 @@ public interface KeyCellReader
      * A {@link CachedDataTableColumn} of a {@link ColumnCachedDataTable}: present cells straight
      * from the buffer, everything else the old way. A named class (not a lambda) so a test can
      * prove the dispatcher chose it, and it counts its fall-backs so a test can prove the fast arm
-     * is what answered (review round 1, lane B, MEDIUM). A reader is confined to the call that
-     * built it, so the plain counter is not shared between threads.
+     * is what answered (review round 1, lane B, MEDIUM). Not confined to one thread: a
+     * {@code KeyedMatcher} keeps its readers for its lifetime, and the lazy key-match view probes
+     * through them from several threads at once (§3.10). The plain counter is therefore only a test
+     * instrument read at quiescence — a racing increment may be lost, and no answer depends on it
+     * (PACK G fold, G4 review).
      */
     final class Direct implements KeyCellReader
     {
@@ -204,8 +207,10 @@ public interface KeyCellReader
 
     /**
      * A split-domain union: each row is read through the member that holds it, with that member's
-     * own reader (built lazily, once per member); a column the member lacks is read through the
-     * union, exactly as before. Confined to the call that built it, like every reader.
+     * own reader (built lazily); a column the member lacks is read through the union, exactly as
+     * before. Not confined to one thread, like every reader: two concurrent first touches of a
+     * member may each build its reader, and the later plain write wins — the readers are equivalent
+     * and stateless for the answer, so every probe reads the same cell (PACK G fold).
      */
     final class Union implements KeyCellReader
     {

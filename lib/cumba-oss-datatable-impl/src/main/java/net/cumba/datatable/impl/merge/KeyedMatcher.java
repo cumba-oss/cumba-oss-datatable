@@ -311,7 +311,7 @@ public final class KeyedMatcher
             return index.find(keyIdentity(recordReaders, singleActive, aRow));
         }
         fillKeyIdentities(recordReaders, aRow, aKey);
-        return index.find(aKey);
+        return index.findComposite(aKey);
     }
 
 
