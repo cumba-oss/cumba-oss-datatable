@@ -221,20 +221,33 @@ public class LocalDataTableManager implements IDataTableManager
 
     /**
      * The one and only door that loads and caches a library, and therefore the only one that takes
-     * a reference count (Q44). The count is taken AFTER the load, on the same URI the cache is
-     * keyed by, and is handed to the returned ref as its {@link LocalDataTableLibraryRef.Ownership}
-     * token. Two callers asking for the same URI get the same cached library instance and two
-     * independent counts, so neither can close it under the other.
+     * a reference count (Q44). The count is taken on the very instance this call answers, under the
+     * URI the cache is keyed by, and is handed to the returned ref as its
+     * {@link LocalDataTableLibraryRef.Ownership} token. Two callers asking for the same URI get the
+     * same cached library instance and two independent counts, so neither can close it under the
+     * other.
+     * <p>
+     * The lookup (or load) and the count are two steps; the count is taken only if the instance is
+     * still the one cached under the URI and not retired. A reload, an eviction or a last release
+     * that landed in between makes the join fail, and the door looks up again - so it never hands
+     * out a closed or superseded instance, and never counts on another instance (PACK G 17).
      */
     @Override
     public IDataTableLibraryRef getLibraryRef(URI aUri, @Nullable FileInfo aFileInfo)
         throws IOException
     {
-        IDataTableLibrary lib = libraryLoadSupport.getLibrary(aUri, aFileInfo);
+        IDataTableLibrary lib;
+        LocalDataTableLibraryRef.Ownership token;
+        do
+        {
+            lib = libraryLoadSupport.getLibrary(aUri, aFileInfo);
+            token = cacheSupport.acquireIfCurrent(aUri, lib);
+        }
+        while (token == null);
         return LocalDataTableLibraryRef.builder()//
                 .manager(this)//
                 .library(lib)//
-                .ownership(cacheSupport.acquireLibrary(aUri))//
+                .ownership(token)//
                 .build();
     }
 
@@ -242,10 +255,13 @@ public class LocalDataTableManager implements IDataTableManager
     /**
      * Give back one acquisition of a library (Q44).
      * <p>
-     * The library is unlocked, evicted and closed when the LAST owning ref is released; an earlier
-     * release only drops that holder's count. This is what makes it safe for two holders to share
-     * one library: a holder releasing its own ref (typically in a {@code finally}) used to close
-     * the shared instance and evict it underneath the other holder's still-live ref.
+     * The count is kept per loaded instance (PACK G 17): the instance is closed when the LAST
+     * owning ref on it is released - unlocked and evicted too if it is still the cached one; an
+     * instance a reload superseded closes at its own last release and leaves its successor, its
+     * successor's count and its successor's memory lock alone. An earlier release only drops that
+     * holder's count. This is what makes it safe for two holders to share one library: a holder
+     * releasing its own ref (typically in a {@code finally}) used to close the shared instance and
+     * evict it underneath the other holder's still-live ref.
      * <p>
      * A release that cannot be matched to an acquisition is REPORTED, never silently swallowed and
      * never obeyed:
@@ -254,8 +270,9 @@ public class LocalDataTableManager implements IDataTableManager
      * {@link #getLibraryRef(URI, net.cumba.datatable.io.FileInfo)}, e.g. one built directly through
      * {@code LocalDataTableLibraryRef.builder()}) has no acquisition to give back, so closing on
      * its behalf would be exactly the use-after-close this change removes;</li>
-     * <li>an owning ref released twice would otherwise consume a count belonging to another
-     * holder.</li>
+     * <li>an owning ref released again - at any time, also after its library was closed and evicted
+     * - would otherwise consume a count, close an instance or unlock a library that belongs to
+     * another holder.</li>
      * </ul>
      */
     @Override
@@ -273,38 +290,33 @@ public class LocalDataTableManager implements IDataTableManager
                     new IllegalStateException("release of a borrowed library ref"));
             return;
         }
+        if (!ownership.markReleased())
+        {
+            LOGGER.log(Level.WARNING,
+                    ("Ignoring releaseLibraryRef for library \"%s\": this ref was already "
+                            + "released. Nothing is closed, evicted or unlocked.")
+                                    .formatted(ref.getName()),
+                    new IllegalStateException("repeated release of a library ref"));
+            return;
+        }
 
-        int remaining = cacheSupport.releaseOwnership(ownership);
-        if (remaining > 0)
+        LocalCacheSupport.Released released = cacheSupport.release(ownership);
+        if (released.remaining() > 0)
         {
             LOGGER.log(Level.DEBUG,
                     "Library \"{0}\" released by one holder, {1} still open — not closing.",
-                    ref.getName(), remaining);
+                    ref.getName(), released.remaining());
             return;
         }
-        if (remaining < 0)
+        if (!released.evicted())
         {
-            if (cacheSupport.isCurrentLibrary(ownership.getUri(), ref.getLibrary()))
-            {
-                // Double release. The library is still the cached instance, so other holders may
-                // legitimately own it — closing it here is precisely the bug being fixed.
-                LOGGER.log(Level.WARNING,
-                        ("Ignoring releaseLibraryRef for library \"%s\": this ref was already "
-                                + "released. The library stays open for its remaining holders.")
-                                        .formatted(ref.getName()),
-                        new IllegalStateException("double release of a library ref"));
-                return;
-            }
-            // The cache moved on (the library was reloaded after its file changed, or its weak
-            // entry was collected and the URI re-opened). Nothing else can own THIS instance, so
-            // close it — releaseLibrary will not touch the successor's cache entry.
             LOGGER.log(Level.DEBUG,
                     "Closing superseded instance of library \"{0}\" — it is no longer cached.",
                     ref.getName());
         }
-
+        // outside the count's compute, in this order: the identity unlock, then the close
         cacheSupport.unlockLibrary(ref.getLibrary());
-        libraryLoadSupport.releaseLibrary(ref.getLibrary(), ownership.getUri());
+        ref.getLibrary().close();
     }
 
 

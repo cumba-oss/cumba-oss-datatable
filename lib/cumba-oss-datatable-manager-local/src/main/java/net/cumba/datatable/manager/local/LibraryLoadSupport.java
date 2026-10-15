@@ -156,30 +156,6 @@ class LibraryLoadSupport
         return lib;
     }
 
-
-    /**
-     * Close a library and drop its cache entry.
-     * <p>
-     * Only the LAST owner may call this — {@code LocalDataTableManager.releaseLibraryRef} does the
-     * reference counting (Q44). The cache key is passed in rather than re-derived from
-     * {@code aLibrary.getUri()}: the entry was stored under the URI the caller asked for, and a
-     * provider is free to answer a different URI from the library it produced, which would make the
-     * eviction miss. The entry is only removed if this very instance is still the cached one, so a
-     * superseded library cannot evict its successor on the way out.
-     *
-     * @param aLibrary
-     *            the library to close.
-     * @param aCacheKey
-     *            the URI the library was acquired and cached under.
-     * @throws IOException
-     *             if closing the library fails.
-     */
-    void releaseLibrary(IDataTableLibrary aLibrary, URI aCacheKey) throws IOException
-    {
-        cache.removeLibraryIfCurrent(aCacheKey, aLibrary);
-        aLibrary.close();
-    }
-
     // ------------------------------------------------------------------
     // Members
     // ------------------------------------------------------------------

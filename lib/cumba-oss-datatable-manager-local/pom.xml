@@ -43,6 +43,9 @@
         <repo.root.dir>${project.basedir}/../..</repo.root.dir>
 
         <mockito.agent>-javaagent:${org.mockito:mockito-core:jar}</mockito.agent>
+
+        <!-- the statistical library-ref concurrency harness: its outcome is timing, not logic -->
+        <pitest.excludedTestClasses>net.cumba.datatable.manager.local.LocalDataTableManagerLibraryRefConcurrencyTest</pitest.excludedTestClasses>
     </properties>
 
     <dependencies>

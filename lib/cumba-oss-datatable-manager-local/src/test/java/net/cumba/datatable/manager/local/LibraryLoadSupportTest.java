@@ -3,14 +3,11 @@ package net.cumba.datatable.manager.local;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
@@ -147,7 +144,7 @@ class LibraryLoadSupportTest
 
 
     @Test
-    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    // The library is cached by LibraryLoadSupport; the manager's last release closes it.
     @SuppressWarnings("PMD.CloseResource")
     void getLibrary_directory_loadsFolderLibrary() throws IOException
     {
@@ -159,7 +156,7 @@ class LibraryLoadSupportTest
 
 
     @Test
-    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    // The library is cached by LibraryLoadSupport; the manager's last release closes it.
     @SuppressWarnings("PMD.CloseResource")
     void getLibrary_secondCall_returnsCachedInstance() throws IOException
     {
@@ -220,56 +217,12 @@ class LibraryLoadSupportTest
     }
 
     // ------------------------------------------------------------------
-    // releaseLibrary
-    // ------------------------------------------------------------------
-
-
-    @Test
-    void releaseLibrary_evictsFromCacheAndClosesLibrary() throws IOException
-    {
-        // A mock library lets us both pin it in the cache and verify close() is called.
-        URI libUri = URI.create("file:///some-lib");
-        IDataTableLibrary lib = mock(IDataTableLibrary.class);
-        when(lib.getUri()).thenReturn(libUri);
-        long lm = cache.getLastModified(libUri);
-        cache.storeLibrary(libUri, lib, null, lm);
-        assertSame(lib, cache.lookupLibrary(libUri, lm), "precondition: library is cached");
-
-        support.releaseLibrary(lib, libUri);
-
-        // The cache entry must be gone …
-        assertNull(cache.lookupLibrary(libUri, lm),
-                "releaseLibrary must evict the library from the cache");
-        // … and the library must have been closed exactly once.
-        verify(lib).close();
-    }
-
-
-    @Test
-    void releaseLibrary_ofASupersededInstance_keepsTheSuccessorCached() throws IOException
-    {
-        URI libUri = URI.create("file:///reloaded-lib");
-        try (IDataTableLibrary old = new StubLibrary(libUri);
-                IDataTableLibrary successor = new StubLibrary(libUri))
-        {
-            cache.storeLibrary(libUri, old, null, 1L);
-            // The file changed and the uri was opened again: a new instance under the same key.
-            cache.storeLibrary(libUri, successor, null, 2L);
-
-            support.releaseLibrary(old, libUri);
-
-            assertSame(successor, cache.lookupLibrary(libUri, 2L),
-                    "releasing the superseded instance must not evict its successor");
-        }
-    }
-
-    // ------------------------------------------------------------------
     // getMetadataLibrary
     // ------------------------------------------------------------------
 
 
     @Test
-    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    // The library is cached by LibraryLoadSupport; the manager's last release closes it.
     @SuppressWarnings("PMD.CloseResource")
     void getMetadataLibrary_cachedMetadataWins() throws IOException
     {
@@ -282,7 +235,7 @@ class LibraryLoadSupportTest
 
 
     @Test
-    // The library is cached and owned by LibraryLoadSupport; releaseLibrary() closes it.
+    // The library is cached by LibraryLoadSupport; the manager's last release closes it.
     @SuppressWarnings("PMD.CloseResource")
     void getMetadataLibrary_fallsBackToAdapterWhenNothingAttached() throws IOException
     {

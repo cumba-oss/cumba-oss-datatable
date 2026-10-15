@@ -3,6 +3,7 @@ package net.cumba.datatable.manager.local;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -11,12 +12,18 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.manager.IDataTableLibraryRef;
+import net.cumba.datatable.manager.local.testsupport.ClosingLibrary;
 import net.cumba.datatable.manager.local.testsupport.LogCapture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
@@ -67,6 +74,17 @@ class LocalDataTableManagerLibraryRefCountTest
         java.lang.reflect.Field f = LocalDataTableManager.class.getDeclaredField("cacheSupport");
         f.setAccessible(true);
         return (LocalCacheSupport) f.get(manager);
+    }
+
+
+    /**
+     * Put a library into the cache under {@code aUri} with the folder's real timestamp, so
+     * {@code getLibraryRef} answers it from the cache (PACK G 17). The one line that differs from
+     * the internal twin: {@code storeLibrary} takes no validation report here.
+     */
+    private void plant(URI aUri, IDataTableLibrary aLibrary) throws Exception
+    {
+        cache().storeLibrary(aUri, aLibrary, null, cache().getLastModified(aUri));
     }
 
 
@@ -145,10 +163,10 @@ class LocalDataTableManagerLibraryRefCountTest
         assertSame(lib, libraryOf(b), "precondition: served from the cache");
 
         manager.releaseLibraryRef(a);
-        assertEquals(0, lib.closeCount, "an earlier release must not close the shared library");
+        assertEquals(0, lib.closeCount(), "an earlier release must not close the shared library");
 
         manager.releaseLibraryRef(b);
-        assertEquals(1, lib.closeCount, "the last release closes it, once");
+        assertEquals(1, lib.closeCount(), "the last release closes it, once");
         assertEquals(List.of(), openLibraries(), "and evicts it");
     }
 
@@ -217,7 +235,7 @@ class LocalDataTableManagerLibraryRefCountTest
 
         // Simulate the cache moving on: the entry is dropped (weak collection / stale timestamp)
         // and the uri is opened again, producing a NEW instance under the same key.
-        cache().removeLibrary(uri);
+        cache().removeLibrary(uri, staleLib);
         IDataTableLibraryRef fresh = manager.getLibraryRef(uri, null);
         assertEquals(1, cache().countOwners(uri),
                 "the new instance must not inherit the old instance's count");
@@ -272,7 +290,7 @@ class LocalDataTableManagerLibraryRefCountTest
 
         URI staleUri = folder("superseded", "dm.csv");
         IDataTableLibraryRef stale = manager.getLibraryRef(staleUri, null);
-        cache().removeLibrary(staleUri);
+        cache().removeLibrary(staleUri, libraryOf(stale));
         IDataTableLibraryRef fresh = manager.getLibraryRef(staleUri, null);
         try (LogCapture log = LogCapture.of(LocalDataTableManager.class))
         {
@@ -282,57 +300,207 @@ class LocalDataTableManagerLibraryRefCountTest
         }
         manager.releaseLibraryRef(fresh);
     }
-
     // ------------------------------------------------------------------
-    // Fixtures
+    // PACK G 17: owner sets per loaded instance, a refused second release, the release/open race
     // ------------------------------------------------------------------
 
-    /** A library that counts its {@code close()} calls; nothing else about it is used. */
-    private static final class ClosingLibrary implements IDataTableLibrary
+
+    private static IDataTableLibrary heldLibrary(IDataTableLibraryRef aRef)
     {
+        return ((LocalDataTableLibraryRef) aRef).getLibrary();
+    }
 
-        private final URI uri;
 
-        private int closeCount;
+    /**
+     * MED: two holders of an instance that is then superseded under its URI. The first holder's
+     * release must neither close the instance under the second holder nor drop the successor's
+     * memory lock; the instance closes at its own last release, and the successor is untouched.
+     */
+    @Test
+    // The ClosingLibrary doubles are closed by the code under test; counting those closes is
+    // the point.
+    @SuppressWarnings("PMD.CloseResource")
+    void aSupersededLibraryStaysOpenForItsOtherHolder() throws Exception
+    {
+        URI uri = folder("superseded", "dm.csv");
+        ClosingLibrary first = new ClosingLibrary(uri);
+        plant(uri, first);
+        IDataTableLibraryRef a = manager.getLibraryRef(uri, null);
+        IDataTableLibraryRef b = manager.getLibraryRef(uri, null);
+        assertSame(first, heldLibrary(a), "precondition: A holds the planted instance");
+        assertSame(first, heldLibrary(b), "precondition: B holds the planted instance");
 
-        ClosingLibrary(URI aUri)
+        // the reload: a new instance takes over the URI
+        ClosingLibrary second = new ClosingLibrary(uri);
+        assertEquals(first.getUri(), second.getUri(), "precondition: one memory-lock key");
+        plant(uri, second);
+        IDataTableLibraryRef c = manager.getLibraryRef(uri, null);
+        assertSame(second, heldLibrary(c), "precondition: C holds the successor");
+        cache().lockLibrary(second, List.of());
+
+        manager.releaseLibraryRef(a);
+        assertEquals(0, first.closeCount(), "B still holds the superseded instance");
+        assertTrue(cache().isLocked(second), "A's release must not drop C's lock on the successor");
+
+        manager.releaseLibraryRef(b);
+        assertEquals(1, first.closeCount(), "the superseded instance closes at its last release");
+        assertEquals(0, second.closeCount(), "the successor is untouched");
+        assertTrue(cache().isLocked(second), "B's last release leaves C's lock alone");
+        assertEquals(List.of(second), cache().streamLibraries().toList(),
+                "the superseded instance's last release evicts nothing");
+        assertEquals(1, cache().countOwners(uri), "C still counts on the successor");
+
+        manager.releaseLibraryRef(c);
+        assertEquals(1, second.closeCount());
+        assertEquals(1, first.closeCount(), "closed exactly once");
+    }
+
+
+    /**
+     * MED through the real stale path: the folder's timestamp moves, the next open finds the cached
+     * instance stale ({@code lookupLibrary}'s stale branch) and reloads the folder.
+     */
+    @Test
+    // The ClosingLibrary doubles are closed by the code under test; counting those closes is
+    // the point.
+    @SuppressWarnings("PMD.CloseResource")
+    void aSupersededLibraryStaysOpenForItsOtherHolder_whenTheFolderChanged() throws Exception
+    {
+        URI uri = folder("reloaded", "dm.csv");
+        ClosingLibrary first = new ClosingLibrary(uri);
+        plant(uri, first);
+        IDataTableLibraryRef a = manager.getLibraryRef(uri, null);
+        IDataTableLibraryRef b = manager.getLibraryRef(uri, null);
+        assertSame(first, heldLibrary(a), "precondition: A holds the planted instance");
+
+        Path dir = Path.of(uri);
+        Files.setLastModifiedTime(dir,
+                FileTime.fromMillis(Files.getLastModifiedTime(dir).toMillis() + 10_000));
+        IDataTableLibraryRef c = manager.getLibraryRef(uri, null);
+        // Owned by the manager; releaseLibraryRef() releases it.
+        @SuppressWarnings("PMD.CloseResource")
+        IDataTableLibrary reloaded = heldLibrary(c);
+        assertNotSame(first, reloaded, "precondition: the moved timestamp reloaded the folder");
+        assertEquals(first.getUri(), reloaded.getUri(), "precondition: one memory-lock key");
+        cache().lockLibrary(reloaded, List.of());
+
+        manager.releaseLibraryRef(a);
+        assertEquals(0, first.closeCount(), "B still holds the superseded instance");
+        assertTrue(cache().isLocked(reloaded), "A's release must not drop C's lock");
+
+        manager.releaseLibraryRef(b);
+        assertEquals(1, first.closeCount(), "the superseded instance closes at its last release");
+        assertTrue(cache().isLocked(reloaded), "B's last release leaves C's lock alone");
+        assertEquals(List.of(reloaded), cache().streamLibraries().toList());
+        manager.releaseLibraryRef(c);
+    }
+
+
+    /**
+     * F1: a ref released again after its release closed and evicted the library. The repeat is
+     * refused with the WARNING the contract demands; it closes nothing and leaves the memory lock
+     * of the library re-opened under that URI since.
+     */
+    @Test
+    // The ClosingLibrary doubles are closed by the code under test; counting those closes is
+    // the point.
+    @SuppressWarnings("PMD.CloseResource")
+    void aSecondReleaseAfterEvictionIsRefused_andTouchesNoSuccessor() throws Exception
+    {
+        URI uri = folder("evicted", "dm.csv");
+        ClosingLibrary first = new ClosingLibrary(uri);
+        plant(uri, first);
+        IDataTableLibraryRef a = manager.getLibraryRef(uri, null);
+        assertSame(first, heldLibrary(a), "precondition: A holds the planted instance");
+        manager.releaseLibraryRef(a);
+        assertEquals(1, first.closeCount(), "the sole holder's release closes it");
+        assertEquals(List.of(), cache().streamLibraries().toList(), "and evicts it");
+
+        IDataTableLibraryRef c = manager.getLibraryRef(uri, null);
+        // Owned by the manager; releaseLibraryRef() releases it.
+        @SuppressWarnings("PMD.CloseResource")
+        IDataTableLibrary reopened = heldLibrary(c);
+        assertNotSame(first, reopened, "precondition: the URI was opened again");
+        assertEquals(first.getUri(), reopened.getUri(), "precondition: one memory-lock key");
+        cache().lockLibrary(reopened, List.of());
+
+        try (LogCapture log = LogCapture.of(LocalDataTableManager.class))
         {
-            uri = aUri;
+            manager.releaseLibraryRef(a);
+            assertTrue(log.anyMessageContains("this ref was already released"),
+                    log.records().toString());
         }
+        assertEquals(1, first.closeCount(), "a repeated release closes nothing");
+        assertTrue(cache().isLocked(reopened), "and leaves the re-opened library's lock");
+        assertEquals(1, cache().countOwners(uri), "and takes no count from C");
+        manager.releaseLibraryRef(c);
+    }
 
 
-        @Override
-        public String getName()
+    /**
+     * F3 (c): the last holder's release and a concurrent open of the same URI. The releaser parks
+     * where the manager reads the released library's URI; the open runs to completion inside that
+     * window. Whatever the opener got, it must not be closed under it, and its count must survive.
+     */
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    // The ClosingLibrary doubles are closed by the code under test; counting those closes is
+    // the point.
+    @SuppressWarnings("PMD.CloseResource")
+    void aReleaseToZeroAndAConcurrentOpen_neverCloseTheOpenersLibrary() throws Exception
+    {
+        URI uri = folder("race", "dm.csv");
+        ClosingLibrary lib = new ClosingLibrary(uri);
+        plant(uri, lib);
+        IDataTableLibraryRef a = manager.getLibraryRef(uri, null);
+        assertSame(lib, heldLibrary(a), "precondition: A holds the planted instance");
+
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        AtomicReference<IDataTableLibraryRef> opened = new AtomicReference<>();
+        Thread releaser = new Thread(() ->
         {
-            return "closing";
-        }
+            try
+            {
+                manager.releaseLibraryRef(a);
+            }
+            catch (Exception | Error ex)
+            {
+                failure.set(ex);
+            }
+        }, "g17-releaser");
+        lib.latchGetUri(releaser);
+        releaser.start();
+        assertTrue(lib.awaitParked(), "the releaser must reach the window");
 
-
-        @Override
-        public String getLabel()
+        Thread opener = new Thread(() ->
         {
-            return "closing";
-        }
+            try
+            {
+                opened.set(manager.getLibraryRef(uri, null));
+            }
+            catch (Exception | Error ex)
+            {
+                failure.set(ex);
+            }
+        }, "g17-opener");
+        opener.start();
+        opener.join(5_000);
+        assertFalse(opener.isAlive(), "the open must complete while the releaser is parked");
 
+        lib.resume();
+        releaser.join(5_000);
+        assertFalse(releaser.isAlive(), "the release must complete once resumed");
+        assertNull(failure.get(), () -> String.valueOf(failure.get()));
 
-        @Override
-        public URI getUri()
-        {
-            return uri;
-        }
-
-
-        @Override
-        public String getType()
-        {
-            return "closing";
-        }
-
-
-        @Override
-        public void close()
-        {
-            closeCount++;
-        }
+        IDataTableLibraryRef got = opened.get();
+        // Owned by the manager; releaseLibraryRef() releases it.
+        @SuppressWarnings("PMD.CloseResource")
+        IDataTableLibrary held = heldLibrary(got);
+        assertTrue(held != lib || lib.closeCount() == 0,
+                "the opener must not hold a library its open raced into closing");
+        assertEquals(1, cache().countOwners(uri), "the opener's count survives the release");
+        manager.releaseLibraryRef(got);
+        assertEquals(0, cache().countOwners(uri));
+        assertEquals(1, lib.closeCount(), "the released instance is closed exactly once");
     }
 }

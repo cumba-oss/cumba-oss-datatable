@@ -1,10 +1,13 @@
 package net.cumba.datatable.manager.local;
 
 import java.io.File;
+import java.io.IOException;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.lang.ref.WeakReference;
 import java.net.URI;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -36,13 +39,21 @@ class LocalCacheSupport
     private final Map<URI, MemoryLock> memoryLocks = new ConcurrentHashMap<>();
 
     /**
-     * Live acquisitions per cached library URI (Q44). One entry per {@code getLibraryRef(URI, ...)}
-     * call that has not been released yet; the library is closed and evicted only when the last one
-     * goes away. The sets are identity sets ({@link LocalDataTableLibraryRef.Ownership} does not
-     * override {@code equals}), so a release matches exactly the acquisition it came from.
+     * The reference-count index (Q44, PACK G 17): a cache key maps to the owner set of the library
+     * instance CURRENTLY cached under it. The count is kept per loaded instance, not per key: a
+     * reload under the same key attaches a new {@link InstanceOwners} and only detaches the
+     * previous one, whose holders keep counting it down and close it at their own last release.
+     * <p>
+     * Every mutation of a key's owner state - the acquire's add, the release's remove, retiring at
+     * zero, the evict, the store's attach and detach, the remove's detach - runs inside
+     * {@code libraryOwners.compute(key, ...)}. Lock order: a {@code libraryOwners} key first, then
+     * {@link #libraryCache} / {@link #memoryLocks}; never the reverse, never a second
+     * {@code libraryOwners} call from inside its own compute, and never a call into a library (no
+     * I/O, no {@code close()}, not even {@code getUri()}) inside one. A key's {@code libraryCache}
+     * entry is installed or removed only inside that compute too (invariant I7), so the index and
+     * the cache never disagree about which instance a key holds.
      */
-    private final Map<URI, Set<LocalDataTableLibraryRef.Ownership>> libraryOwners = //
-            new ConcurrentHashMap<>();
+    private final Map<URI, InstanceOwners> libraryOwners = new ConcurrentHashMap<>();
 
     /**
      * Returns the last-modified timestamp of the given URI, or {@code -1} if unknown or not a file
@@ -149,45 +160,72 @@ class LocalCacheSupport
         {
             return entry.getLibrary();
         }
-        removeLibrary(aUri);
+        // only the instance this lookup read: another thread may have replaced it meanwhile
+        removeLibrary(aUri, entry.getLibrary());
         return null;
     }
 
 
     /**
-     * Store a freshly-loaded library in the cache. {@code aMetadata} may be {@code null}.
+     * Store a freshly-loaded library in the cache under {@code aUri}, with a new, empty owner set
+     * ({@link InstanceOwners}). {@code aMetadata} may be {@code null}.
+     * <p>
+     * The cache key is the URI the caller asked for, not {@code aLibrary.getUri()}: a provider is
+     * free to answer a different URI from the library it produced, and the release must find the
+     * entry under the key it was acquired with. The memory-lock key, by contrast, IS
+     * {@code aLibrary.getUri()} ({@link #lockLibrary}); it is read here, before the compute, and
+     * kept in the owner set, so no library call ever runs inside a compute.
+     * <p>
+     * The previous instance under the key is detached, never emptied: its holders keep counting it
+     * down and close it at their own last release. A previous instance nobody ever joined is closed
+     * here, once, as it leaves the cache. Re-storing the instance already cached keeps its owner
+     * set.
      */
     void storeLibrary(URI aUri, IDataTableLibrary aLibrary, @Nullable IMetadataLibrary aMetadata,
             long aLastModified)
     {
         cleanCache();
-        // A brand new instance takes over this key, so any acquisition still registered here
-        // belongs to a library that is no longer the cached one. Dropping them is what keeps the
-        // count honest when a weakly-cached entry was collected without ever being released —
-        // otherwise the stale acquisitions would be added to the new instance's count and it
-        // could never reach zero again (i.e. never be closed).
-        libraryOwners.remove(aUri);
-        LibraryCacheEntry entry = LibraryCacheEntry.builder()//
-                .uri(aUri)//
-                .library(aLibrary)//
-                .metadata(aMetadata)//
-                .libraryLastModified(aLastModified)//
-                .build();
-        libraryCache.put(aUri, entry.getWeak());
+        URI lockKey = aLibrary.getUri();
+        InstanceOwners[] unjoined = new InstanceOwners[1];
+        libraryOwners.compute(aUri, (_, indexed) ->
+        {
+            // everything that can throw first; the cache put last (I7: a throw leaves both maps
+            // as they were)
+            LibraryCacheEntry entry = LibraryCacheEntry.builder()//
+                    .uri(aUri)//
+                    .library(aLibrary)//
+                    .metadata(aMetadata)//
+                    .libraryLastModified(aLastModified)//
+                    .build();
+            InstanceOwners owners;
+            if (indexed != null && indexed.isOf(aLibrary))
+            {
+                owners = indexed;
+            }
+            else
+            {
+                owners = new InstanceOwners(aLibrary, lockKey);
+                if (indexed != null && indexed.retireIfUnjoined())
+                {
+                    dropLockOf(indexed);
+                    unjoined[0] = indexed;
+                }
+            }
+            libraryCache.put(aUri, entry.getWeak());
+            return owners;
+        });
+        closeUnjoined(unjoined[0]);
     }
 
 
     /**
-     * Retrieve the cached metadata for the given library, or {@code null} if none is attached.
+     * Retrieve the cached metadata for the given library, or {@code null} if none is attached - or
+     * if its URI now holds another instance (T11).
      */
     @Nullable
     IMetadataLibrary lookupMetadata(@Nullable IDataTableLibrary aLibrary)
     {
-        if (aLibrary == null)
-        {
-            return null;
-        }
-        LibraryCacheEntry entry = getLibraryEntry(aLibrary.getUri());
+        LibraryCacheEntry entry = getEntryOf(aLibrary);
         return entry != null ? entry.getMetadata() : null;
     }
 
@@ -207,8 +245,8 @@ class LocalCacheSupport
 
 
     /**
-     * Attach (or replace) metadata on an already-cached library. No-op if the library is not
-     * cached.
+     * Attach (or replace) metadata on an already-cached library. No-op if the library is not the
+     * instance cached under its URI (not cached, or superseded: T11).
      */
     void updateMetadata(@Nullable IDataTableLibrary aLibrary, @Nullable IMetadataLibrary aMetadata)
     {
@@ -216,125 +254,261 @@ class LocalCacheSupport
         {
             return;
         }
-        LibraryCacheEntry entry = getLibraryEntry(aLibrary.getUri());
-        if (entry != null)
+        // compute(): the read-modify-write must be atomic, or a concurrent updateReport /
+        // storeReportTable on the same library writes back ITS detached snapshot and silently
+        // drops this metadata (F-mlocal review 2026-09-14, finding 12).
+        libraryCache.computeIfPresent(aLibrary.getUri(), (_, w) ->
         {
+            LibraryCacheEntry entry = w.getStrong();
+            if (entry == null || entry.getLibrary() != aLibrary)
+            {
+                return w;
+            }
             entry.setMetadata(aMetadata);
-            libraryCache.put(entry.getUri(), entry.getWeak());
-        }
+            return entry.getWeak();
+        });
     }
 
 
     /**
-     * Remove a library entry from the cache.
-     */
-    void removeLibrary(URI aUri)
-    {
-        libraryCache.remove(aUri);
-        memoryLocks.remove(aUri);
-        libraryOwners.remove(aUri);
-        cleanCache();
-    }
-
-
-    /**
-     * Remove the library entry for {@code aUri}, but only if {@code aLibrary} is still the instance
-     * cached under that key. A library that was superseded (reloaded after its file changed, or
-     * re-opened after its weak entry was collected) must not evict its successor when its last
-     * owner finally releases it.
+     * Remove {@code aExpected}'s entry from the cache - only if the key still holds that very
+     * instance (a lookup that found it stale must not remove a successor another thread stored
+     * meanwhile). Its memory lock goes with it (by the lock key captured at store time, and only if
+     * the lock is this instance's), and its owner set is detached from the index.
+     * <p>
+     * The detach is not load-bearing for the count: a detached set is reached only through its own
+     * tokens, and the next {@link #storeLibrary} would replace the index entry anyway. It keeps the
+     * index equal to the cache after an eviction, which is what lets the last release tell an
+     * evicted instance from a superseded one. An instance nobody ever joined is closed here, once.
      *
      * @param aUri
-     *            the key the library was acquired under.
-     * @param aLibrary
-     *            the instance being released.
-     * @return {@code true} if the entry was removed, {@code false} if a different instance now
-     *         holds the key.
+     *            the cache key.
+     * @param aExpected
+     *            the instance to remove.
      */
-    boolean removeLibraryIfCurrent(URI aUri, IDataTableLibrary aLibrary)
+    void removeLibrary(URI aUri, IDataTableLibrary aExpected)
     {
-        if (!isCurrentLibrary(aUri, aLibrary))
+        InstanceOwners[] unjoined = new InstanceOwners[1];
+        libraryOwners.compute(aUri, (_, indexed) ->
         {
-            return false;
-        }
-        removeLibrary(aUri);
-        return true;
-    }
-
-
-    /**
-     * Whether {@code aLibrary} is still the instance cached under {@code aUri}. A key with no live
-     * entry answers {@code false} — nothing is current there any more.
-     */
-    boolean isCurrentLibrary(URI aUri, IDataTableLibrary aLibrary)
-    {
-        LibraryCacheEntry entry = getLibraryEntry(aUri);
-        return entry != null && entry.getLibrary() == aLibrary;
+            LibraryCacheEntry entry = getLibraryEntry(aUri);
+            if (entry == null || entry.getLibrary() != aExpected)
+            {
+                return indexed;
+            }
+            libraryCache.remove(aUri);
+            if (indexed == null || !indexed.isOf(aExpected))
+            {
+                return indexed;
+            }
+            dropLockOf(indexed);
+            if (indexed.retireIfUnjoined())
+            {
+                unjoined[0] = indexed;
+            }
+            return null;
+        });
+        cleanCache();
+        closeUnjoined(unjoined[0]);
     }
 
     // ------------------------------------------------------------------
-    // Library reference counting (Q44)
+    // Library reference counting (Q44, PACK G 17)
     // ------------------------------------------------------------------
 
 
     /**
-     * Register one acquisition of the library cached under {@code aUri} and return its token. The
-     * token is what {@link #releaseOwnership(LocalDataTableLibraryRef.Ownership)} matches against,
-     * so it must be handed to the ref the caller receives.
+     * Register one acquisition of {@code aLibrary} under {@code aUri} - only while that very
+     * instance is the one cached there and its owner set has not been retired. The add happens
+     * inside the same compute as the check, so a concurrent last release can neither retire the set
+     * between them nor lose the new token.
      *
      * @param aUri
      *            the key the library is cached under.
-     * @return the token identifying this acquisition; never {@code null}.
+     * @param aLibrary
+     *            the instance the caller looked up or stored.
+     * @return the token identifying this acquisition, or {@code null} when the key no longer holds
+     *         a live {@code aLibrary} (superseded, evicted or retired since the caller found it):
+     *         the caller looks up again.
      */
-    LocalDataTableLibraryRef.Ownership acquireLibrary(URI aUri)
+    LocalDataTableLibraryRef.@Nullable Ownership acquireIfCurrent(URI aUri,
+            IDataTableLibrary aLibrary)
     {
-        LocalDataTableLibraryRef.Ownership ownership = new LocalDataTableLibraryRef.Ownership(aUri);
-        libraryOwners.computeIfAbsent(aUri, _ -> ConcurrentHashMap.newKeySet()).add(ownership);
-        return ownership;
+        LocalDataTableLibraryRef.Ownership[] minted = new LocalDataTableLibraryRef.Ownership[1];
+        libraryOwners.computeIfPresent(aUri, (_, indexed) ->
+        {
+            if (indexed.isOf(aLibrary) && !indexed.retired)
+            {
+                LocalDataTableLibraryRef.Ownership token = new LocalDataTableLibraryRef.Ownership(
+                        aUri, indexed);
+                indexed.owners.add(token);
+                minted[0] = token;
+            }
+            return indexed;
+        });
+        return minted[0];
     }
 
 
     /**
-     * Give back one acquisition.
+     * Give back one acquisition: remove the token from its OWN instance's owner set. At zero the
+     * set is retired (never joined again), and if the index still holds it the cache entry is
+     * evicted and the set detached - in the same compute, so no open can join the instance in
+     * between. No unlock and no close here: the caller does both after this returns, in that order.
      *
      * @param aOwnership
-     *            the token handed out by {@link #acquireLibrary(URI)}.
-     * @return the number of acquisitions still outstanding for that key, or {@code -1} when this
-     *         token was not registered (any more) — a double release, or a token whose library has
-     *         since been superseded in the cache. {@code -1} is deliberately distinguishable from
-     *         {@code 0}: the caller must report it rather than treat it as the last release.
+     *            a token not released before
+     *            ({@link LocalDataTableLibraryRef.Ownership#markReleased()} guards that).
+     * @return how many holders the instance still has, and whether this release evicted it.
+     * @throws IllegalStateException
+     *             if the token is not in its own set - unreachable while every token is released at
+     *             most once, so a breach is a bug.
      */
-    int releaseOwnership(LocalDataTableLibraryRef.Ownership aOwnership)
+    Released release(LocalDataTableLibraryRef.Ownership aOwnership)
     {
-        int[] remaining =
+        InstanceOwners mine = aOwnership.getOwners();
+        Released[] result = new Released[1];
+        libraryOwners.compute(aOwnership.getUri(), (k, indexed) ->
         {
-                -1
-        };
-        libraryOwners.computeIfPresent(aOwnership.getUri(), (_, owners) ->
-        {
-            if (!owners.remove(aOwnership))
+            if (!mine.owners.remove(aOwnership))
             {
-                return owners;
+                throw new IllegalStateException(
+                        "library ref token is not in its own owner set (released twice?)");
             }
-            remaining[0] = owners.size();
-            return owners.isEmpty() ? null : owners;
+            int remaining = mine.owners.size();
+            if (remaining > 0)
+            {
+                result[0] = new Released(remaining, false);
+                return indexed;
+            }
+            mine.retired = true;
+            if (indexed != mine)
+            {
+                result[0] = new Released(0, false);
+                return indexed;
+            }
+            libraryCache.remove(k);
+            result[0] = new Released(0, true);
+            return null;
         });
-        return remaining[0];
+        return result[0];
     }
 
+    /**
+     * What a {@link #release} did.
+     *
+     * @param remaining
+     *            holders the instance still has.
+     * @param evicted
+     *            whether the release took the instance out of the cache (it was still the cached
+     *            one); {@code false} at zero means it had been superseded.
+     */
+    record Released(int remaining, boolean evicted)
+    {
+    }
 
     /**
-     * The number of outstanding acquisitions for a key. Diagnostics and tests only.
+     * The number of outstanding acquisitions of the instance currently indexed under a key, read
+     * inside the key's compute (the set is not thread-safe outside it). Diagnostics and tests only.
      */
     int countOwners(URI aUri)
     {
-        Set<LocalDataTableLibraryRef.Ownership> owners = libraryOwners.get(aUri);
-        return owners != null ? owners.size() : 0;
+        int[] count = new int[1];
+        libraryOwners.computeIfPresent(aUri, (_, indexed) ->
+        {
+            count[0] = indexed.owners.size();
+            return indexed;
+        });
+        return count[0];
+    }
+
+
+    /** Drop the memory lock of the set's instance, if the lock is that instance's (in-compute). */
+    private void dropLockOf(InstanceOwners aOwners)
+    {
+        URI key = aOwners.lockKey;
+        // Identity only: the instance belongs to its holders (or is closed by closeUnjoined).
+        @SuppressWarnings("PMD.CloseResource")
+        IDataTableLibrary instance = aOwners.instance.get();
+        if (key != null && instance != null)
+        {
+            memoryLocks.computeIfPresent(key,
+                    (_, lock) -> lock.library() == instance ? null : lock);
+        }
+    }
+
+
+    /** Close an instance that left the cache without ever being joined (outside any compute). */
+    private static void closeUnjoined(@Nullable InstanceOwners aOwners)
+    {
+        // Closed right below; a failing close is logged, never thrown into the load.
+        @SuppressWarnings("PMD.CloseResource")
+        IDataTableLibrary lib = aOwners != null ? aOwners.instance.get() : null;
+        if (lib == null)
+        {
+            return;
+        }
+        try
+        {
+            lib.close();
+        }
+        catch (IOException | RuntimeException ex)
+        {
+            LOGGER.log(Level.WARNING, "Closing the unused library \"" + lib.getName()
+                    + "\" as it left the cache failed: " + ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * The live acquisitions of ONE loaded library instance - not of a URI (PACK G 17). The token of
+     * each acquisition points at its own set, so a release always counts down the instance it
+     * acquired, whatever the index holds by then. Mutated only inside {@code libraryOwners.compute}
+     * of the key it was created under.
+     */
+    static final class InstanceOwners
+    {
+
+        /** Identity only: the cache holds libraries weakly, the index must not pin them. */
+        private final WeakReference<IDataTableLibrary> instance;
+
+        /** {@code library.getUri()}, the memory-lock key, read before the store compute. */
+        private final @Nullable URI lockKey;
+
+        /** Identity set: a token matches only the acquisition it came from. */
+        private final Set<LocalDataTableLibraryRef.Ownership> owners = Collections
+                .newSetFromMap(new IdentityHashMap<>());
+
+        /** Reached zero (or left the cache unjoined): closed, never joined again. */
+        private boolean retired;
+
+        InstanceOwners(IDataTableLibrary aInstance, @Nullable URI aLockKey)
+        {
+            instance = new WeakReference<>(aInstance);
+            lockKey = aLockKey;
+        }
+
+
+        boolean isOf(IDataTableLibrary aLibrary)
+        {
+            return instance.get() == aLibrary;
+        }
+
+
+        /** Retire a set nobody joined; {@code true} if this call retired it. */
+        boolean retireIfUnjoined()
+        {
+            if (retired || !owners.isEmpty())
+            {
+                return false;
+            }
+            retired = true;
+            return true;
+        }
     }
 
     // ------------------------------------------------------------------
     // Memory lock
     // ------------------------------------------------------------------
-
 
     /**
      * Lock a library and its eagerly-loaded tables in memory by holding strong references.
@@ -350,15 +524,22 @@ class LocalCacheSupport
 
 
     /**
-     * Remove the memory lock for a library. No-op if the library is not locked.
+     * Remove the memory lock of this very library. No-op if it is not locked - including when
+     * another instance under the same URI holds the lock (a superseded holder must not unlock its
+     * successor).
      */
     void unlockLibrary(@Nullable IDataTableLibrary aLibrary)
     {
-        if (aLibrary == null || aLibrary.getUri() == null)
+        if (aLibrary == null)
         {
             return;
         }
-        memoryLocks.remove(aLibrary.getUri());
+        URI key = aLibrary.getUri();
+        if (key == null)
+        {
+            return;
+        }
+        memoryLocks.computeIfPresent(key, (_, lock) -> lock.library() == aLibrary ? null : lock);
     }
 
 
@@ -411,6 +592,22 @@ class LocalCacheSupport
         }
         LibraryCacheEntryWeak w = libraryCache.get(aUri);
         return w != null ? w.getStrong() : null;
+    }
+
+
+    /**
+     * The cached entry of this very library, or {@code null} - also when its URI holds another
+     * instance (PACK G 17, T11): a holder of a superseded instance must neither read the
+     * successor's metadata, report or report tables nor attach its own to the successor.
+     */
+    private @Nullable LibraryCacheEntry getEntryOf(@Nullable IDataTableLibrary aLibrary)
+    {
+        if (aLibrary == null)
+        {
+            return null;
+        }
+        LibraryCacheEntry entry = getLibraryEntry(aLibrary.getUri());
+        return entry != null && entry.getLibrary() == aLibrary ? entry : null;
     }
 
 

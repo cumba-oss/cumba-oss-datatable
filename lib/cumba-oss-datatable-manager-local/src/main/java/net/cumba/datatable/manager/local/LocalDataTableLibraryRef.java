@@ -1,6 +1,7 @@
 package net.cumba.datatable.manager.local;
 
 import java.net.URI;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,8 +24,9 @@ import org.jspecify.annotations.Nullable;
  * {@link LocalDataTableManager#getLibraryRef(URI, net.cumba.datatable.io.FileInfo)}, the one and
  * only door that loads and caches a library. Such a ref carries an {@link Ownership} token, i.e. it
  * holds one reference count on the cached library, and its holder is expected to hand it back to
- * {@link LocalDataTableManager#releaseLibraryRef(IDataTableLibraryRef)} exactly once. The library
- * is closed and evicted when the LAST owning ref is released.</li>
+ * {@link LocalDataTableManager#releaseLibraryRef(IDataTableLibraryRef)} exactly once. The instance
+ * is closed when the LAST owning ref on it is released (and evicted, if it is still the cached
+ * one).</li>
  * <li><b>Borrowed</b> — every other ref: one built directly through this class's builder or
  * constructor, and the doors this manager does not expose (a library derived from one of its
  * members, an enumeration of the open libraries, a reference-library lookup). These are views onto
@@ -100,33 +102,61 @@ public class LocalDataTableLibraryRef implements IDataTableLibraryRef
     }
 
     /**
-     * One acquisition of one cached library, identified by object identity.
+     * One acquisition of one loaded library instance, identified by object identity.
      * <p>
-     * Identity — rather than a plain counter — is what makes release exact: releasing the same ref
-     * twice removes the token once and is then detectably unmatched, instead of silently
-     * decrementing a count that belongs to somebody else. The token also carries the URI the
-     * library was acquired (and cached) under, so release keys the cache by the SAME key the
-     * acquisition used rather than by {@code library.getUri()}, which a provider is free to answer
-     * differently.
+     * Identity - rather than a plain counter - is what makes release exact: a release removes
+     * exactly this token from the owner set of the instance it was acquired on, never a count that
+     * belongs to somebody else. The token points at that instance's own set, so a release counts
+     * the right instance down even after a reload put a successor under the same URI. It also
+     * carries the URI the library was acquired (and cached) under, so the release keys the cache by
+     * the SAME key the acquisition used rather than by {@code library.getUri()}, which a provider
+     * is free to answer differently.
+     * <p>
+     * A token is released at most once: {@link #markReleased()} flips its flag on the first
+     * release, and every later release of the same token is refused (and reported) before it can
+     * count, close, evict or unlock anything.
      * <p>
      * The constructor is package-private on purpose: only {@link LocalCacheSupport} mints tokens,
-     * so an owning ref cannot be forged from outside this package even though the builder property
-     * is public.
+     * so a token cannot be minted outside this package even though the builder property is public.
+     * An existing token can be copied into another ref; the copy shares its released flag, so
+     * releasing the copy is refused as a repeat.
      */
     public static final class Ownership
     {
 
         private final URI uri;
 
-        Ownership(URI aUri)
+        private final LocalCacheSupport.InstanceOwners owners;
+
+        private final AtomicBoolean released = new AtomicBoolean();
+
+        Ownership(URI aUri, LocalCacheSupport.InstanceOwners aOwners)
         {
             uri = aUri;
+            owners = aOwners;
         }
 
 
         URI getUri()
         {
             return uri;
+        }
+
+
+        LocalCacheSupport.InstanceOwners getOwners()
+        {
+            return owners;
+        }
+
+
+        /**
+         * Mark this acquisition released.
+         *
+         * @return {@code true} on the first call only; {@code false} for a repeated release.
+         */
+        boolean markReleased()
+        {
+            return released.compareAndSet(false, true);
         }
     }
 }
