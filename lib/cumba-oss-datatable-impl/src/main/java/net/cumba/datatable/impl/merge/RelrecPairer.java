@@ -24,6 +24,7 @@ import net.cumba.datatable.merge.DatasetResolver;
 import net.cumba.datatable.merge.JoinToken;
 import net.cumba.datatable.merge.RelrecLinks;
 import net.cumba.datatable.merge.RelrecLinks.Link;
+import net.cumba.datatable.merge.RelrecLinks.SubjectId;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -44,6 +45,12 @@ import org.jspecify.annotations.Nullable;
  * <ul>
  * <li><b>Record-level link</b> (both {@code IDVARVAL}s present): each side filtered by
  * {@code IDVAR == IDVARVAL} within the RELREC row's subject, joined on {@code STUDYID}.</li>
+ * <li><b>The subject is every identifier the RELREC row populates</b> ({@link Link#srcIdentity()},
+ * {@link RelrecLinks#SUBJECT_COLUMNS}: {@code USUBJID}, {@code APID}, {@code POOLID},
+ * {@code SPDEVID}; owner ruling G7-R1 (a)): each side is probed on the columns its own row names,
+ * so an associated person's records are found by {@code APID}, a device's by {@code SPDEVID}, a
+ * device record of a subject by both {@code USUBJID} and {@code SPDEVID}. A row populating none
+ * joins within the subject ({@code USUBJID}).</li>
  * <li><b>The link value compares by the {@code IDVAR} column's type</b> on each side
  * ({@link JoinToken#normalize}, as the SUPP and Child pointers do, §3.5.2): a numeric column
  * canonicalises ({@code 01}, {@code 1.0} are {@code 1}), a character column compares the stripped
@@ -53,7 +60,8 @@ import org.jspecify.annotations.Nullable;
  * domain that is not supplied (P-1), flagged, or whose record is missing (a dangling link) never
  * empties the record: under {@code inner} it keeps one row with that domain not supplied (T2 review
  * L3).</li>
- * <li><b>Dataset-level link</b>: equi-join on {@code (STUDYID, USUBJID, IDVAR-cell)}.</li>
+ * <li><b>Dataset-level link</b>: equi-join on {@code (STUDYID, USUBJID, IDVAR-cell)} (a link whose
+ * row names a subject takes the full scan, filtered to it).</li>
  * <li><b>{@code STUDYID} is part of the link identity</b> ({@code PLAN-relrec-studyid-link}):
  * {@code keyCell(primary.STUDYID) == keyCell(related.STUDYID)} on every path, and when the RELREC
  * row names a study both rows are in <i>that</i> study. A blank RELREC {@code STUDYID} names no
@@ -61,9 +69,11 @@ import org.jspecify.annotations.Nullable;
  * <li><b>SEND</b> (OD-3): a link's subject is {@code USUBJID} or {@code POOLID}, each side probed
  * on the column it names, so a relationship may span subjects and pools; pool records never take
  * part in dataset-level relationships.</li>
- * <li>A related domain lacking the column RELREC names (or the primary lacking the column the
- * RELREC row names for it) is reported as a {@link DomainIssue} — the merge flags that domain's
- * columns (OD-7) — and those links pair nothing. Before W1 this was a silent "no pairs".</li>
+ * <li>A related domain lacking the {@code IDVAR} column or a subject identifier column RELREC names
+ * (or the primary lacking the one the RELREC row names for it) is reported as a {@link DomainIssue}
+ * — the merge flags that domain's columns (OD-7) — and those links pair nothing. Before W1 a
+ * missing {@code IDVAR} column, and before G7-R1 a missing subject column, was a silent "no
+ * pairs".</li>
  * <li>A related domain whose links mix record- and dataset-level joins pairs nothing — only one
  * join shape is supported per {@code (primaryDomain, RDOMAIN)} pair — and is reported as a
  * {@link DomainIssue} (the merge flags its columns, OD-7; W1 review L4: before, an INFO log was the
@@ -78,8 +88,6 @@ final class RelrecPairer
     private static final String STUDYID = "STUDYID";
 
     private static final String USUBJID = "USUBJID";
-
-    private static final String POOLID = "POOLID";
 
     /**
      * One matched pair.
@@ -234,14 +242,13 @@ final class RelrecPairer
             return;
         }
         boolean scan = aLink.recordLevel()
-                ? !RelrecLinks.isNonBlank(aLink.srcSubject())
-                        || !aPrimaryIndex.hasSubject(aLink.srcPooled())
-                : RelrecLinks.isNonBlank(aLink.srcSubject());
+                ? aLink.srcIdentity().isEmpty() || !aPrimaryIndex.hasSubject(aLink.srcIdentity())
+                : !aLink.srcIdentity().isEmpty();
         if (scan)
         {
             int pStudyIdx = pm.getColumnIndex(STUDYID);
-            int pSubjIdx = pm.getColumnIndex(aLink.srcPooled() ? POOLID : USUBJID);
-            if (pSubjIdx < 0)
+            int[] pSubjIdx = subjectColumns(pm, aLink.srcIdentity());
+            if (pSubjIdx == null)
             {
                 return;
             }
@@ -251,29 +258,28 @@ final class RelrecPairer
             for (long r = 0; r < pRows; r++)
             {
                 if (scanKey(aLink, aPrimary, pStudyIdx, pSubjIdx, pIdvarIdx, r, srcNorm, numeric,
-                        aLink.srcSubject(), aLink.srcSubjectKey()) != null)
+                        aLink.srcIdentity()) != null)
                 {
                     aAddressed.set((int) r);
                 }
             }
             return;
         }
-        KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), aLink.srcPooled());
+        KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), aLink.srcIdentity());
         if (aLink.recordLevel())
         {
             String pValue = Objects.requireNonNull(JoinToken.normalize(aLink.srcIdvarval(),
                     aPrimaryIndex.isNumeric(aLink.srcIdvar())));
+            Object pSubject = identityKey(aLink.srcIdentity());
             if (RelrecLinks.isNonBlank(aLink.study()))
             {
-                markRows(pIndex,
-                        pIndex.find(new RelrecKey(aLink.studyKey(), aLink.srcSubjectKey(), pValue)),
+                markRows(pIndex, pIndex.find(new RelrecKey(aLink.studyKey(), pSubject, pValue)),
                         aAddressed);
                 return;
             }
             for (Object study : pIndex.studies())
             {
-                markRows(pIndex, pIndex.find(new RelrecKey(study, aLink.srcSubjectKey(), pValue)),
-                        aAddressed);
+                markRows(pIndex, pIndex.find(new RelrecKey(study, pSubject, pValue)), aAddressed);
             }
             return;
         }
@@ -322,20 +328,20 @@ final class RelrecPairer
         Set<PairKey> seen = new HashSet<>();
         Map<String, List<Long>> targetLacks = new LinkedHashMap<>();
         Map<String, List<Long>> primaryLacks = new LinkedHashMap<>();
+        DataTableMeta tm = aTarget.getMetaData();
+        DataTableMeta pm = aPrimary.getMetaData();
         for (Link link : aLinks)
         {
-            boolean usable = true;
-            if (aTarget.getMetaData().getColumnIndex(link.tgtIdvar()) < 0)
+            // OD-7: the IDVAR column and every subject identifier column the row names (G7-R1).
+            boolean usable = hasColumn(tm, link.tgtIdvar(), link.rightRow(), targetLacks);
+            for (SubjectId id : link.tgtIdentity())
             {
-                targetLacks.computeIfAbsent(link.tgtIdvar(), _ -> new ArrayList<>())
-                        .add(link.rightRow());
-                usable = false;
+                usable &= hasColumn(tm, id.column(), link.rightRow(), targetLacks);
             }
-            if (aPrimary.getMetaData().getColumnIndex(link.srcIdvar()) < 0)
+            usable &= hasColumn(pm, link.srcIdvar(), link.leftRow(), primaryLacks);
+            for (SubjectId id : link.srcIdentity())
             {
-                primaryLacks.computeIfAbsent(link.srcIdvar(), _ -> new ArrayList<>())
-                        .add(link.leftRow());
-                usable = false;
+                usable &= hasColumn(pm, id.column(), link.leftRow(), primaryLacks);
             }
             if (!usable)
             {
@@ -370,6 +376,85 @@ final class RelrecPairer
     }
 
 
+    /**
+     * Whether {@code aMeta} has {@code aColumn}; when it does not, records the RELREC row under
+     * that column in {@code aLacks}.
+     */
+    private static boolean hasColumn(DataTableMeta aMeta, String aColumn, long aRelrecRow,
+            Map<String, List<Long>> aLacks)
+    {
+        if (aMeta.getColumnIndex(aColumn) >= 0)
+        {
+            return true;
+        }
+        aLacks.computeIfAbsent(aColumn, _ -> new ArrayList<>()).add(aRelrecRow);
+        return false;
+    }
+
+
+    /**
+     * The table's columns probed for a side's subject: each identifier the RELREC row populates, or
+     * {@code USUBJID} when it populates none (the join within the subject); {@code null} when the
+     * table lacks one of them.
+     */
+    private static int @Nullable [] subjectColumns(DataTableMeta aMeta, List<SubjectId> aIdentity)
+    {
+        if (aIdentity.isEmpty())
+        {
+            int c = aMeta.getColumnIndex(USUBJID);
+            return c < 0 ? null : new int[]
+            {
+                    c
+            };
+        }
+        int[] cols = new int[aIdentity.size()];
+        for (int i = 0; i < cols.length; i++)
+        {
+            cols[i] = aMeta.getColumnIndex(aIdentity.get(i).column());
+            if (cols[i] < 0)
+            {
+                return null;
+            }
+        }
+        return cols;
+    }
+
+
+    /**
+     * The subject half of a {@link RelrecKey} for a side's identity: the one key when the row names
+     * one identifier, the list of keys when it names several (a device record of a subject).
+     */
+    private static Object identityKey(List<SubjectId> aIdentity)
+    {
+        if (aIdentity.size() == 1)
+        {
+            return aIdentity.get(0).key();
+        }
+        List<Object> keys = new ArrayList<>(aIdentity.size());
+        for (SubjectId id : aIdentity)
+        {
+            keys.add(id.key());
+        }
+        return List.copyOf(keys);
+    }
+
+
+    /** The subject half of a table row's {@link RelrecKey} over the given subject columns. */
+    private static Object rowSubjectKey(IDataTable aTable, int[] aSubjIdx, long aRow)
+    {
+        if (aSubjIdx.length == 1)
+        {
+            return RelrecLinks.keyCell(aTable, aSubjIdx[0], aRow);
+        }
+        List<Object> keys = new ArrayList<>(aSubjIdx.length);
+        for (int c : aSubjIdx)
+        {
+            keys.add(RelrecLinks.keyCell(aTable, c, aRow));
+        }
+        return List.copyOf(keys);
+    }
+
+
     private static String rowList(List<Long> aRows)
     {
         StringBuilder sb = new StringBuilder();
@@ -386,17 +471,17 @@ final class RelrecPairer
      * within the RELREC row's subject, joined on {@code STUDYID}. The probe is
      * {@code (STUDYID, subject, normalize(IDVARVAL))}, key-identified exactly like the index, in
      * the RELREC row's study when one is named and in each study the primary index holds otherwise.
-     * A blank RELREC subject (or a table lacking the subject column) takes the full scan.
+     * A side whose RELREC row names no subject (or a table lacking a subject column) takes the full
+     * scan.
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
     private static void joinRecordLevel(Link aLink, int aOrdinal, IDataTable aPrimary,
             IDataTable aTarget, TableIndex aPrimaryIndex, TableIndex aTargetIndex, List<Pair> aOut,
             Set<PairKey> aSeen)
     {
-        if (!RelrecLinks.isNonBlank(aLink.srcSubject())
-                || !RelrecLinks.isNonBlank(aLink.tgtSubject())
-                || !aPrimaryIndex.hasSubject(aLink.srcPooled())
-                || !aTargetIndex.hasSubject(aLink.tgtPooled()))
+        if (aLink.srcIdentity().isEmpty() || aLink.tgtIdentity().isEmpty()
+                || !aPrimaryIndex.hasSubject(aLink.srcIdentity())
+                || !aTargetIndex.hasSubject(aLink.tgtIdentity()))
         {
             joinByScan(aLink, aOrdinal, aPrimary, aTarget, aOut, aSeen);
             return;
@@ -405,22 +490,22 @@ final class RelrecPairer
                 aPrimaryIndex.isNumeric(aLink.srcIdvar())));
         String tValue = Objects.requireNonNull(
                 JoinToken.normalize(aLink.tgtIdvarval(), aTargetIndex.isNumeric(aLink.tgtIdvar())));
-        KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), aLink.srcPooled());
-        KeyRows tIndex = aTargetIndex.byColumn(aLink.tgtIdvar(), aLink.tgtPooled());
+        KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), aLink.srcIdentity());
+        KeyRows tIndex = aTargetIndex.byColumn(aLink.tgtIdvar(), aLink.tgtIdentity());
+        Object pSubject = identityKey(aLink.srcIdentity());
+        Object tSubject = identityKey(aLink.tgtIdentity());
         if (RelrecLinks.isNonBlank(aLink.study()))
         {
-            emitCross(pIndex,
-                    pIndex.find(new RelrecKey(aLink.studyKey(), aLink.srcSubjectKey(), pValue)),
-                    tIndex,
-                    tIndex.find(new RelrecKey(aLink.studyKey(), aLink.tgtSubjectKey(), tValue)),
+            emitCross(pIndex, pIndex.find(new RelrecKey(aLink.studyKey(), pSubject, pValue)),
+                    tIndex, tIndex.find(new RelrecKey(aLink.studyKey(), tSubject, tValue)),
                     aOrdinal, aLink, aOut, aSeen);
             return;
         }
         for (Object study : pIndex.studies())
         {
-            emitCross(pIndex, pIndex.find(new RelrecKey(study, aLink.srcSubjectKey(), pValue)),
-                    tIndex, tIndex.find(new RelrecKey(study, aLink.tgtSubjectKey(), tValue)),
-                    aOrdinal, aLink, aOut, aSeen);
+            emitCross(pIndex, pIndex.find(new RelrecKey(study, pSubject, pValue)), tIndex,
+                    tIndex.find(new RelrecKey(study, tSubject, tValue)), aOrdinal, aLink, aOut,
+                    aSeen);
         }
     }
 
@@ -436,13 +521,13 @@ final class RelrecPairer
             IDataTable aTarget, TableIndex aPrimaryIndex, TableIndex aTargetIndex, List<Pair> aOut,
             Set<PairKey> aSeen)
     {
-        if (RelrecLinks.isNonBlank(aLink.srcSubject()))
+        if (!aLink.srcIdentity().isEmpty())
         {
             joinByScan(aLink, aOrdinal, aPrimary, aTarget, aOut, aSeen);
             return;
         }
-        KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), false);
-        KeyRows tIndex = aTargetIndex.byColumn(aLink.tgtIdvar(), false);
+        KeyRows pIndex = aPrimaryIndex.byColumn(aLink.srcIdvar(), List.of());
+        KeyRows tIndex = aTargetIndex.byColumn(aLink.tgtIdvar(), List.of());
         if (RelrecLinks.isNonBlank(aLink.study()))
         {
             int study = pIndex.studyOrdinal(aLink.studyKey());
@@ -514,9 +599,9 @@ final class RelrecPairer
     {
         DataTableMeta tm = aTarget.getMetaData();
         int tStudyIdx = tm.getColumnIndex(STUDYID);
-        int tSubjIdx = tm.getColumnIndex(aLink.tgtPooled() ? POOLID : USUBJID);
+        int[] tSubjIdx = subjectColumns(tm, aLink.tgtIdentity());
         int tIdvarIdx = tm.getColumnIndex(aLink.tgtIdvar());
-        if (tSubjIdx < 0 || tIdvarIdx < 0)
+        if (tSubjIdx == null || tIdvarIdx < 0)
         {
             return;
         }
@@ -524,13 +609,13 @@ final class RelrecPairer
         String tgtNorm = JoinToken.normalize(aLink.tgtIdvarval(), tNumeric);
         KeyRows targetIndex = KeyRows.buildSparse(Math.toIntExact(aTarget.getRowCount()),
                 r -> scanKey(aLink, aTarget, tStudyIdx, tSubjIdx, tIdvarIdx, r, tgtNorm, tNumeric,
-                        aLink.tgtSubject(), aLink.tgtSubjectKey()));
+                        aLink.tgtIdentity()));
 
         DataTableMeta pm = aPrimary.getMetaData();
         int pStudyIdx = pm.getColumnIndex(STUDYID);
-        int pSubjIdx = pm.getColumnIndex(aLink.srcPooled() ? POOLID : USUBJID);
+        int[] pSubjIdx = subjectColumns(pm, aLink.srcIdentity());
         int pIdvarIdx = pm.getColumnIndex(aLink.srcIdvar());
-        if (pSubjIdx < 0 || pIdvarIdx < 0)
+        if (pSubjIdx == null || pIdvarIdx < 0)
         {
             return;
         }
@@ -540,7 +625,7 @@ final class RelrecPairer
         for (long r = 0; r < pRows; r++)
         {
             RelrecKey key = scanKey(aLink, aPrimary, pStudyIdx, pSubjIdx, pIdvarIdx, r, srcNorm,
-                    pNumeric, aLink.srcSubject(), aLink.srcSubjectKey());
+                    pNumeric, aLink.srcIdentity());
             int id = key == null ? KeyRows.NOT_FOUND : targetIndex.find(key);
             if (id == KeyRows.NOT_FOUND)
             {
@@ -559,14 +644,16 @@ final class RelrecPairer
      * One scanned row's key, or {@code null} when the row does not take part: classified on the RAW
      * RELREC values, then filtered on the key identities. A record-level link keys on
      * {@code (STUDYID, subject)} alone — its value is the {@code IDVAR == IDVARVAL} filter — and a
-     * dataset-level link on {@code (STUDYID, subject, normalize(IDVAR-cell))}. ⚠ The two subject
-     * halves are the link's SIDE for this table: in SDTM they are one subject, under SEND the sides
-     * may name different subjects or pools (OD-3).
+     * dataset-level link on {@code (STUDYID, subject, normalize(IDVAR-cell))}. ⚠ The identity is
+     * the link's SIDE for this table: in SDTM both sides share the relationship's subject but may
+     * name more identifiers (a device record of a subject), under SEND the sides may name different
+     * subjects or pools (OD-3). {@code aSubjIdx} holds the identity's columns, or {@code USUBJID}
+     * alone when the identity is empty.
      */
     @SuppressWarnings("checkstyle:ParameterNumber")
     private static @Nullable RelrecKey scanKey(Link aLink, IDataTable aTable, int aStudyIdx,
-            int aSubjIdx, int aIdvarIdx, long aRow, @Nullable String aIdvarFilter, boolean aNumeric,
-            @Nullable String aSubject, Object aSubjectKey)
+            int[] aSubjIdx, int aIdvarIdx, long aRow, @Nullable String aIdvarFilter,
+            boolean aNumeric, List<SubjectId> aIdentity)
     {
         String idv = RelrecLinks.cell(aTable, aIdvarIdx, aRow);
         if (idv == null)
@@ -583,24 +670,33 @@ final class RelrecPairer
         {
             return null;
         }
-        Object subject = RelrecLinks.keyCell(aTable, aSubjIdx, aRow);
-        if (RelrecLinks.isNonBlank(aSubject) && !subject.equals(aSubjectKey))
+        if (aIdentity.isEmpty())
         {
-            return null;
+            // No subject named: the join is within the subject, the row's own USUBJID.
+            return new RelrecKey(study, RelrecLinks.keyCell(aTable, aSubjIdx[0], aRow),
+                    aLink.recordLevel() ? "" : idvNorm);
         }
-        // The key's subject half is the link's named subject when it has one, so the two sides
-        // of a SEND cross-subject link meet on one key (each side filtered to its own subject).
-        Object keySubject = RelrecLinks.isNonBlank(aSubject) ? "" : subject;
-        return new RelrecKey(study, keySubject, aLink.recordLevel() ? "" : idvNorm);
+        for (int i = 0; i < aSubjIdx.length; i++)
+        {
+            if (!RelrecLinks.keyCell(aTable, aSubjIdx[i], aRow).equals(aIdentity.get(i).key()))
+            {
+                return null;
+            }
+        }
+        // The key's subject half is empty when the side names its subject, so the two sides of a
+        // link meet on one key (each side filtered to its own identity: a SEND cross-subject
+        // link, or a subject's record related to a device record of that subject).
+        return new RelrecKey(study, "", aLink.recordLevel() ? "" : idvNorm);
     }
 
     // ---- table index ----
 
     /**
-     * Lazily builds, per {@code (IDVAR column, subject column)}, one {@link KeyRows} index for one
+     * Lazily builds, per {@code (IDVAR column, subject columns)}, one {@link KeyRows} index for one
      * table (rows with a {@code null} value cell are skipped), built once and reused across every
      * link of the related domain. One keying serves both join modes: the key is
-     * {@code (keyCell(STUDYID), keyCell(subject), normalize(cell))}, so a link that names a study
+     * {@code (keyCell(STUDYID), subject key, normalize(cell))} — the subject key the one subject
+     * column's {@code keyCell}, or the list of them over several — so a link that names a study
      * probes that study's keys and a link that names none probes each study the index holds, every
      * key finding only its own study on the other side.
      */
@@ -611,25 +707,19 @@ final class RelrecPairer
 
         private final int studyIdx;
 
-        private final int usubjIdx;
-
-        private final int poolIdx;
-
         private final Map<String, KeyRows> byColumn = new HashMap<>();
 
         TableIndex(IDataTable aTable)
         {
             table = aTable;
-            DataTableMeta m = aTable.getMetaData();
-            studyIdx = m.getColumnIndex(STUDYID);
-            usubjIdx = m.getColumnIndex(USUBJID);
-            poolIdx = m.getColumnIndex(POOLID);
+            studyIdx = aTable.getMetaData().getColumnIndex(STUDYID);
         }
 
 
-        boolean hasSubject(boolean aPooled)
+        /** Whether the table carries every subject column of a side's identity. */
+        boolean hasSubject(List<SubjectId> aIdentity)
         {
-            return (aPooled ? poolIdx : usubjIdx) >= 0;
+            return subjectColumns(table.getMetaData(), aIdentity) != null;
         }
 
 
@@ -642,18 +732,30 @@ final class RelrecPairer
         }
 
 
-        /** {@code (keyCell(STUDYID), keyCell(subject), normalize(cell)) → rows}. */
-        KeyRows byColumn(String aColumn, boolean aPooled)
+        /**
+         * {@code (keyCell(STUDYID), subject key, normalize(cell)) → rows}, the subject columns
+         * those of {@code aIdentity} ({@code USUBJID} when it is empty).
+         */
+        KeyRows byColumn(String aColumn, List<SubjectId> aIdentity)
         {
-            return byColumn.computeIfAbsent((aPooled ? "P\0" : "U\0") + aColumn,
-                    _ -> build(aColumn, aPooled ? poolIdx : usubjIdx));
+            StringBuilder key = new StringBuilder();
+            if (aIdentity.isEmpty())
+            {
+                key.append(USUBJID).append('\0');
+            }
+            for (SubjectId id : aIdentity)
+            {
+                key.append(id.column()).append('\0');
+            }
+            return byColumn.computeIfAbsent(key.append('\0').append(aColumn).toString(),
+                    _ -> build(aColumn, subjectColumns(table.getMetaData(), aIdentity)));
         }
 
 
-        private KeyRows build(String aColumn, int aSubjIdx)
+        private KeyRows build(String aColumn, int @Nullable [] aSubjIdx)
         {
             int colIdx = table.getMetaData().getColumnIndex(aColumn);
-            if (colIdx < 0 || aSubjIdx < 0)
+            if (colIdx < 0 || aSubjIdx == null)
             {
                 return KeyRows.build(0, _ -> null);
             }
@@ -663,7 +765,8 @@ final class RelrecPairer
         }
 
 
-        private @Nullable RelrecKey indexKey(int aColIdx, int aSubjIdx, boolean aNumeric, long aRow)
+        private @Nullable RelrecKey indexKey(int aColIdx, int[] aSubjIdx, boolean aNumeric,
+                long aRow)
         {
             String v = RelrecLinks.cell(table, aColIdx, aRow);
             if (v == null)
@@ -671,7 +774,7 @@ final class RelrecPairer
                 return null;
             }
             return new RelrecKey(RelrecLinks.keyCell(table, studyIdx, aRow),
-                    RelrecLinks.keyCell(table, aSubjIdx, aRow),
+                    rowSubjectKey(table, aSubjIdx, aRow),
                     Objects.requireNonNull(JoinToken.normalize(v, aNumeric)));
         }
     }
@@ -679,10 +782,10 @@ final class RelrecPairer
 
     /**
      * One RELREC key: the {@code STUDYID} and subject key identities (a {@code String} or a
-     * {@code MissingValue} constant) and one text component — the normalised link value in a
-     * {@link KeyRows} index, {@code ""} in a record-level scan. Equality is component-wise. A class
-     * and not a record: the hash is computed once and compared first, measured to matter on long
-     * USUBJIDs sharing a prefix.
+     * {@code MissingValue} constant; the subject a list of them over several subject columns) and
+     * one text component — the normalised link value in a {@link KeyRows} index, {@code ""} in a
+     * record-level scan. Equality is component-wise. A class and not a record: the hash is computed
+     * once and compared first, measured to matter on long USUBJIDs sharing a prefix.
      */
     static final class RelrecKey
     {

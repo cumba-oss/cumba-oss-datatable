@@ -46,8 +46,11 @@ final class SuppKeyShape
 
     private static final String IDVARVAL = "IDVARVAL";
 
-    /** The IG's subject-key column names (P-8). */
-    static final Set<String> SUBJECT_NAMES = Set.of("USUBJID", "POOLID", "APID", "SPDEVID");
+    /**
+     * The IG's subject-key column names (P-8): the RELREC subject identifiers
+     * ({@link RelrecLinks#SUBJECT_COLUMNS}), one set for both merges.
+     */
+    static final Set<String> SUBJECT_NAMES = Set.copyOf(RelrecLinks.SUBJECT_COLUMNS);
 
     /**
      * One active plain component: the base column ({@code -1} when the base's domain constant

@@ -15,6 +15,7 @@ import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.merge.RelrecLinks.Link;
 import net.cumba.datatable.merge.RelrecLinks.Links;
 import net.cumba.datatable.merge.RelrecLinks.RelrecScan;
+import net.cumba.datatable.merge.RelrecLinks.SubjectId;
 import net.cumba.datatable.values.MissingValue;
 import org.junit.jupiter.api.Test;
 
@@ -51,8 +52,8 @@ class RelrecLinksTest
         assertEquals("S1", cm.studyKey());
         assertEquals("01-001", cm.srcSubject());
         assertEquals("01-001", cm.tgtSubjectKey());
-        assertFalse(cm.srcPooled());
-        assertFalse(cm.tgtPooled());
+        assertEquals(List.of(new SubjectId("USUBJID", "01-001")), cm.srcIdentity());
+        assertEquals(List.of(new SubjectId("USUBJID", "01-001")), cm.tgtIdentity());
         assertEquals("AESEQ", cm.srcIdvar());
         assertEquals("1", cm.srcIdvarval());
         assertEquals("CMSEQ", cm.tgtIdvar());
@@ -135,11 +136,37 @@ class RelrecLinksTest
         List<Link> lb = links.domains().get(0).links();
         assertEquals(2, lb.size());
         assertEquals("A1", lb.get(0).srcSubject());
-        assertFalse(lb.get(0).srcPooled());
+        assertEquals(List.of(new SubjectId("USUBJID", "A1")), lb.get(0).srcIdentity());
         assertEquals("P1", lb.get(0).tgtSubject());
-        assertTrue(lb.get(0).tgtPooled());
+        assertEquals(List.of(new SubjectId("POOLID", "P1")), lb.get(0).tgtIdentity());
         assertEquals("", lb.get(1).tgtSubject(), "neither USUBJID nor POOLID: no subject named");
-        assertFalse(lb.get(1).tgtPooled());
+        assertEquals(List.of(), lb.get(1).tgtIdentity());
+    }
+
+
+    @Test
+    void sdtm_subjectIdentifiers_groupByTheFirstPopulated_identifyByEveryPopulated()
+    {
+        // G7-R1 (a): USUBJID when populated, else the first populated of APID, POOLID, SPDEVID.
+        assertEquals(List.of("USUBJID", "APID", "POOLID", "SPDEVID"), RelrecLinks.SUBJECT_COLUMNS);
+        IDataTable rr = new ListTable("RELREC",
+                "STUDYID,RDOMAIN,USUBJID,APID,SPDEVID,IDVAR,IDVARVAL,RELID", "S1,DE,,,D1,DESEQ,1,1",
+                "S1,DT,,,D1,DTSEQ,1,1", "S1,DE,,,D2,DESEQ,1,1", "S1,DT,,,D2,DTSEQ,1,1",
+                "S1,DE,,A1,,DESEQ,2,1", "S1,DT,,,A1,DTSEQ,2,1", "S1,DE,U1,,D1,DESEQ,3,1",
+                "S1,DT,U1,,,DTSEQ,3,1");
+        Links links = RelrecLinks.collect(rr, "DE", null, MergeStandard.SDTM);
+        assertFalse(links.send());
+        assertEquals(5, links.relationshipCount(),
+                "SPDEVID D1, SPDEVID D2, APID A1, SPDEVID A1 (a different identifier), USUBJID U1");
+        List<Link> dt = links.domains().get(0).links();
+        assertEquals(3, dt.size(), "D1-D1, D2-D2, U1-U1; the APID A1 and SPDEVID A1 rows differ");
+        assertEquals(List.of(new SubjectId("SPDEVID", "D1")), dt.get(0).srcIdentity());
+        assertEquals("D1", dt.get(0).srcSubject());
+        assertEquals(List.of(new SubjectId("SPDEVID", "D2")), dt.get(1).tgtIdentity());
+        assertEquals(List.of(new SubjectId("USUBJID", "U1"), new SubjectId("SPDEVID", "D1")),
+                dt.get(2).srcIdentity(), "a device record of a subject: identified by both");
+        assertEquals("U1", dt.get(2).srcSubject());
+        assertEquals(List.of(new SubjectId("USUBJID", "U1")), dt.get(2).tgtIdentity());
     }
 
 

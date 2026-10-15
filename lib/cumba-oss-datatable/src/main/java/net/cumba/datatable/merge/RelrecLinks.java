@@ -25,8 +25,17 @@ import org.jspecify.annotations.Nullable;
  * would not form.
  *
  * <ul>
- * <li><b>SDTM:</b> a relationship is the RELREC rows sharing {@code (STUDYID, USUBJID, RELID)}
- * (SDTMIG 3.4 §8.2).</li>
+ * <li><b>The subject identifiers</b> ({@link #SUBJECT_COLUMNS}, SDTM v2.0 §6.1): a RELREC row names
+ * its record's subject by {@code USUBJID}, {@code APID}, {@code POOLID} or {@code SPDEVID} — an
+ * associated person, a pool, a device. A row identifies its record by <b>every</b> subject
+ * identifier it populates (a device record inside a subject carries both {@code USUBJID} and
+ * {@code SPDEVID}); a related domain or primary lacking one of them is reported, never silently
+ * unpaired ({@code PLAN-relrec-ap-device-subject}, owner ruling G7-R1 (a)).</li>
+ * <li><b>SDTM:</b> a relationship is the RELREC rows sharing {@code (STUDYID, subject, RELID)}
+ * (SDTMIG 3.4 §8.2), the subject being {@code USUBJID} when populated, else the first populated of
+ * {@code APID}, {@code POOLID}, {@code SPDEVID} ({@code RELID} is unique within the identifier that
+ * is the subject of the relationship, SDTM v2.0 §6.1; G7-R1 (a)). A row populating none groups by
+ * its {@code USUBJID} cell.</li>
  * <li><b>SEND (OD-3):</b> a RELREC read under SEND ({@link MergeStandard}; under
  * {@link MergeStandard#UNKNOWN} one carrying a {@code POOLID} column) is read as SENDIG 3.1.1 §8.2
  * defines it: a relationship is the rows sharing {@code (STUDYID, RELID)}, and each row identifies
@@ -54,7 +63,11 @@ public final class RelrecLinks
 
     private static final String USUBJID = "USUBJID";
 
+    private static final String APID = "APID";
+
     private static final String POOLID = "POOLID";
+
+    private static final String SPDEVID = "SPDEVID";
 
     private static final String RDOMAIN = "RDOMAIN";
 
@@ -65,6 +78,27 @@ public final class RelrecLinks
     private static final String RELID = "RELID";
 
     private static final String RELTYPE = "RELTYPE";
+
+    /**
+     * The RELREC subject identifiers of SDTM v2.0 §6.1, in the order that picks a relationship's
+     * subject (owner ruling G7-R1 (a)): {@code USUBJID} when populated, else the first populated of
+     * {@code APID}, {@code POOLID}, {@code SPDEVID}. The SUPP merge's subject keys are the same
+     * set.
+     */
+    public static final List<String> SUBJECT_COLUMNS = List.of(USUBJID, APID, POOLID, SPDEVID);
+
+    /**
+     * One subject identifier a RELREC row populates.
+     *
+     * @param column
+     *            the identifier column, one of {@link #SUBJECT_COLUMNS}.
+     * @param key
+     *            the cell's key identity ({@link #keyCell}).
+     */
+    public record SubjectId(String column, Object key)
+    {
+    }
+
 
     /**
      * One link from a primary-domain RELREC row (left) to a related-domain row (right) of the same
@@ -85,19 +119,21 @@ public final class RelrecLinks
      * @param studyKey
      *            the left row's {@code STUDYID} key identity.
      * @param srcSubject
-     *            the raw subject text of the left row ({@code USUBJID}, or {@code POOLID} under
-     *            SEND when {@code USUBJID} is blank), {@code null} when missing.
+     *            the raw subject text of the left row — its first populated subject identifier in
+     *            {@link #SUBJECT_COLUMNS} order, else its {@code USUBJID} — {@code null} when
+     *            missing.
      * @param srcSubjectKey
      *            its key identity.
-     * @param srcPooled
-     *            whether the left row names a pool, i.e. the primary's {@code POOLID} column is the
-     *            subject column to probe.
+     * @param srcIdentity
+     *            every subject identifier the left row populates, in {@link #SUBJECT_COLUMNS}
+     *            order: the primary's record carries each of them (G7-R1 (a)). Empty when the row
+     *            populates none; the join is then within the subject ({@code USUBJID}).
      * @param tgtSubject
      *            the raw subject text of the right row.
      * @param tgtSubjectKey
      *            its key identity.
-     * @param tgtPooled
-     *            whether the right row names a pool.
+     * @param tgtIdentity
+     *            every subject identifier the right row populates, likewise.
      * @param srcIdvar
      *            the left row's {@code IDVAR}.
      * @param srcIdvarval
@@ -119,11 +155,19 @@ public final class RelrecLinks
     @SuppressWarnings("checkstyle:ParameterNumber")
     public record Link(String rdomain, String relid, int relationship, boolean recordLevel,
             @Nullable String study, Object studyKey, @Nullable String srcSubject,
-            Object srcSubjectKey, boolean srcPooled, @Nullable String tgtSubject,
-            Object tgtSubjectKey, boolean tgtPooled, String srcIdvar, @Nullable String srcIdvarval,
-            String tgtIdvar, @Nullable String tgtIdvarval, long leftRow, long rightRow,
-            @Nullable String srcReltype, @Nullable String tgtReltype)
+            Object srcSubjectKey, List<SubjectId> srcIdentity, @Nullable String tgtSubject,
+            Object tgtSubjectKey, List<SubjectId> tgtIdentity, String srcIdvar,
+            @Nullable String srcIdvarval, String tgtIdvar, @Nullable String tgtIdvarval,
+            long leftRow, long rightRow, @Nullable String srcReltype, @Nullable String tgtReltype)
     {
+
+        /** Canonical constructor: the identities are copied. */
+        public Link
+        {
+            srcIdentity = List.copyOf(srcIdentity);
+            tgtIdentity = List.copyOf(tgtIdentity);
+        }
+
 
         /**
          * The IG's cardinality of this link's relationship from the primary's side (OD-5): a
@@ -277,7 +321,7 @@ public final class RelrecLinks
 
     /**
      * {@link #scan(IDataTable, String)} under a known standard: SEND groups a relationship by
-     * {@code (STUDYID, RELID)} (OD-3), SDTM by {@code (STUDYID, USUBJID, RELID)}.
+     * {@code (STUDYID, RELID)} (OD-3), SDTM by {@code (STUDYID, subject, RELID)} (G7-R1 (a)).
      *
      * @param aRelrec
      *            the RELREC dataset.
@@ -326,7 +370,7 @@ public final class RelrecLinks
     /**
      * Collects every link whose left side is {@code aPrimaryDomain}. Needs {@code RDOMAIN},
      * {@code IDVAR}, {@code IDVARVAL} and {@code RELID}; without one of them there are no links
-     * ({@code STUDYID}, {@code USUBJID} and {@code POOLID} are read when present).
+     * ({@code STUDYID} and the {@link #SUBJECT_COLUMNS} are read when present).
      *
      * @param aRelrec
      *            the RELREC dataset.
@@ -346,8 +390,10 @@ public final class RelrecLinks
     /**
      * {@link #collect(IDataTable, String, Set)} under a known standard ({@link MergeStandard}):
      * SEND groups a relationship by {@code (STUDYID, RELID)} and names each record by
-     * {@code USUBJID} or {@code POOLID} (OD-3); SDTM groups by {@code (STUDYID, USUBJID, RELID)};
-     * {@link MergeStandard#UNKNOWN} reads a RELREC carrying {@code POOLID} as SEND.
+     * {@code USUBJID} or {@code POOLID} (OD-3); SDTM groups by {@code (STUDYID, subject, RELID)},
+     * the subject {@code USUBJID} when populated, else the first populated of {@code APID},
+     * {@code POOLID}, {@code SPDEVID} (G7-R1 (a)); {@link MergeStandard#UNKNOWN} reads a RELREC
+     * carrying {@code POOLID} as SEND.
      *
      * @param aRelrec
      *            the RELREC dataset.
@@ -391,7 +437,11 @@ public final class RelrecLinks
     {
         DataTableMeta rm = aRelrec.getMetaData();
         int cStudy = rm.getColumnIndex(STUDYID);
-        int cUsubj = rm.getColumnIndex(USUBJID);
+        int[] cSubjects = new int[SUBJECT_COLUMNS.size()];
+        for (int i = 0; i < cSubjects.length; i++)
+        {
+            cSubjects[i] = rm.getColumnIndex(SUBJECT_COLUMNS.get(i));
+        }
         int cPool = rm.getColumnIndex(POOLID);
         int cRdom = rm.getColumnIndex(RDOMAIN);
         int cIdvar = rm.getColumnIndex(IDVAR);
@@ -414,7 +464,7 @@ public final class RelrecLinks
             {
                 continue;
             }
-            Object subject = send ? "" : keyCell(aRelrec, cUsubj, rr);
+            Object subject = send ? "" : subjectOf(aRelrec, cSubjects, rr).groupKey();
             GroupKey key = new GroupKey(keyCell(aRelrec, cStudy, rr), subject, relid);
             groups.computeIfAbsent(key, _ -> new ArrayList<>()).add(rr);
         }
@@ -433,6 +483,7 @@ public final class RelrecLinks
                 {
                     continue; // the left side is the primary domain (or dataset)
                 }
+                Subject src = subjectOf(aRelrec, cSubjects, lrr);
                 for (long rrr : group)
                 {
                     String rdom = cell(aRelrec, cRdom, rrr);
@@ -454,12 +505,11 @@ public final class RelrecLinks
                     String srcIdvarval = cell(aRelrec, cIdvarval, lrr);
                     String tgtIdvarval = cell(aRelrec, cIdvarval, rrr);
                     boolean recordLevel = isNonBlank(srcIdvarval) && isNonBlank(tgtIdvarval);
-                    Subject src = subjectOf(aRelrec, cUsubj, send ? cPool : -1, lrr);
-                    Subject tgt = subjectOf(aRelrec, cUsubj, send ? cPool : -1, rrr);
+                    Subject tgt = subjectOf(aRelrec, cSubjects, rrr);
                     Link link = new Link(rdom, cellOrEmpty(aRelrec, cRelid, lrr), ordinal,
                             recordLevel, cell(aRelrec, cStudy, lrr), keyCell(aRelrec, cStudy, lrr),
-                            src.text(), src.key(), src.pooled(), tgt.text(), tgt.key(),
-                            tgt.pooled(), srcIdvar, srcIdvarval, tgtIdvar, tgtIdvarval, lrr, rrr,
+                            src.text(), src.key(), src.identity(), tgt.text(), tgt.key(),
+                            tgt.identity(), srcIdvar, srcIdvarval, tgtIdvar, tgtIdvarval, lrr, rrr,
                             reltype(aRelrec, cReltype, lrr), reltype(aRelrec, cReltype, rrr));
                     byDomain.computeIfAbsent(rdom, _ -> new ArrayList<>()).add(link);
                     boolean[] hasMode = modes.computeIfAbsent(rdom, _ -> new boolean[2]);
@@ -491,23 +541,49 @@ public final class RelrecLinks
                 || (aPrimaryDataset != null && aRdomain.equalsIgnoreCase(aPrimaryDataset));
     }
 
-    /** The subject a RELREC row names: its raw text, key identity and whether it is a pool. */
-    private record Subject(@Nullable String text, Object key, boolean pooled)
+    /**
+     * The subject a RELREC row names: the raw text and key identity of its first populated subject
+     * identifier (else of its {@code USUBJID} cell), the SDTM grouping key, and every identifier it
+     * populates.
+     */
+    private record Subject(@Nullable String text, Object key, Object groupKey,
+            List<SubjectId> identity)
     {
     }
 
-    private static Subject subjectOf(IDataTable aRelrec, int aCUsubj, int aCPool, long aRow)
+    private static Subject subjectOf(IDataTable aRelrec, int[] aCSubjects, long aRow)
     {
-        String usubj = cell(aRelrec, aCUsubj, aRow);
-        if (aCPool >= 0 && !isNonBlank(usubj))
+        List<SubjectId> identity = List.of();
+        String text = null;
+        for (int i = 0; i < aCSubjects.length; i++)
         {
-            String pool = cell(aRelrec, aCPool, aRow);
-            if (isNonBlank(pool))
+            String value = cell(aRelrec, aCSubjects[i], aRow);
+            if (!isNonBlank(value))
             {
-                return new Subject(pool, keyCell(aRelrec, aCPool, aRow), true);
+                continue;
+            }
+            SubjectId id = new SubjectId(SUBJECT_COLUMNS.get(i),
+                    keyCell(aRelrec, aCSubjects[i], aRow));
+            if (identity.isEmpty())
+            {
+                text = value;
+                identity = List.of(id);
+            }
+            else
+            {
+                List<SubjectId> more = new ArrayList<>(identity);
+                more.add(id);
+                identity = List.copyOf(more);
             }
         }
-        return new Subject(usubj, keyCell(aRelrec, aCUsubj, aRow), false);
+        if (identity.isEmpty())
+        {
+            Object usubj = keyCell(aRelrec, aCSubjects[0], aRow);
+            return new Subject(cell(aRelrec, aCSubjects[0], aRow), usubj,
+                    new SubjectId(USUBJID, usubj), identity);
+        }
+        SubjectId first = identity.get(0);
+        return new Subject(text, first.key(), first, identity);
     }
 
 
