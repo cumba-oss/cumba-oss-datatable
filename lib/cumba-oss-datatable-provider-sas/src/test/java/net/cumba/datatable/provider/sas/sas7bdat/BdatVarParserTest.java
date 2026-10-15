@@ -9,7 +9,6 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import net.cumba.datatable.provider.sas.testsupport.LoggerCapture;
 import net.cumba.datatable.values.MissingValue;
-import net.cumba.sasutils.Format;
 import net.cumba.sasutils.VariableType;
 import net.cumba.sasutils.bdat.VariableBdat;
 import org.junit.jupiter.api.Test;
@@ -382,13 +381,6 @@ class BdatVarParserTest
             public String getLabel()
             {
                 return "";
-            }
-
-
-            @Override
-            public Format getFormat()
-            {
-                return null;
             }
         };
     }

@@ -8,7 +8,6 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
-import net.cumba.sasutils.Format;
 import net.cumba.sasutils.VariableType;
 import net.cumba.sasutils.bdat.VariableBdat;
 import org.junit.jupiter.api.Test;
@@ -105,13 +104,6 @@ class BdatObservationTest
             public String getLabel()
             {
                 return "";
-            }
-
-
-            @Override
-            public Format getFormat()
-            {
-                return null;
             }
         };
     }
