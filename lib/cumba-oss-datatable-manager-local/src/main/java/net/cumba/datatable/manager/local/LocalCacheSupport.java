@@ -450,7 +450,7 @@ class LocalCacheSupport
     /** Whether this cache minted the token (its owner set is one of this cache's; PACK G fold). */
     boolean owns(LocalDataTableLibraryRef.Ownership aOwnership)
     {
-        return aOwnership.getOwners().cache == this;
+        return aOwnership.getOwners().mintedBy(this);
     }
 
 
@@ -540,6 +540,13 @@ class LocalCacheSupport
         boolean isOf(IDataTableLibrary aLibrary)
         {
             return instance.get() == aLibrary;
+        }
+
+
+        /** Whether {@code aCache} minted this set (a token of another manager is refused). */
+        boolean mintedBy(LocalCacheSupport aCache)
+        {
+            return cache == aCache;
         }
 
 
