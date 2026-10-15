@@ -44,7 +44,36 @@ The MIT condition requires this notice in all copies or substantial portions; th
 listed below.
 
 `github.com/phuse-org/phuse-scripts` holds sibling copies of the same pilot data (same data records, different file
-headers). It is not the source of these files.
+headers). It is not the source of the CDISC files above.
+
+One file is taken from `phuse-org/phuse-scripts` itself, an example of its SEND data:
+
+- **Source:** `phuse-org/phuse-scripts`, <https://github.com/phuse-org/phuse-scripts>, file
+  `data/send/CBER-POC-Pilot-Study1-Vaccine/bg.xpt`, compared against commit `398a6d33ced9359ffb58c46650a6d488811176b1`
+  (HEAD of `master`, committed 2025-08-25), retrieved 2026-10-15.
+- **Content:** the body-weight-gain domain of a SEND pilot study (`STUDYID` 8326556); example data, not real study data.
+- **Licence:** the repository's `LICENSE.md`, the MIT License; it carries no copyright line. Its text, reproduced in full:
+
+```text
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files
+(the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of the Software,
+and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+```
 
 Per the project owner (2026-10-14), the third-party test files of this project were taken from three repositories:
 `cdisc-org/DataExchange-DatasetJson`, `cdisc-org/sdtm-adam-pilot-project` and `phuse-org/phuse-scripts`. Where a row
@@ -61,5 +90,6 @@ shown. Value comparisons were made on 2026-10-14 by reading both files; "(infere
 | `xpt/01_plain/adsl.xpt` | `84d3f699a12934ffdeac0f90087330d5` | **identical** to `examples/adam/adsl.xpt` |
 | `xpt/01_plain/adcibc.xpt` | `4e29b884eca1e08398158b7781e2d17f` | **identical** to `examples/adam/adcibc.xpt` (added 2026-10-14 by `PLAN-sas-bare-wd-format-read`: a SAS-written file whose `AGE`, `AVISITN` … carry SAS's `w.d` format with an empty format name) |
 | `xpt/01_plain/adsl_no_attribs.xpt` | `476896d3d351fd2787b869ac21c12eec` | **derived**: the first 10 rows of `examples/adam/adsl.xpt` with labels and formats removed, re-exported by SAS 9.4; its data records are an exact prefix of the source's (measured) |
+| `xpt/01_plain/send_1_bg.xpt` | `3127fcb1b964a6d09918d1b1c804fc3d` | **identical** to `phuse-org/phuse-scripts` `data/send/CBER-POC-Pilot-Study1-Vaccine/bg.xpt` (git blob `1cdb2a1b`; added 2026-10-15 by `PLAN-sas-file-reader-tolerance`: written with two ASCII blanks in every NAMESTR record's unused `nfill` field, which the XPT reader used to refuse) |
 | `xpt/05_multiple/sdtm.xpt` | `b884d0d2779800db31aee94a5584d19c` | **derived**: one SAS transport library holding the 28 SDTM example datasets `examples/sdtm/<member>.xpt` (AE … VS); for every member the variable descriptors and the data records are byte-identical to the source file's, only the library and member headers differ (measured) |
 | `sas7bdat/01_plain/adsl.sas7bdat` | `e5932a42b8aaa7d73b7f9ff217fb3043` | **not identified**: CDISCPILOT01 ADSL content; exact source not identified. All 254 rows × 49 columns hold the same values as `examples/adam/adsl.xpt` (measured; not the pilot file: the pilot ADSL has 48 columns, with `TRTDUR` / `DCREASCD`; this one has 49), so it is a SAS7BDAT made from that file (inference). Per the project owner, sourced from one of `DataExchange-DatasetJson` / `sdtm-adam-pilot-project` / `phuse-scripts`; exact file not matched: none of the three holds a SAS7BDAT file (measured) |

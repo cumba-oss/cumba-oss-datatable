@@ -321,6 +321,63 @@ class XptRealFileValueTest
 
 
     /**
+     * A transport file whose NAMESTR records carry ASCII blanks in the unused {@code nfill} field
+     * (TS-140: "UNUSED, FOR ALIGNMENT AND FUTURE") reads like any other. The fixture is the PHUSE
+     * SEND example {@code data/send/CBER-POC-Pilot-Study1-Vaccine/bg.xpt} from
+     * {@code phuse-org/phuse-scripts} @ {@code 398a6d33} (MIT; byte-identical copy, see
+     * {@code testdata/README.md}); the reader used to refuse it ("Token 10 Expected constant:
+     * '0000' but found: '2020'"), as every SEND XPT there (PLAN-sas-file-reader-tolerance). The
+     * expected names, labels, stored lengths and cells are ReadStat's
+     * ({@code pyreadstat.read_xport}, pyreadstat 1.3.3).
+     */
+    @Test
+    void blankNamestrPaddingReadsLikeZeroPadding() throws IOException
+    {
+        IDataTable t = read("send_1_bg.xpt");
+        assertEquals(40L, t.getRowCount());
+        DataTableMeta m = t.getMetaData();
+        assertEquals(15, m.getColumnCount());
+
+        List<String> names = new ArrayList<>();
+        List<String> labels = new ArrayList<>();
+        for (int c = 0; c < m.getColumnCount(); c++)
+        {
+            names.add(m.getColumn(c).getName());
+            labels.add(m.getColumn(c).getLabel());
+        }
+        assertEquals(List.of("STUDYID", "DOMAIN", "USUBJID", "BGSEQ", "BGTESTCD", "BGTEST",
+                "BGORRES", "BGORRESU", "BGSTRESC", "BGSTRESN", "BGSTRESU", "BGDTC", "BGENDTC",
+                "BGDY", "BGENDY"), names);
+        assertEquals(
+                List.of("Study Identifier", "Domain Abbreviation", "Unique Subject Identifier",
+                        "Sequence Number", "Test Short Name", "Test Name",
+                        "Result or Findings as Collected", "Unit of the Original Result",
+                        "Standardized Result in Character Format",
+                        "Standardized Result in Numeric Format", "Unit of the Standardized Result",
+                        "Date/Time Animal Weighed", "End Date/Time Animal Weighed",
+                        "Study Day of Start of Interval", "Study Day of End of Weight Interval"),
+                labels);
+        assertEquals(List.of(7, 2, 14, 8, 6, 16, 4, 2, 4, 8, 2, 19, 19, 8, 8), lengths(m));
+        assertEquals(DataValueType.STRING, m.getColumn("BGORRES").getType());
+        assertEquals(DataValueType.DOUBLE, m.getColumn("BGSTRESN").getType());
+
+        // row 8: the one negative result of the first animal
+        assertEquals("8326556-I10808", t.getValue(8, 2));
+        assertEquals(9.0, num(t, 8, 3));
+        assertEquals("-0.2", t.getValue(8, 6));
+        assertEquals(-0.2, num(t, 8, 9));
+        assertEquals("2015-09-11T07:06:27", t.getValue(8, 11));
+        assertEquals(43.0, num(t, 8, 13));
+        assertEquals(50.0, num(t, 8, 14));
+        // the last row
+        assertEquals("8326556-I10811", t.getValue(39, 2));
+        assertEquals(40.0, num(t, 39, 3));
+        assertEquals("2015-09-25T07:09:03", t.getValue(39, 12));
+        assertEquals(57.0, num(t, 39, 14));
+    }
+
+
+    /**
      * XPT records no encoding at all, so the charset is the user's choice and the provider must
      * honour it. Reading the same bytes under two charsets must give different text — the only way
      * to show the charset property is load-bearing rather than decorative.
