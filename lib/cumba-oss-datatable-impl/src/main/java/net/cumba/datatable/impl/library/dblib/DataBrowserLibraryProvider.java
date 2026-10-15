@@ -3,6 +3,7 @@ package net.cumba.datatable.impl.library.dblib;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.LinkedHashMap;
@@ -20,6 +21,7 @@ import net.cumba.datatable.impl.library.AbstractLibraryProvider;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserColumnMetaBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.metadata.dblib.DataBrowserMetadataLibrary;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.impl.provider.DataTableProviderFactory;
 import net.cumba.datatable.io.FileInfo;
 import net.cumba.datatable.io.ProbeFailures;
@@ -30,6 +32,7 @@ import net.cumba.datatable.library.ILibraryProvider;
 import net.cumba.datatable.metadata.IColumnMetadata;
 import net.cumba.datatable.metadata.IMetadataLibrary;
 import net.cumba.datatable.values.DataValueType;
+import net.cumba.datatable.values.IDataValue;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -146,8 +149,23 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
         // Collect column metadata: external tables first (lower priority), then internal (higher)
         Map<String, DataTableColumnMeta.DataTableColumnMetaBuilder> columnMap = new LinkedHashMap<>();
-        loadExternalColumnMeta(bean.getColumnMetaTableUris(), libraryUri, memberUri, columnMap);
-        applyInternalColumnMeta(bean.getColumnMeta(), libraryUri, memberUri, columnMap);
+        // The declared key of each column, by column name. Written once after both passes: the
+        // builder appends meta entries and the first one of a key wins on read, so the internal
+        // key can only override the external one if neither has been written yet.
+        Map<String, Integer> keySequences = new LinkedHashMap<>();
+        loadExternalColumnMeta(bean.getColumnMetaTableUris(), libraryUri, memberUri, columnMap,
+                keySequences);
+        applyInternalColumnMeta(bean.getColumnMeta(), libraryUri, memberUri, columnMap,
+                keySequences);
+        for (Map.Entry<String, DataTableColumnMeta.DataTableColumnMetaBuilder> e : columnMap
+                .entrySet())
+        {
+            Integer seq = keySequences.get(e.getKey());
+            if (seq != null)
+            {
+                e.getValue().addMetaData(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE, seq);
+            }
+        }
 
         if (!columnMap.isEmpty())
         {
@@ -190,6 +208,10 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
                 .type(aCol.getType())//
                 .displayFormat(aCol.getDisplayFormat())//
                 .index(aCol.getIndex());
+        if (aCol.getKeySequence() > 0)
+        {
+            b.addMetaData(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE, aCol.getKeySequence());
+        }
         // IColumnMetadata.getNativeType is @Nullable, but the DataTableColumnMeta builder's
         // nativeType setter is @NonNull (see report: DataTableColumnMeta.nativeType contract gap);
         // only set it when present.
@@ -224,10 +246,11 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
     /**
      * Loads column metadata from external metadata tables. Rows are matched by the {@code uri} and
-     * {@code name} columns as composite key.
+     * {@code name} columns as composite key. A row's declared key goes to {@code aKeySequences}.
      */
     private void loadExternalColumnMeta(String[] aTableUris, URI aLibraryUri, URI aMemberUri,
-            Map<String, DataTableColumnMeta.DataTableColumnMetaBuilder> aColumnMap)
+            Map<String, DataTableColumnMeta.DataTableColumnMetaBuilder> aColumnMap,
+            Map<String, Integer> aKeySequences)
         throws IOException
     {
         if (CDT.isEmptyOrNull(aTableUris))
@@ -302,7 +325,8 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
 
                 DataTableColumnMeta.DataTableColumnMetaBuilder builder = aColumnMap
                         .computeIfAbsent(colName, k -> DataTableColumnMeta.builder().name(k));
-                applyTableRowToColumnBuilder(table, tableUri, row, uriCol, nameCol, builder);
+                applyTableRowToColumnBuilder(table, tableUri, row, uriCol, nameCol, builder,
+                        aKeySequences);
             }
         }
     }
@@ -311,9 +335,15 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
     /**
      * Applies column metadata from the internal {@code aColumnMeta} array to the column map. Values
      * from internal metadata override those from external tables.
+     * <p>
+     * A bean's {@code key} &gt; 0 is the column's declared key: it replaces an external table's key
+     * in {@code aKeySequences}, and it wins over a user attribute that is also named
+     * {@value DataTableMetaSupport#META_KEY_ITEM_KEY_SEQUENCE}, which is then dropped. {@code 0}
+     * means "not a key" and declares nothing.
      */
     private void applyInternalColumnMeta(DataBrowserColumnMetaBean[] aColumnMeta, URI aLibraryUri,
-            URI aMemberUri, Map<String, DataTableColumnMeta.DataTableColumnMetaBuilder> aColumnMap)
+            URI aMemberUri, Map<String, DataTableColumnMeta.DataTableColumnMetaBuilder> aColumnMap,
+            Map<String, Integer> aKeySequences)
         throws IOException
     {
         if (CDT.isEmptyOrNull(aColumnMeta))
@@ -349,11 +379,22 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
                 builder.type(parseColumnType(meta.getType(), meta.getName(), aLibraryUri));
             }
 
+            if (meta.getKey() > 0)
+            {
+                aKeySequences.put(meta.getName(), meta.getKey());
+            }
+
             Map<String, String> attrs = meta.getAttributes();
             if (attrs != null)
             {
                 for (Map.Entry<String, String> entry : attrs.entrySet())
                 {
+                    if (DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE.equals(entry.getKey())
+                            && aKeySequences.containsKey(meta.getName()))
+                    {
+                        // the declared key wins over a same-named attribute
+                        continue;
+                    }
                     builder.addMetaData(entry.getKey(), entry.getValue());
                 }
             }
@@ -395,11 +436,21 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
     /**
      * Applies column attribute values from a metadata table row to a column builder. Handles known
      * columns (label, format, type, key) explicitly and stores all others as custom metadata.
+     * <p>
+     * The {@code key} cell is stored twice: as the raw custom entry {@code key} it always was, and,
+     * when it declares a key, as the column's key sequence in {@code aKeySequences} (see
+     * {@link #parseKeySequence}).
+     *
+     * @throws IOException
+     *             if the {@code type} cell names no {@link DataValueType} or the {@code key} cell
+     *             is not a whole number &gt;= 0.
      */
     private void applyTableRowToColumnBuilder(IDataTable aTable, URI aTableUri, long aRow,
-            int aUriCol, int aNameCol, DataTableColumnMeta.DataTableColumnMetaBuilder aBuilder)
+            int aUriCol, int aNameCol, DataTableColumnMeta.DataTableColumnMetaBuilder aBuilder,
+            Map<String, Integer> aKeySequences)
         throws IOException
     {
+        String columnName = aTable.getDataValue(aRow, aNameCol).getValueAsString();
         int colCount = aTable.getMetaData().getColumnCount();
         for (int col = 0; col < colCount; col++)
         {
@@ -409,7 +460,8 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             }
 
             String colName = aTable.getMetaData().getColumn(col).getName().toLowerCase(Locale.ROOT);
-            String value = aTable.getDataValue(aRow, col).getValueAsString();
+            IDataValue cell = aTable.getDataValue(aRow, col);
+            String value = cell.getValueAsString();
             if (CDT.isBlankOrNull(value))
             {
                 continue;
@@ -419,12 +471,66 @@ public class DataBrowserLibraryProvider extends AbstractLibraryProvider
             {
             case "label" -> aBuilder.label(value);
             case "format" -> aBuilder.displayFormat(value);
-            case "type" -> aBuilder.type(parseColumnType(value,
-                    aTable.getDataValue(aRow, aNameCol).getValueAsString(), aTableUri));
-            // "key" handled as custom metadata, same as default
+            case "type" -> aBuilder.type(parseColumnType(value, columnName, aTableUri));
+            case "key" ->
+            {
+                // the raw entry, as before
+                aBuilder.addMetaData(colName, value);
+                Integer seq = parseKeySequence(cell, value, columnName, aTableUri);
+                if (seq != null)
+                {
+                    aKeySequences.put(columnName, seq);
+                }
+            }
             default -> aBuilder.addMetaData(colName, value);
             }
         }
+    }
+
+
+    /**
+     * Reads the key sequence an external column-metadata table's {@code key} cell declares.
+     * <p>
+     * A missing or empty cell (tested on the cell, before it is turned into text: a missing numeric
+     * cell reads as {@code "."}) and {@code 0} mean "not a key" and return {@code null}. Any other
+     * value must be a whole number &gt;= 0 ({@code 2}, {@code 2.0}); anything else ({@code Y},
+     * {@code 1.5}, {@code -1}) is a corrupt file and RAISES, naming the value, the column and the
+     * source - as an unknown {@code type} does ({@link #parseColumnType}, owner ruling Q42
+     * 2026-09-14). PLAN-compare-type-change-and-column-key D-b.
+     *
+     * @throws IOException
+     *             if the cell is not a whole number &gt;= 0.
+     */
+    private static @Nullable Integer parseKeySequence(IDataValue aCell, String aText,
+            @Nullable String aColumnName, URI aSource)
+        throws IOException
+    {
+        if (aCell.isEmptyOrMissing())
+        {
+            return null;
+        }
+        int seq;
+        try
+        {
+            seq = new BigDecimal(aText.trim()).intValueExact();
+        }
+        catch (NumberFormatException | ArithmeticException ex)
+        {
+            throw malformedKey(aText, aColumnName, aSource, ex);
+        }
+        if (seq < 0)
+        {
+            throw malformedKey(aText, aColumnName, aSource, null);
+        }
+        return seq == 0 ? null : seq;
+    }
+
+
+    private static IOException malformedKey(String aText, @Nullable String aColumnName, URI aSource,
+            @Nullable Exception aCause)
+    {
+        return new IOException("Malformed key '" + aText + "' for column '" + aColumnName + "' in "
+                + aSource + ": expected a whole number >= 0 (0 = not a key)", aCause);
     }
 
 

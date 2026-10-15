@@ -14,10 +14,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import net.cumba.datatable.DataTableColumnMeta;
+import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserColumnMetaBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserMemberMetaBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserValueFormatBean;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.metadata.ICodeList;
 import net.cumba.datatable.metadata.ICodelistEntry;
 import net.cumba.datatable.metadata.IColumnMetadata;
@@ -171,7 +174,12 @@ class DataBrowserMetadataLibraryTest
         assertFalse(age.isByGroup());
         assertEquals(0, age.getLength());
         assertNull(age.getNativeType());
-        assertEquals(Set.of("origin"), age.getMetaKeys());
+        // Q36(iii): the declared key is also a KeySequence meta entry, an Integer, so a loaded
+        // member's column meta gets it (DataTableMetaSupport.addColumn copies the meta entries)
+        assertEquals(Set.of("origin", DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE),
+                age.getMetaKeys());
+        assertEquals(Optional.of(2),
+                age.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE));
         assertEquals(Optional.of("CRF"), age.getMetaValue("origin"));
         assertEquals(Optional.empty(), age.getMetaValue("missing"));
 
@@ -179,6 +187,8 @@ class DataBrowserMetadataLibraryTest
         IColumnMetadata sub = dt.getColumn("SUBJID").orElseThrow();
         assertTrue(sub.getMetaKeys().isEmpty());
         assertEquals(Optional.empty(), sub.getMetaValue("any"));
+        assertEquals(Optional.empty(),
+                sub.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE));
 
         // Column with absolute index based on insertion order
         assertEquals(0, dt.getColumns().get(0).getIndex());
@@ -485,5 +495,74 @@ class DataBrowserMetadataLibraryTest
         // The non-null entries survive; the null elements are dropped rather than NPEing.
         assertEquals(1, assertDoesNotThrow(() -> lib.getDataTables()).size());
         assertEquals(1, assertDoesNotThrow(() -> lib.getCodelists()).size());
+    }
+
+
+    /**
+     * Q36(iii), D-d: a declared key wins over a user attribute of the same name; without a declared
+     * key the attribute is what it was.
+     */
+    @Test
+    void testDeclaredKeyWinsOverAKeySequenceAttribute()
+    {
+        DataBrowserColumnMetaBean keyed = DataBrowserColumnMetaBean.builder().uri("dm.csv")
+                .name("USUBJID").key(2)
+                .attributes(Map.of(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE, "9")).build();
+        DataBrowserColumnMetaBean unkeyed = DataBrowserColumnMetaBean.builder().uri("dm.csv")
+                .name("AGE")
+                .attributes(Map.of(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE, "9")).build();
+        IMetadataLibrary lib = build(DataBrowserLibraryBean.builder().name("L")
+                .columnMeta(new DataBrowserColumnMetaBean[]
+                {
+                        keyed, unkeyed
+                }).build());
+        IDataTableMetadata dt = lib.getDataTables().get(0);
+
+        IColumnMetadata usubjid = dt.getColumn("USUBJID").orElseThrow();
+        assertEquals(Set.of(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE),
+                usubjid.getMetaKeys());
+        assertEquals(Optional.of(2),
+                usubjid.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE));
+
+        IColumnMetadata age = dt.getColumn("AGE").orElseThrow();
+        assertEquals(Optional.of("9"),
+                age.getMetaValue(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE));
+    }
+
+
+    /**
+     * Q36(iii), path (d): a member loaded through the library's metadata - the table every reader
+     * builds with {@link DataTableMetaSupport}, which the manager caches and serves to later column
+     * listings - carries the declared key as a {@code KeySequence} Integer.
+     */
+    @Test
+    void testLoadedMemberColumnMetaCarriesTheKeySequence()
+    {
+        DataBrowserColumnMetaBean studyid = DataBrowserColumnMetaBean.builder().uri("dm.csv")
+                .name("STUDYID").key(1).build();
+        DataBrowserColumnMetaBean usubjid = DataBrowserColumnMetaBean.builder().uri("dm.csv")
+                .name("USUBJID").key(2).attributes(Map.of("origin", "CRF")).build();
+        DataBrowserColumnMetaBean age = DataBrowserColumnMetaBean.builder().uri("dm.csv")
+                .name("AGE").build();
+        IMetadataLibrary lib = build(DataBrowserLibraryBean.builder().name("L")
+                .columnMeta(new DataBrowserColumnMetaBean[]
+                {
+                        studyid, usubjid, age
+                }).build());
+
+        DataTableMetaSupport support = new DataTableMetaSupport(lib);
+        support.setTable(LIB_URI.resolve("dm.csv"));
+        support.addColumn("AGE", DataValueType.DOUBLE);
+        support.addColumn("USUBJID", DataValueType.STRING);
+        support.addColumn("STUDYID", DataValueType.STRING);
+        DataTableMeta meta = support.getTableMeta().build();
+
+        DataTableColumnMeta loadedUsubjid = meta.getColumn("USUBJID");
+        assertEquals(2, loadedUsubjid.getMetaData(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE));
+        assertEquals("CRF", loadedUsubjid.getMetaData("origin"));
+        assertEquals(1, meta.getColumn("STUDYID")
+                .getMetaData(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE));
+        assertNull(
+                meta.getColumn("AGE").getMetaData(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE));
     }
 }

@@ -18,6 +18,7 @@ import net.cumba.datatable.impl.library.dblib.beans.DataBrowserColumnMetaBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserLibraryBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserMemberMetaBean;
 import net.cumba.datatable.impl.library.dblib.beans.DataBrowserValueFormatBean;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.metadata.ICodeList;
 import net.cumba.datatable.metadata.ICodelistEntry;
 import net.cumba.datatable.metadata.IColumnMetadata;
@@ -480,21 +481,43 @@ public class DataBrowserMetadataLibrary implements IMetadataLibrary
         }
 
 
+        /**
+         * The bean's attributes, plus {@value DataTableMetaSupport#META_KEY_ITEM_KEY_SEQUENCE} when
+         * the column declares a key ({@code key} &gt; 0), so a member loaded through this metadata
+         * carries the key in its column meta like a Dataset-JSON or Define-XML member (Q36(iii)).
+         */
         @Override
         public Set<String> getMetaKeys()
         {
             Map<String, String> attrs = bean.getAttributes();
-            if (attrs != null)
+            boolean keyed = bean.getKey() > 0;
+            if (attrs == null || attrs.isEmpty())
+            {
+                return keyed ? Set.of(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE)
+                        : Collections.emptySet();
+            }
+            if (!keyed)
             {
                 return attrs.keySet();
             }
-            return Collections.emptySet();
+            Set<String> keys = new LinkedHashSet<>(attrs.keySet());
+            keys.add(DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE);
+            return Collections.unmodifiableSet(keys);
         }
 
 
+        /**
+         * The attribute of that name; for {@value DataTableMetaSupport#META_KEY_ITEM_KEY_SEQUENCE}
+         * of a column that declares a key, the key as an {@link Integer} - the declared key wins
+         * over a same-named attribute.
+         */
         @Override
         public Optional<Object> getMetaValue(String aKey)
         {
+            if (bean.getKey() > 0 && DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE.equals(aKey))
+            {
+                return Optional.of(bean.getKey());
+            }
             Map<String, String> attrs = bean.getAttributes();
             if (attrs != null)
             {
