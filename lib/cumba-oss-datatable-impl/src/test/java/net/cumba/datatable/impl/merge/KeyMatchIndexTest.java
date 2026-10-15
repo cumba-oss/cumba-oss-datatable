@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.cumba.datatable.values.GroupKeyPolicy;
 import net.cumba.datatable.values.GroupKeyPolicy.KeyPart;
 import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
@@ -15,14 +16,16 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link KeyMatchIndex}, the hand-rolled open-addressing key table and CSR postings
- * behind the key-match join ({@code PLAN-keymatch-shared-join-index}, proposals P1–P3).
+ * behind the key-match join ({@code PLAN-keymatch-shared-join-index}, proposals P1–P3), keyed on
+ * the key identity since {@code PLAN-key-match-index-identity-rekey}.
  */
 class KeyMatchIndexTest
 {
 
-    private static KeyPart p(String aValue)
+    /** A present text key's identity: the text itself. */
+    private static Object p(String aValue)
     {
-        return new KeyPart.Present(aValue);
+        return new KeyPart.Present(aValue).identity();
     }
 
 
@@ -46,7 +49,7 @@ class KeyMatchIndexTest
     void groupsRowsByKeyInAscendingRowOrder()
     {
         @Nullable
-        KeyPart[] keys =
+        Object[] keys =
         {
                 p("B"), p("A"), p("B"), null, p("A"), p("B")
         };
@@ -65,7 +68,7 @@ class KeyMatchIndexTest
     {
         KeyMatchIndex index = KeyMatchIndex.build(2, r -> p("K" + r));
         assertEquals(KeyMatchIndex.NOT_FOUND, index.find(p("nope")));
-        assertEquals(KeyMatchIndex.NOT_FOUND, index.find(new KeyPart[]
+        assertEquals(KeyMatchIndex.NOT_FOUND, index.find(new Object[]
         {
                 p("K0"), p("K1")
         }), "a composite probe never matches a single-component key");
@@ -102,23 +105,53 @@ class KeyMatchIndexTest
 
 
     /**
-     * Key identity is the {@link KeyPart}'s own: a present {@code "."} is not a missing value, a
-     * {@code MIS} is not a {@code MIS_A}, and a character {@code "5"} is not a numeric 5.
+     * Key identity is the {@link KeyPart}'s own, through its identity object: a present {@code "."}
+     * is not a missing value, a {@code MIS} is not a {@code MIS_A}, a character {@code "5"} is not
+     * a numeric 5, the text {@code "MIS_A"} is not the marker, and a long no double holds is not
+     * its rounded neighbour.
      */
     @Test
     void keyIdentityIsTheSealedKeyPartsNotARendering()
     {
-        KeyPart[] keys =
+        KeyPart[] parts =
         {
-                p("."), KeyPart.missing(MissingValue.MIS), KeyPart.missing(MissingValue.MIS_A),
-                p("5"), new KeyPart.PresentNumber(5.0), KeyPart.EMPTY
+                new KeyPart.Present("."), KeyPart.missing(MissingValue.MIS),
+                KeyPart.missing(MissingValue.MIS_A), new KeyPart.Present("MIS_A"),
+                new KeyPart.Present("5"), new KeyPart.PresentNumber(5.0), KeyPart.EMPTY,
+                new KeyPart.PresentNumber(0x1p53), new KeyPart.PresentExactLong((1L << 53) + 1)
         };
+        Object[] keys = new Object[parts.length];
+        for (int r = 0; r < parts.length; r++)
+        {
+            keys[r] = parts[r].identity();
+        }
         KeyMatchIndex index = KeyMatchIndex.build(keys.length, r -> keys[r]);
         assertEquals(keys.length, index.keyCount(), "every one of these is its own key");
         for (int r = 0; r < keys.length; r++)
         {
-            assertEquals(List.of(r), rowsOf(index, index.find(keys[r])), "key " + keys[r]);
+            assertEquals(List.of(r), rowsOf(index, index.find(keys[r])), "key " + parts[r]);
         }
+    }
+
+
+    /**
+     * The planted-control shape of the bijection: the identity of a zero is the canonical
+     * {@code 0.0} whatever sign the value had, so a probe built from {@code -0.0} through the
+     * canonicalising helper finds the {@code 0.0} key — and a raw {@code -0.0} {@link Double},
+     * which no producer may hand the index, does not ({@code Double.equals} compares bits). The
+     * second assertion is what makes canonical identities a precondition, not a detail.
+     */
+    @Test
+    void aZeroIsOneKeyOnlyBecauseItsIdentityIsCanonical()
+    {
+        KeyMatchIndex index = KeyMatchIndex.build(1,
+                r -> new KeyPart.PresentNumber(0.0).identity());
+        assertEquals(List.of(0), rowsOf(index, index.find(GroupKeyPolicy.numberKeyIdentity(-0.0))));
+        assertEquals(List.of(0),
+                rowsOf(index, index.find(new KeyPart.PresentNumber(-0.0).identity())));
+        Object rawNegativeZero = -0.0;
+        assertEquals(KeyMatchIndex.NOT_FOUND, index.find(rawNegativeZero),
+                "a non-canonical -0.0 is a different key: canonical identities are the contract");
     }
 
 
@@ -141,11 +174,11 @@ class KeyMatchIndexTest
                 }
         };
         KeyMatchIndex index = KeyMatchIndex.build(rows.length,
-                r -> new KeyMatchIndex.CompositeKey(new KeyPart[]
+                r -> new KeyMatchIndex.CompositeKey(new Object[]
                 {
                         p(rows[r][0]), p(rows[r][1])
                 }));
-        KeyPart[] scratch = new KeyPart[2];
+        Object[] scratch = new Object[2];
         scratch[0] = p("P1");
         scratch[1] = p("1");
         assertEquals(List.of(0, 3), rowsOf(index, index.find(scratch)));
@@ -162,22 +195,27 @@ class KeyMatchIndexTest
     @Test
     void compositeKeyEqualityIsComponentWise()
     {
-        KeyMatchIndex.CompositeKey a = new KeyMatchIndex.CompositeKey(new KeyPart[]
+        KeyMatchIndex.CompositeKey a = new KeyMatchIndex.CompositeKey(new Object[]
         {
-                p("P1"), KeyPart.EMPTY
+                p("P1"), KeyPart.EMPTY.identity()
         });
-        KeyMatchIndex.CompositeKey b = new KeyMatchIndex.CompositeKey(new KeyPart[]
+        KeyMatchIndex.CompositeKey b = new KeyMatchIndex.CompositeKey(new Object[]
         {
-                p("P1"), KeyPart.EMPTY
+                String.valueOf("P1".toCharArray()), ""
         });
-        KeyMatchIndex.CompositeKey c = new KeyMatchIndex.CompositeKey(new KeyPart[]
+        KeyMatchIndex.CompositeKey c = new KeyMatchIndex.CompositeKey(new Object[]
         {
-                p("P1"), KeyPart.missing(MissingValue.MIS)
+                p("P1"), KeyPart.missing(MissingValue.MIS).identity()
         });
-        assertEquals(a, b);
+        KeyMatchIndex.CompositeKey d = new KeyMatchIndex.CompositeKey(new Object[]
+        {
+                p("P1"), new KeyPart.Present("MIS").identity()
+        });
+        assertEquals(a, b, "equal identities, distinct objects");
         assertEquals(a.hashCode(), b.hashCode());
         assertNotEquals(a, c, "EMPTY and MIS are different keys (JKM R5)");
+        assertNotEquals(c, d, "the marker MIS is not the text \"MIS\"");
         assertNotEquals(a, p("P1"));
-        assertEquals("[" + p("P1") + ", " + KeyPart.EMPTY + "]", a.toString());
+        assertEquals("[P1, ]", a.toString());
     }
 }

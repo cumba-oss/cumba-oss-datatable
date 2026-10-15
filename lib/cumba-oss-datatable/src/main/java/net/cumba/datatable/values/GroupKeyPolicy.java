@@ -826,12 +826,71 @@ public record GroupKeyPolicy(boolean keepMissings, Blankness blankness)
                 {
                     return l;
                 }
-                return presentKeyNumber(n.doubleValue());
+                return numberKeyIdentity(n.doubleValue());
             }
             return dv.getValueAsString();
         }
         MissingValue marker = missingMarker(dv);
         return marker == null ? "" : marker;
+    }
+
+
+    /**
+     * The key identity of a present numeric value held as a {@code double} — exactly
+     * {@code new KeyPart.PresentNumber(aValue).identity()}: the canonical {@link Double}
+     * ({@code -0.0} is {@code 0.0}), and a {@code NaN} refused, because it is the carrier encoding
+     * of a {@link MissingValue} and must have been decoded to a missing identity before here.
+     *
+     * <p>
+     * ⭐ For a reader that has the {@code double} without a data value (the datatable's
+     * {@code KeyCellReader} fast path; {@code PLAN-key-match-index-identity-rekey} {@code K-HELP}),
+     * so the {@code -0.0} rule has one home. ⚠ It takes a {@code double}: a {@code long} beyond
+     * 2^53 is keyed by its exact {@link Long} ({@link KeyPart.PresentExactLong}), which only the
+     * {@code long} itself can decide — such a value goes through {@link #keyIdentity(IDataValue)}.
+     * </p>
+     *
+     * @param aValue
+     *            the present value, never {@code NaN}
+     * @return the canonical identity
+     * @throws IllegalArgumentException
+     *             for a {@code NaN}
+     */
+    public static Double numberKeyIdentity(double aValue)
+    {
+        return presentKeyNumber(aValue);
+    }
+
+
+    /**
+     * The <b>text-join</b> projection of a key identity — exactly
+     * {@code KeyPart.ofIdentity(aIdentity).asText().identity()}: the identity of a present number
+     * becomes its text (a {@link Double} its {@link DataValueSupport#toCleanText cleaned text}, a
+     * {@link Long} its exact digits), every other identity is itself. ⛔ Only a present number is
+     * projected: {@code ""} and a {@link MissingValue} keep their own identity (see
+     * {@link KeyPart#asText()}).
+     *
+     * <p>
+     * ⭐ So {@code asTextIdentity(keyIdentity(dv))} is {@link #textKeyIdentity(IDataValue)
+     * textKeyIdentity(dv)} for every cell — the {@code Join_As_String} ({@code D4-R3}) projection
+     * of a key that is already held as its identity ({@code PLAN-key-match-index-identity-rekey}
+     * {@code K-HELP}), with no part built.
+     * </p>
+     *
+     * @param aIdentity
+     *            an identity object as {@link #keyIdentity(IDataValue)} returns one
+     * @return its text-join identity — a {@code String} or a {@link MissingValue}
+     */
+    public static Object asTextIdentity(Object aIdentity)
+    {
+        if (aIdentity instanceof Double d)
+        {
+            return DataValueSupport.toCleanText(d);
+        }
+        if (aIdentity instanceof Long l)
+        {
+            return Long.toString(l);
+        }
+        return aIdentity;
     }
 
 

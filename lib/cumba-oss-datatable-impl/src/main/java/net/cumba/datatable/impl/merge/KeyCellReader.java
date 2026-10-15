@@ -10,15 +10,16 @@ import net.cumba.datatable.impl.ColumnCachedDataTable;
 import net.cumba.datatable.impl.view.UnionDataTable;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.GroupKeyPolicy;
-import net.cumba.datatable.values.GroupKeyPolicy.KeyPart;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Reads one key column's cells as {@link KeyPart}s — exactly what
- * {@code GroupKeyPolicy.KEEP_MISSING_KEYS.keyPart(table.getColumn(c).getDataValue(row))} answers,
- * without allocating the {@code IDataValue} (and, on views, the {@code DefaultDataTableColumn})
- * that path allocates per cell ({@code PLAN-identity-safe-join-caches} D6/D8). The engine's
- * {@code KeyCellReader}, moved into the datatable layer by {@code PLAN-merged-evaluation-table} W1.
+ * Reads one key column's cells as <b>key identities</b> — exactly what
+ * {@code GroupKeyPolicy.KEEP_MISSING_KEYS.keyIdentity(table.getColumn(c).getDataValue(row))}
+ * answers (the identity of {@code keyPart}, in bijection with it), without allocating the
+ * {@code IDataValue} (and, on views, the {@code DefaultDataTableColumn}) that path allocates per
+ * cell ({@code PLAN-identity-safe-join-caches} D6/D8), and without the {@code KeyPart} wrapper per
+ * cell ({@code PLAN-key-match-index-identity-rekey}). The engine's {@code KeyCellReader}, moved
+ * into the datatable layer by {@code PLAN-merged-evaluation-table} W1.
  *
  * <p>
  * ⭐⭐ <b>Fast for PRESENT cells only; every other cell takes today's path.</b> The fast read is the
@@ -30,8 +31,10 @@ import org.jspecify.annotations.Nullable;
  * internal twin answers a missing value), so no reproduction of them could live here and be right
  * in both ({@code PLAN-identity-safe-join-caches} D6, as rebuilt at the OSS phase). The engine
  * names no buffer class, and so stays byte-identical across the twins. What the column answers maps
- * onto {@code keyPart} exactly: a non-empty {@code DataValueString} is {@code Present(s)}; a
- * non-missing {@code DataValueLong}/{@code DataValueDouble} is {@code PresentNumber(value)}.
+ * onto {@code keyIdentity} exactly: a non-empty {@code DataValueString} is its own {@code String}
+ * ({@code Present(s)}'s identity); a non-missing {@code DataValueLong}/{@code DataValueDouble} held
+ * exactly by a {@code double} is the canonical {@code Double}
+ * ({@code GroupKeyPolicy.numberKeyIdentity}, {@code PresentNumber(value)}'s identity).
  * </p>
  *
  * <p>
@@ -46,13 +49,15 @@ public interface KeyCellReader
 {
 
     /**
-     * The row's key part.
+     * The row's key identity.
      *
      * @param aRow
      *            the row in the table this reader was built for.
-     * @return exactly {@code KEEP_MISSING_KEYS.keyPart(table.getColumn(c).getDataValue(aRow))}.
+     * @return exactly {@code KEEP_MISSING_KEYS.keyIdentity(table.getColumn(c).getDataValue(aRow))}
+     *         — a {@code String}, a canonical {@code Double}, a {@code Long} or a
+     *         {@code MissingValue}.
      */
-    KeyPart read(long aRow);
+    Object read(long aRow);
 
 
     /**
@@ -117,11 +122,11 @@ public interface KeyCellReader
     }
 
 
-    /** Today's path: a data value per cell, classified by {@code keyPart}. */
+    /** The old path: a data value per cell, classified by {@code keyIdentity}. */
     private static KeyCellReader slow(IDataTable aTable, int aColumn)
     {
         return row -> GroupKeyPolicy.KEEP_MISSING_KEYS
-                .keyPart(aTable.getColumn(aColumn).getDataValue(row));
+                .keyIdentity(aTable.getColumn(aColumn).getDataValue(row));
     }
 
     /**
@@ -154,7 +159,7 @@ public interface KeyCellReader
 
 
         @Override
-        public KeyPart read(long aRow)
+        public Object read(long aRow)
         {
             // The column's present-value reads call ensureValidRow first — the very check
             // getDataValue makes — so a bad row throws the same exception, message included.
@@ -165,18 +170,18 @@ public interface KeyCellReader
                 String s = column.presentStringValue(aRow);
                 if (s != null)
                 {
-                    return new KeyPart.Present(s);
+                    return s;
                 }
             }
             case LONG, DOUBLE ->
             {
                 double v = column.presentNumericValue(aRow);
-                // A LONG beyond 2^53 may be one no double holds exactly: its part is the exact
-                // PresentExactLong, which only the value itself can decide, so it takes the old
-                // path (PLAN-grouping-key-identity L1 -- the fast and the slow reader must agree).
+                // A LONG beyond 2^53 may be one no double holds exactly: its identity is the exact
+                // Long, which only the value itself can decide, so it takes the old path
+                // (PLAN-grouping-key-identity L1 -- the fast and the slow reader must agree).
                 if (!Double.isNaN(v) && (type == DataValueType.DOUBLE || Math.abs(v) < TWO_53))
                 {
-                    return new KeyPart.PresentNumber(v);
+                    return GroupKeyPolicy.numberKeyIdentity(v);
                 }
             }
             default ->
@@ -185,7 +190,7 @@ public interface KeyCellReader
             }
             }
             fallbacks++;
-            return GroupKeyPolicy.KEEP_MISSING_KEYS.keyPart(column.getDataValue(aRow));
+            return GroupKeyPolicy.KEEP_MISSING_KEYS.keyIdentity(column.getDataValue(aRow));
         }
 
 
@@ -223,7 +228,7 @@ public interface KeyCellReader
 
 
         @Override
-        public KeyPart read(long aRow)
+        public Object read(long aRow)
         {
             int m = union.memberOf(aRow); // throws exactly as getDataValue does for a bad row
             int memberColumn = union.memberColumnOf(m, column);

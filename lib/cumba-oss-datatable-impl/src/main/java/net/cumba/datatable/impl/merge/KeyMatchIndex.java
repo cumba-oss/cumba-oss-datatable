@@ -6,7 +6,6 @@ package net.cumba.datatable.impl.merge;
 import java.util.Arrays;
 import java.util.function.IntFunction;
 
-import net.cumba.datatable.values.GroupKeyPolicy.KeyPart;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -28,16 +27,25 @@ import org.jspecify.annotations.Nullable;
  * by key id, and {@code offsets[id] .. offsets[id + 1]} is that key's slice. Within a slice the
  * rows are ascending, which is the order the previous {@code Map<List<KeyPart>, List<Long>>}
  * yielded;</li>
- * <li>a key is the {@link KeyPart} itself for a one-component join, and a {@link CompositeKey} for
- * a multi-component one — never a {@code List};</li>
- * <li>a lookup allocates nothing: {@link #find(KeyPart[])} compares a caller-owned scratch array
+ * <li>a key is the component's <b>key identity</b> ({@code GroupKeyPolicy.keyIdentity}: the cell's
+ * own {@code String}, {@code ""}, the {@code MissingValue} constant, a canonical {@code Double}, or
+ * a {@code Long} no {@code double} holds) for a one-component join, and a {@link CompositeKey} of
+ * identities for a multi-component one — never a {@code List}, and no {@code KeyPart} wrapper
+ * ({@code PLAN-key-match-index-identity-rekey}, ruling {@code SKI-P-R3});</li>
+ * <li>a lookup allocates nothing: {@link #find(Object[])} compares a caller-owned scratch array
  * against the stored composite keys without building one.</li>
  * </ul>
  *
  * <p>
  * Key identity is exactly {@code KeyPart.equals}, component-wise — the identity the
- * {@code List<KeyPart>} key had. Row ids are {@code int}: the key-match path assumes a table fits
- * in an {@code int} row count and guards that with {@link Math#toIntExact}.
+ * {@code List<KeyPart>} key had: the identity object is in bijection with {@code KeyPart}
+ * ({@code KeyPart.identity()} / {@code KeyPart.ofIdentity}, pinned by
+ * {@code GroupKeyPolicyIdentityTest}), so {@code Object.equals} on identities is
+ * {@code KeyPart.equals} on parts. ⚠ That holds only for CANONICAL identities — {@code -0.0} is
+ * {@code 0.0}, never a {@code NaN} — which every producer guarantees ({@code GroupKeyPolicy}'s
+ * {@code keyIdentity} / {@code numberKeyIdentity}); {@code Double.equals} compares bits. Row ids
+ * are {@code int}: the key-match path assumes a table fits in an {@code int} row count and guards
+ * that with {@link Math#toIntExact}.
  * </p>
  *
  * <p>
@@ -85,9 +93,9 @@ public final class KeyMatchIndex
      * @param aRowCount
      *            the partner's row count.
      * @param aKeyOfRow
-     *            the key of a row — a {@link KeyPart} or a {@link CompositeKey}, the same kind for
-     *            every row — or {@code null} when the row does not take part in the join. Called
-     *            exactly once per row, in ascending row order.
+     *            the key of a row — a key identity or a {@link CompositeKey} of identities, the
+     *            same kind for every row — or {@code null} when the row does not take part in the
+     *            join. Called exactly once per row, in ascending row order.
      * @return the index, never {@code null}.
      */
     public static KeyMatchIndex build(int aRowCount, IntFunction<@Nullable Object> aKeyOfRow)
@@ -123,10 +131,10 @@ public final class KeyMatchIndex
      * The id of a one-component key.
      *
      * @param aKey
-     *            the key part.
+     *            the key identity.
      * @return its key id, or {@link #NOT_FOUND}.
      */
-    public int find(KeyPart aKey)
+    public int find(Object aKey)
     {
         for (int slot = spread(aKey.hashCode()) & slotMask;; slot = (slot + 1) & slotMask)
         {
@@ -148,10 +156,10 @@ public final class KeyMatchIndex
      * {@link CompositeKey} is built for the lookup.
      *
      * @param aParts
-     *            the key's components, in key order.
+     *            the key's component identities, in key order.
      * @return its key id, or {@link #NOT_FOUND}.
      */
-    public int find(KeyPart[] aParts)
+    public int find(Object[] aParts)
     {
         int hash = Arrays.hashCode(aParts);
         for (int slot = spread(hash) & slotMask;; slot = (slot + 1) & slotMask)
@@ -198,7 +206,7 @@ public final class KeyMatchIndex
 
 
     /**
-     * Returns the stored key of key {@code aId} — a {@link KeyPart} or a {@link CompositeKey} — by
+     * Returns the stored key of key {@code aId} — a key identity or a {@link CompositeKey} — by
      * scanning the slot table; for messages, never for a per-row path.
      *
      * @param aId
@@ -236,9 +244,10 @@ public final class KeyMatchIndex
     }
 
     /**
-     * A multi-component join key: the components in key order and their hash, computed once. The
-     * hash is {@link Arrays#hashCode(Object[])} of the components, so {@link #find(KeyPart[])} can
-     * compute it from a scratch array. Equality is component-wise {@code KeyPart.equals}.
+     * A multi-component join key: the component identities in key order and their hash, computed
+     * once. The hash is {@link Arrays#hashCode(Object[])} of the components, so
+     * {@link #find(Object[])} can compute it from a scratch array. Equality is component-wise
+     * {@code Object.equals} on the identities — {@code KeyPart.equals} by the bijection.
      *
      * <p>
      * ⚠ A class and not a record: a record's generated {@code equals} would compare the array by
@@ -248,34 +257,34 @@ public final class KeyMatchIndex
     public static final class CompositeKey
     {
 
-        private final KeyPart[] parts;
+        private final Object[] parts;
 
         private final int hash;
 
         /**
          * @param aParts
-         *            the components; the array is owned by the key from here on and must not be
-         *            modified.
+         *            the component identities; the array is owned by the key from here on and must
+         *            not be modified.
          */
-        CompositeKey(KeyPart[] aParts)
+        CompositeKey(Object[] aParts)
         {
             parts = aParts;
             hash = Arrays.hashCode(aParts);
         }
 
 
-        private boolean matches(int aHash, KeyPart[] aParts)
+        private boolean matches(int aHash, Object[] aParts)
         {
             return hash == aHash && Arrays.equals(parts, aParts);
         }
 
 
         /**
-         * The components, in key order — a copy, for messages.
+         * The component identities, in key order — a copy, for messages.
          *
-         * @return the components.
+         * @return the identities.
          */
-        public KeyPart[] parts()
+        public Object[] parts()
         {
             return parts.clone();
         }

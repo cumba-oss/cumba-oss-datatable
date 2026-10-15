@@ -22,8 +22,8 @@ import net.cumba.datatable.merge.MalformedSidedKeyException;
 import net.cumba.datatable.merge.UnresolvedQualifiedKeyException;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.GroupKeyPolicy;
-import net.cumba.datatable.values.GroupKeyPolicy.KeyPart;
 import net.cumba.datatable.values.IDataValue;
+import net.cumba.datatable.values.MissingValue;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -51,10 +51,17 @@ import org.jspecify.annotations.Nullable;
  * fill ONE scratch key array owned by the matcher, so they are confined to one thread at a time
  * (the merge builder's expansion pass). A reader that may be probed concurrently — the
  * {@link KeyMatchLazyView}, read from the EDT beside an export or by the remote backend — passes
- * its own array to {@link #keyIdOf(int, KeyPart[])} / {@link #firstMatchOf(int, KeyPart[])}, one
- * per probe from {@link #newKey()}; the readers it shares hold no state a probe depends on (a
+ * its own array to {@link #keyIdOf(int, Object[])} / {@link #firstMatchOf(int, Object[])}, one per
+ * probe from {@link #newKey()}; the readers it shares hold no state a probe depends on (a
  * {@link KeyCellReader.Direct} counts its fall-backs for tests only; a {@link KeyCellReader.Union}
  * builds its member readers idempotently).
+ * </p>
+ *
+ * <p>
+ * Keys are held and probed as <b>key identities</b> ({@link KeyCellReader#read}, ruling
+ * {@code SKI-P-R3}), never as {@code KeyPart}s: a text probe allocates nothing, and a stored text
+ * key is the column's own {@code String}. A {@code Join_As_String} key is the identity's text
+ * projection ({@link GroupKeyPolicy#asTextIdentity}), exactly {@code KeyPart.asText()}'s identity.
  * </p>
  */
 public final class KeyedMatcher
@@ -88,7 +95,7 @@ public final class KeyedMatcher
 
     private final @Nullable KeyCellReader[] recordReaders;
 
-    private final KeyPart @Nullable [] scratch;
+    private final Object @Nullable [] scratch;
 
     private KeyedMatcher(IDataTable aPrimary, IDataTable aPartner, KeyedMergeSpec aSpec,
             int[] aRecordColIds, int[] aPartnerColIds, boolean[] aActive)
@@ -116,7 +123,7 @@ public final class KeyedMatcher
         singleActive = first;
         index = buildIndex(aPartner, aPartnerColIds);
         recordReaders = KeyCellReader.of(aPrimary, aRecordColIds);
-        scratch = nActive > 1 ? new KeyPart[nActive] : null;
+        scratch = nActive > 1 ? new Object[nActive] : null;
     }
 
 
@@ -223,10 +230,10 @@ public final class KeyedMatcher
             }
             if (nActive == 1)
             {
-                return keyPart(readers, singleActive, row);
+                return keyIdentity(readers, singleActive, row);
             }
-            KeyPart[] parts = new KeyPart[nActive];
-            fillKeyParts(readers, row, parts);
+            Object[] parts = new Object[nActive];
+            fillKeyIdentities(readers, row, parts);
             return new KeyMatchIndex.CompositeKey(parts);
         });
     }
@@ -262,9 +269,9 @@ public final class KeyedMatcher
      *
      * @return the array, or {@code null}.
      */
-    public KeyPart @Nullable [] newKey()
+    public Object @Nullable [] newKey()
     {
-        return nActive > 1 ? new KeyPart[nActive] : null;
+        return nActive > 1 ? new Object[nActive] : null;
     }
 
 
@@ -293,7 +300,7 @@ public final class KeyedMatcher
      *            key).
      * @return the key id or {@code NOT_FOUND}.
      */
-    public int keyIdOf(int aRow, KeyPart @Nullable [] aKey)
+    public int keyIdOf(int aRow, Object @Nullable [] aKey)
     {
         if (!keepMissings && anyActiveKeyBlank(primary, recordColIds, aRow))
         {
@@ -301,9 +308,9 @@ public final class KeyedMatcher
         }
         if (aKey == null)
         {
-            return index.find(keyPart(recordReaders, singleActive, aRow));
+            return index.find(keyIdentity(recordReaders, singleActive, aRow));
         }
-        fillKeyParts(recordReaders, aRow, aKey);
+        fillKeyIdentities(recordReaders, aRow, aKey);
         return index.find(aKey);
     }
 
@@ -361,7 +368,7 @@ public final class KeyedMatcher
      *            key).
      * @return the partner row or {@code -1}.
      */
-    public int firstMatchOf(int aRow, KeyPart @Nullable [] aKey)
+    public int firstMatchOf(int aRow, Object @Nullable [] aKey)
     {
         int id = keyIdOf(aRow, aKey);
         if (id == KeyMatchIndex.NOT_FOUND)
@@ -430,13 +437,16 @@ public final class KeyedMatcher
     }
 
 
-    /** {@code (COL=value, ...)} over the active components, named by the given side. */
+    /**
+     * {@code (COL=value, ...)} over the active components, named by the given side. A stored key is
+     * its identity, which is what the message always rendered ({@code KeyPart.identity()}).
+     */
     private String keyText(Object aKey, boolean aLeftNames)
     {
-        KeyPart[] parts = aKey instanceof KeyMatchIndex.CompositeKey composite ? composite.parts()
-                : new KeyPart[]
+        Object[] parts = aKey instanceof KeyMatchIndex.CompositeKey composite ? composite.parts()
+                : new Object[]
                 {
-                        (KeyPart) aKey
+                        aKey
                 };
         StringBuilder sb = new StringBuilder("(");
         int j = 0;
@@ -451,7 +461,7 @@ public final class KeyedMatcher
                 sb.append(", ");
             }
             sb.append(aLeftNames ? keys.get(i).left() : keys.get(i).right()).append('=')
-                    .append(parts[j].identity());
+                    .append(parts[j]);
             j++;
         }
         return sb.append(')').toString();
@@ -465,22 +475,24 @@ public final class KeyedMatcher
     }
 
 
-    private KeyPart keyPart(@Nullable KeyCellReader[] aReaders, int aComponent, long aRow)
+    private Object keyIdentity(@Nullable KeyCellReader[] aReaders, int aComponent, long aRow)
     {
         // an active component is present on both sides (REG-Q3), so its reader exists
-        KeyPart part = Objects.requireNonNull(aReaders[aComponent]).read(aRow);
-        return asString ? part.asText() : part;
+        Object identity = Objects.requireNonNull(aReaders[aComponent]).read(aRow);
+        // Join_As_String (D4-R3): exactly KeyPart.asText()'s identity -- only a present number is
+        // projected to its text
+        return asString ? GroupKeyPolicy.asTextIdentity(identity) : identity;
     }
 
 
-    private void fillKeyParts(@Nullable KeyCellReader[] aReaders, long aRow, KeyPart[] aOut)
+    private void fillKeyIdentities(@Nullable KeyCellReader[] aReaders, long aRow, Object[] aOut)
     {
         int j = 0;
         for (int i = 0; i < aReaders.length; i++)
         {
             if (active[i])
             {
-                aOut[j++] = keyPart(aReaders, i, aRow);
+                aOut[j++] = keyIdentity(aReaders, i, aRow);
             }
         }
     }
@@ -507,8 +519,10 @@ public final class KeyedMatcher
         }
         IDataValue dv = aTable.getColumn(aColId).getDataValue(aRow);
         // An empty string is not "missing" to isMissingOrNull but IS blank for a keep/drop-missing
-        // policy (D34 #6 rules "" and every MissingValue together).
-        return !GroupKeyPolicy.KEEP_MISSING_KEYS.keyPart(dv).present();
+        // policy (D34 #6 rules "" and every MissingValue together): the identity of a part that is
+        // not present() is "" (EMPTY) or a MissingValue (Missing), and no other identity is.
+        Object identity = GroupKeyPolicy.KEEP_MISSING_KEYS.keyIdentity(dv);
+        return "".equals(identity) || identity instanceof MissingValue;
     }
 
 

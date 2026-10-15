@@ -387,6 +387,61 @@ class GroupKeyPolicyIdentityTest
 
 
     /**
+     * The two {@code K-HELP} helpers ({@code PLAN-key-match-index-identity-rekey}) are the rules of
+     * {@link KeyPart}, not copies of them: {@code numberKeyIdentity} is a
+     * {@link KeyPart.PresentNumber}'s identity, {@code asTextIdentity} is
+     * {@code asText().identity()} — for every part, and for the identity of every cell under every
+     * policy, where it is also {@code textKeyIdentity}.
+     */
+    @Test
+    void theNumberAndTextHelpersAreTheKeyPartRules()
+    {
+        for (KeyPart p : parts())
+        {
+            assertEquals(p.asText().identity(), GroupKeyPolicy.asTextIdentity(p.identity()),
+                    () -> "text projection of " + p);
+            if (p instanceof KeyPart.PresentNumber n)
+            {
+                assertEquals(p.identity(), GroupKeyPolicy.numberKeyIdentity(n.value()),
+                        () -> "number identity of " + p);
+            }
+        }
+        for (GroupKeyPolicy policy : POLICIES)
+        {
+            for (IDataValue dv : cells())
+            {
+                KeyPart part = policy.keyPart(dv);
+                assertEquals(part.asText().identity(),
+                        GroupKeyPolicy.asTextIdentity(policy.keyIdentity(dv)),
+                        () -> policy + " / " + dv);
+                assertEquals(policy.textKeyIdentity(dv),
+                        GroupKeyPolicy.asTextIdentity(policy.keyIdentity(dv)),
+                        () -> policy + " / " + dv);
+                if (part instanceof KeyPart.PresentNumber && dv != null
+                        && dv.getValue() instanceof Number n)
+                {
+                    assertEquals(part.identity(), GroupKeyPolicy.numberKeyIdentity(n.doubleValue()),
+                            () -> policy + " / " + dv);
+                }
+            }
+        }
+        // -0.0 is the canonical 0.0, bit for bit; a NaN is a missing encoding, never a number
+        assertEquals(Double.doubleToRawLongBits(0.0),
+                Double.doubleToRawLongBits(GroupKeyPolicy.numberKeyIdentity(-0.0)));
+        assertThrows(IllegalArgumentException.class,
+                () -> GroupKeyPolicy.numberKeyIdentity(Double.NaN));
+        // only a present number is projected: "", a marker and a text are themselves
+        assertSame(MissingValue.MIS_A, GroupKeyPolicy.asTextIdentity(MissingValue.MIS_A));
+        assertEquals("", GroupKeyPolicy.asTextIdentity(""));
+        String text = String.valueOf("5".toCharArray());
+        assertSame(text, GroupKeyPolicy.asTextIdentity(text));
+        assertEquals("5", GroupKeyPolicy.asTextIdentity(5.0));
+        assertEquals("0", GroupKeyPolicy.asTextIdentity(GroupKeyPolicy.numberKeyIdentity(-0.0)));
+        assertEquals("9007199254740993", GroupKeyPolicy.asTextIdentity(TWO_53 + 1));
+    }
+
+
+    /**
      * The exact-LONG arm (L1): which longs a double holds, the saturation trap at
      * {@code Long.MAX_VALUE}, and the digits the text channel renders.
      */

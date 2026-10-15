@@ -25,7 +25,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code PLAN-identity-safe-join-caches} Phase 3 — {@link KeyCellReader} answers EXACTLY what
- * {@code KEEP_MISSING_KEYS.keyPart(table.getColumn(c).getDataValue(row))} answers, over real tables
+ * {@code KEEP_MISSING_KEYS.keyIdentity(table.getColumn(c).getDataValue(row))} answers (since
+ * {@code PLAN-key-match-index-identity-rekey}; the identity of {@code keyPart}), over real tables
  * loaded through the production path, and its fast path genuinely fires.
  *
  * <p>
@@ -81,10 +82,13 @@ class KeyCellReaderTest
         for (long r = 0; r < rows + 2; r++)
         {
             KeyPart slow;
+            Object slowIdentity;
             try
             {
                 slow = GroupKeyPolicy.KEEP_MISSING_KEYS
                         .keyPart(aTable.getColumn(0).getDataValue(r));
+                slowIdentity = GroupKeyPolicy.KEEP_MISSING_KEYS
+                        .keyIdentity(aTable.getColumn(0).getDataValue(r));
             }
             catch (RuntimeException expected)
             {
@@ -100,16 +104,25 @@ class KeyCellReaderTest
                 }
                 continue;
             }
-            KeyPart fast = reader.read(r);
+            Object fast = reader.read(r);
             String where = aLabel + " row " + r;
-            assertEquals(slow, fast, where);
-            assertEquals(slow.getClass(), fast.getClass(), where);
-            if (slow instanceof KeyPart.PresentNumber sp
-                    && fast instanceof KeyPart.PresentNumber fp)
-            {
-                assertEquals(Double.doubleToRawLongBits(sp.value()),
-                        Double.doubleToRawLongBits(fp.value()), where + " (raw bits)");
-            }
+            assertExactIdentity(slowIdentity, fast, where);
+            // ... and the identity of the KeyPart the old reader answered (the bijection)
+            assertExactIdentity(slow.identity(), fast, where + " (KeyPart)");
+            assertEquals(slow, KeyPart.ofIdentity(fast), where + " (inverse)");
+        }
+    }
+
+
+    /** Equal, of the same class, and for a number the same raw bits ({@code -0.0} is not 0.0). */
+    private static void assertExactIdentity(Object aExpected, Object aActual, String aWhere)
+    {
+        assertEquals(aExpected, aActual, aWhere);
+        assertEquals(aExpected.getClass(), aActual.getClass(), aWhere);
+        if (aExpected instanceof Double e && aActual instanceof Double a)
+        {
+            assertEquals(Double.doubleToRawLongBits(e), Double.doubleToRawLongBits(a),
+                    aWhere + " (raw bits)");
         }
     }
 
@@ -149,8 +162,10 @@ class KeyCellReaderTest
         // the fast reader too -- the fast read answers a double, so such a value takes the old path
         IDataTable big = table(DataValueType.LONG, (1L << 53) + 1, 1L << 53);
         KeyCellReader bigReader = KeyCellReader.of(big, 0);
-        assertEquals(new KeyPart.PresentExactLong((1L << 53) + 1), bigReader.read(0));
-        assertEquals(new KeyPart.PresentNumber(0x1p53), bigReader.read(1));
+        // assertEquals(Object, Object): a Long is not equal to a Double, so the identity's type is
+        // asserted too
+        assertEquals((1L << 53) + 1, bigReader.read(0));
+        assertEquals(0x1p53, bigReader.read(1));
         List<@Nullable Object> fewLongs = new ArrayList<>();
         for (int i = 0; i < 30; i++)
         {
@@ -244,11 +259,11 @@ class KeyCellReaderTest
         KeyCellReader reader = KeyCellReader.of(aUnion, k);
         for (long r = 0; r < aUnion.getRowCount() + 2; r++)
         {
-            KeyPart slow;
+            Object slow;
             try
             {
                 slow = GroupKeyPolicy.KEEP_MISSING_KEYS
-                        .keyPart(aUnion.getColumn(k).getDataValue(r));
+                        .keyIdentity(aUnion.getColumn(k).getDataValue(r));
             }
             catch (RuntimeException expected)
             {
@@ -264,7 +279,7 @@ class KeyCellReaderTest
                 }
                 continue;
             }
-            assertEquals(slow, reader.read(r), "union row " + r);
+            assertExactIdentity(slow, reader.read(r), "union row " + r);
         }
     }
 
@@ -339,7 +354,7 @@ class KeyCellReaderTest
         for (long r = 0; r < 3; r++)
         {
             assertEquals(
-                    GroupKeyPolicy.KEEP_MISSING_KEYS.keyPart(mock.getColumn(0).getDataValue(r)),
+                    GroupKeyPolicy.KEEP_MISSING_KEYS.keyIdentity(mock.getColumn(0).getDataValue(r)),
                     reader.read(r));
         }
     }
