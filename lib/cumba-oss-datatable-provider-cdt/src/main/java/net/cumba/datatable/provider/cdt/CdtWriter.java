@@ -20,6 +20,7 @@ import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.IDataTableColumnMeta;
+import net.cumba.datatable.formats.DisplayFormatCategory;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
 import net.cumba.datatable.values.MissingValue;
@@ -134,8 +135,8 @@ public final class CdtWriter
         catch (IOException ex)
         {
             // NOT unreachable: StringBuilder.append itself never throws, but writeDataset also
-            // raises IOException from its own validation (checkNoControlChars, the TIME range
-            // check, the header CR/LF check) independent of the Appendable. toString() has no
+            // raises IOException from its own validation (checkNoControlChars, the date range
+            // checks, the header CR/LF check) independent of the Appendable. toString() has no
             // checked-exception outlet, so those deliberate export failures surface here as an
             // unchecked wrapper instead.
             throw new IllegalStateException(ex);
@@ -157,10 +158,11 @@ public final class CdtWriter
         String label = firstNonBlank(aDatasetLabel, meta.getLabel());
         String klass = firstNonBlank(aDatasetClass, asString(meta.getMetaData("class")));
 
+        CdtKind[] kinds = columnKinds(aTable, meta);
         writeDatasetHeader(aOut, name, label, klass, meta);
-        writeColumns(aOut, meta);
+        writeColumns(aOut, meta, kinds);
         aOut.append(FENCE).append('\n');
-        writeRows(aOut, aTable, meta);
+        writeRows(aOut, aTable, meta, kinds);
         aOut.append(FENCE).append('\n');
     }
 
@@ -221,14 +223,16 @@ public final class CdtWriter
     }
 
 
-    private static void writeColumns(Appendable aOut, DataTableMeta aMeta) throws IOException
+    private static void writeColumns(Appendable aOut, DataTableMeta aMeta, CdtKind[] aKinds)
+        throws IOException
     {
         DataTableColumnMeta[] cols = aMeta.getColumns();
-        for (DataTableColumnMeta c : cols)
+        for (int i = 0; i < cols.length; i++)
         {
+            DataTableColumnMeta c = cols[i];
             aOut.append("col ").append(safeIdent(c.getName()));
 
-            CdtKind kind = classifyKind(c.getType(), c.getDisplayFormat());
+            CdtKind kind = aKinds[i];
             if (c.getType() != null)
             {
                 aOut.append(" type=").append(kind.token());
@@ -285,7 +289,8 @@ public final class CdtWriter
     }
 
 
-    private static void writeRows(Appendable aOut, IDataTable aTable, DataTableMeta aMeta)
+    private static void writeRows(Appendable aOut, IDataTable aTable, DataTableMeta aMeta,
+            CdtKind[] aKinds)
         throws IOException
     {
         int colCount = aMeta.getColumnCount();
@@ -300,9 +305,7 @@ public final class CdtWriter
                     row.append(" | ");
                 }
                 Object raw = extractRaw(aTable.getValue(r, c));
-                DataTableColumnMeta cm = aMeta.getColumn(c);
-                String rendered = renderValue(raw, cm.getType(), cm.getDisplayFormat(), r,
-                        cm.getName());
+                String rendered = renderValue(raw, aKinds[c], r, aMeta.getColumn(c).getName());
                 // A MissingValue renders as its bare sentinel (".", "._", ".A"...) and must NOT be
                 // quoted - quoting it is exactly how it would read back as a literal dot. Every
                 // other value goes through quoteFieldIfNeeded, which quotes a literal that happens
@@ -413,8 +416,8 @@ public final class CdtWriter
     // ---- value rendering ----------------------------------------------------------
 
 
-    private static String renderValue(@Nullable Object aValue, @Nullable DataValueType aType,
-            @Nullable String aFormat, long aRowIdx, String aColName)
+    private static String renderValue(@Nullable Object aValue, CdtKind aKind, long aRowIdx,
+            String aColName)
         throws IOException
     {
         if (aValue == null)
@@ -425,12 +428,7 @@ public final class CdtWriter
         {
             return renderMissing(mv);
         }
-        if (aType == null)
-        {
-            return checkNoControlChars(aValue.toString(), aRowIdx, aColName);
-        }
-        CdtKind kind = classifyKind(aType, aFormat);
-        return switch (kind)
+        return switch (aKind)
         {
         case DATE -> renderDate(aValue, aRowIdx, aColName);
         case TIME -> renderTime(aValue, aRowIdx, aColName);
@@ -592,6 +590,12 @@ public final class CdtWriter
 
         CHAR, NUM, DATE, TIME, DATETIME;
 
+        boolean isTemporal()
+        {
+            return this == DATE || this == TIME || this == DATETIME;
+        }
+
+
         String token()
         {
             return switch (this)
@@ -605,42 +609,99 @@ public final class CdtWriter
         }
     }
 
-    private static CdtKind classifyKind(DataValueType aType, @Nullable String aFormat)
+    /**
+     * The kind of every column, decided once per column and used for the header and for every
+     * value, so the two agree: the shared classifier
+     * ({@link DisplayFormatCategory#classify(DataTableColumnMeta)}, the SAS 9.4 roster, a preserved
+     * Dataset-JSON {@code dataType} first) names a numeric column's date / time / datetime kind; an
+     * R {@code Date} / {@code POSIXct} column (Unix epoch) is written {@code Num}, since CDT's date
+     * rendering counts from the SAS epoch and would shift it by 3653 days. Then the SC11 pre-scan:
+     * a date, time or datetime column holding any value CDT cannot write exactly — a fraction (the
+     * renderers take {@code longValue()}) or a time outside [0, 86400) (the {@code Time} field has
+     * no spelling for a duration) — is written {@code Num} instead, the format kept, so no value is
+     * lost (PLAN-date-format-classifier-agreement SC11).
+     */
+    private static CdtKind[] columnKinds(IDataTable aTable, DataTableMeta aMeta)
     {
-        if (aType == DataValueType.STRING)
+        DataTableColumnMeta[] cols = aMeta.getColumns();
+        CdtKind[] kinds = new CdtKind[cols.length];
+        boolean scan = false;
+        for (int i = 0; i < cols.length; i++)
+        {
+            kinds[i] = classifyKind(cols[i]);
+            scan |= kinds[i].isTemporal();
+        }
+        if (!scan)
+        {
+            return kinds;
+        }
+        long rowCount = aTable.getRowCount();
+        for (long r = 0; r < rowCount && scan; r++)
+        {
+            scan = false;
+            for (int c = 0; c < cols.length; c++)
+            {
+                if (kinds[c].isTemporal())
+                {
+                    if (!isRenderable(kinds[c], extractRaw(aTable.getValue(r, c))))
+                    {
+                        kinds[c] = CdtKind.NUM;
+                    }
+                    else
+                    {
+                        scan = true;
+                    }
+                }
+            }
+        }
+        return kinds;
+    }
+
+
+    private static CdtKind classifyKind(DataTableColumnMeta aColumn)
+    {
+        DataValueType type = aColumn.getType();
+        if (type == DataValueType.STRING)
         {
             return CdtKind.CHAR;
         }
-        if (aType == DataValueType.LONG || aType == DataValueType.DOUBLE)
+        if (type == DataValueType.LONG || type == DataValueType.DOUBLE)
         {
-            if (aFormat != null)
+            return switch (DisplayFormatCategory.classify(aColumn))
             {
-                String f = aFormat.toUpperCase(Locale.ROOT);
-                // F-prov-05: DATEAMPM is a SAS *datetime* format (values are seconds since
-                // 1960-01-01) whose name starts with "DATE" - it must be claimed here, in
-                // the DATETIME arm, before the DATE prefix arm below can swallow it.
-                if (f.startsWith("DATETIME") || f.startsWith("DATEAMPM") || f.startsWith("NLDATM")
-                        || f.startsWith("E8601DT") || f.startsWith("IS8601DT")
-                        || f.startsWith("B8601DT"))
-                {
-                    return CdtKind.DATETIME;
-                }
-                if (f.startsWith("TIME") || f.startsWith("HHMM") || f.startsWith("E8601TM")
-                        || f.startsWith("IS8601TM") || f.startsWith("B8601TM"))
-                {
-                    return CdtKind.TIME;
-                }
-                if (f.startsWith("DATE") || f.startsWith("DDMMYY") || f.startsWith("MMDDYY")
-                        || f.startsWith("YYMMDD") || f.startsWith("E8601DA")
-                        || f.startsWith("IS8601DA") || f.startsWith("B8601DA")
-                        || f.startsWith("MONYY") || f.startsWith("WEEKDATE"))
-                {
-                    return CdtKind.DATE;
-                }
-            }
-            return CdtKind.NUM;
+            case DATE_SAS -> CdtKind.DATE;
+            case TIME_SAS -> CdtKind.TIME;
+            case DATETIME_SAS -> CdtKind.DATETIME;
+            default -> CdtKind.NUM;
+            };
         }
         return CdtKind.CHAR;
+    }
+
+
+    /**
+     * Whether the renderer of {@code aKind} writes {@code aValue} exactly: a non-number (a missing
+     * value is its own enum, not a number) or a non-finite value is not the renderer's concern (it
+     * is written as text or as its sentinel); a number must be whole, and a time must lie in [0,
+     * 86400). A whole value outside the representable date range still reaches the renderer, which
+     * refuses it with a descriptive {@link IOException} as before.
+     */
+    private static boolean isRenderable(CdtKind aKind, @Nullable Object aValue)
+    {
+        if (!(aValue instanceof Number n))
+        {
+            return true;
+        }
+        double d = n.doubleValue();
+        if (!Double.isFinite(d))
+        {
+            return true;
+        }
+        if (Double.compare(d, Math.rint(d)) != 0)
+        {
+            return false;
+        }
+        return aKind != CdtKind.TIME || (d >= 0 && d < 86400);
     }
 
     // ---- quoting / identifiers ----------------------------------------------------

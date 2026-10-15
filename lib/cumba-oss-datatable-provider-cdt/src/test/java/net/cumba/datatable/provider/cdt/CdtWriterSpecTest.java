@@ -889,16 +889,222 @@ class CdtWriterSpecTest
     }
 
 
+    /**
+     * SC11 at the upper boundary: a {@code TIME8.} column holding exactly one day (86400 seconds)
+     * is one CDT's {@code Time} field cannot write, so the column is written {@code Num} and the
+     * value survives whole. Until 2026-10-15 the export was refused with an {@link IOException}.
+     */
     @Test
-    void timeOfExactlyOneDayIsRefusedAtTheUpperBoundary(@TempDir Path tmp) throws IOException
+    void timeOfExactlyOneDayFallsBackToNumAtTheUpperBoundary(@TempDir Path tmp) throws IOException
     {
         DataTableColumnMeta cm = DataTableColumnMeta.builder().index(0).name("ELAPSED")
                 .type(DataValueType.DOUBLE).displayFormat("TIME8.").build();
         IDataTable t = oneColumnTable("T", cm, 86400.0);
         Path out = tmp.resolve("t.cdt");
-        IOException ex = org.junit.jupiter.api.Assertions.assertThrows(IOException.class,
-                () -> CdtWriter.write(t, out));
-        assertTrue(ex.getMessage().contains("86400"), ex.getMessage());
+        CdtWriter.write(t, out);
+        String text = Files.readString(out, StandardCharsets.UTF_8);
+        assertTrue(colLineOf(text, 0).contains("type=Num"), colLineOf(text, 0));
+        assertTrue(colLineOf(text, 0).contains("format=TIME8."), colLineOf(text, 0));
+        assertEquals("86400", dataLineOf(text));
+    }
+
+    // ---- the shared classifier (PLAN-date-format-classifier-agreement C7) -------------------
+
+
+    private static DataTableColumnMeta numericColumn(String aName, String aFormat)
+    {
+        return DataTableColumnMeta.builder().index(0).name(aName).type(DataValueType.DOUBLE)
+                .displayFormat(aFormat).build();
+    }
+
+
+    /** The {@code type=} token of a one-column table holding {@code aValue}. */
+    private static String kindTokenOf(DataTableColumnMeta aColumn, Object aValue)
+    {
+        String colLine = colLineOf(CdtWriter.toString(oneColumnTable("T", aColumn, aValue)), 0);
+        return colLine.replaceAll(".* type=(\\S+).*", "$1");
+    }
+
+
+    /**
+     * Must stay green: the common ADaM formats with in-range whole values keep their kind and their
+     * rendered value text.
+     */
+    @Test
+    void commonAdamFormatsKeepTheirKindAndText()
+    {
+        assertEquals("2017-03-14", dataLineOf(
+                CdtWriter.toString(oneColumnTable("T", numericColumn("ADT", "DATE9."), 20892.0))));
+        assertEquals("2017-03-14", dataLineOf(CdtWriter
+                .toString(oneColumnTable("T", numericColumn("ADT", "E8601DA10."), 20892.0))));
+        assertEquals("2017-03-14", dataLineOf(CdtWriter
+                .toString(oneColumnTable("T", numericColumn("ADT", "YYMMDD10."), 20892.0))));
+        assertEquals("2017-03-14T15:36:56", dataLineOf(CdtWriter.toString(
+                oneColumnTable("T", numericColumn("ADTM", "DATETIME20."), 1805125016.0))));
+        assertEquals("2017-03-14T15:36:56", dataLineOf(CdtWriter
+                .toString(oneColumnTable("T", numericColumn("ADTM", "E8601DT19."), 1805125016.0))));
+        assertEquals("10:10:10", dataLineOf(
+                CdtWriter.toString(oneColumnTable("T", numericColumn("ATM", "TIME8."), 36610.0))));
+        assertEquals("10:10:10", dataLineOf(CdtWriter
+                .toString(oneColumnTable("T", numericColumn("ATM", "E8601TM8."), 36610.0))));
+        assertEquals("Date", kindTokenOf(numericColumn("ADT", "DATE9."), 20892.0));
+        assertEquals("DateTime", kindTokenOf(numericColumn("ADTM", "DATETIME20."), 1805125016.0));
+        assertEquals("Time", kindTokenOf(numericColumn("ATM", "TIME8."), 36610.0));
+    }
+
+
+    /**
+     * The kind follows the SAS 9.4 roster through the shared classifier (SC1–SC3, SC8, SC9, SC4):
+     * {@code YEAR4.} and {@code MONNAME9.} write date values, {@code E8601TZ.} and {@code TOD8.}
+     * time values; a user format named {@code DATEFMT.} declares nothing and stays {@code Num}.
+     */
+    @Test
+    void rosterNamesClassifyByTheValueKindSasDocuments()
+    {
+        assertEquals("Date", kindTokenOf(numericColumn("YR", "YEAR4."), 20892.0));
+        assertEquals("2017-03-14", dataLineOf(
+                CdtWriter.toString(oneColumnTable("T", numericColumn("YR", "YEAR4."), 20892.0))));
+        assertEquals("Date", kindTokenOf(numericColumn("MN", "MONNAME9."), 20892.0));
+        assertEquals("DateTime", kindTokenOf(numericColumn("DTD", "DTDATE9."), 1805125016.0));
+        assertEquals("Time", kindTokenOf(numericColumn("TZ", "E8601TZ."), 36610.0));
+        assertEquals("Time", kindTokenOf(numericColumn("TD", "TOD8."), 36610.0));
+        assertEquals("10:10:10", dataLineOf(
+                CdtWriter.toString(oneColumnTable("T", numericColumn("TD", "TOD8."), 36610.0))));
+        assertEquals("Num", kindTokenOf(numericColumn("UD", "DATEFMT."), 20892.0));
+        assertEquals("Num", kindTokenOf(numericColumn("UD", "MYDATE8."), 20892.0));
+        assertEquals("20892", dataLineOf(
+                CdtWriter.toString(oneColumnTable("T", numericColumn("UD", "DATEFMT."), 20892.0))));
+    }
+
+
+    /**
+     * SC10: a numeric column whose preserved Dataset-JSON {@code dataType} says {@code date} is a
+     * date without any display format; the preserved type is read from the {@code dataType}
+     * metadata only, never from a JDBC {@code nativeType}.
+     */
+    @Test
+    void preservedDatasetJsonTypeClassifiesANumericColumnWithoutFormat()
+    {
+        DataTableColumnMeta preserved = DataTableColumnMeta.builder().index(0).name("ADT")
+                .type(DataValueType.DOUBLE).addMetaData("dataType", "date").build();
+        assertEquals("Date", kindTokenOf(preserved, 20892.0));
+        assertEquals("2017-03-14",
+                dataLineOf(CdtWriter.toString(oneColumnTable("T", preserved, 20892.0))));
+        DataTableColumnMeta nativeOnly = DataTableColumnMeta.builder().index(0).name("ADT")
+                .type(DataValueType.DOUBLE).nativeType("DATE").build();
+        assertEquals("Num", kindTokenOf(nativeOnly, 20892.0));
+    }
+
+
+    /**
+     * SC12 (pre-go fold #3): an R {@code Date} / {@code POSIXct} column counts from 1970, and CDT's
+     * rendering is SAS-epoch, so both are written {@code Num} — rendering them as a date would
+     * shift every value by 3653 days.
+     */
+    @Test
+    void rDateAndTimestampColumnsStayNum()
+    {
+        assertEquals("Num", kindTokenOf(numericColumn("RD", "Rdate."), 17239.0));
+        assertEquals("17239", dataLineOf(
+                CdtWriter.toString(oneColumnTable("T", numericColumn("RD", "Rdate."), 17239.0))));
+        assertEquals("Num",
+                kindTokenOf(numericColumn("RT", "Rtimestamp[Europe/Berlin]"), 1489506216.0));
+        assertEquals("Num", kindTokenOf(numericColumn("RT", "Rtimestamp"), 1489506216.0));
+    }
+
+
+    /**
+     * SC11: a date, time or datetime column holding any value CDT cannot write exactly — a
+     * fraction, or a time outside [0, 86400) — is written {@code Num} for the whole column, and
+     * every value survives as its exact number. Until 2026-10-15 a fraction was silently truncated
+     * ({@code longValue()}) and an out-of-day time refused the export.
+     */
+    @Test
+    void temporalColumnHoldingAnUnrenderableValueFallsBackToNum() throws IOException
+    {
+        Object[][] cases =
+        {
+                {
+                        "TIME8.", 36610.5
+                },
+                {
+                        "TIME8.", 90000.0
+                },
+                {
+                        "TIME8.", -5.0
+                },
+                {
+                        "DATETIME20.", 1805125016.546
+                },
+                {
+                        "TOD8.", 1805125016.546
+                },
+                {
+                        "DATE9.", 20892.5
+                },
+                {
+                        "DTDATE9.", 1805125016.546
+                }
+        };
+        for (Object[] c : cases)
+        {
+            String format = (String) c[0];
+            double value = (Double) c[1];
+            DataTableColumnMeta cm = numericColumn("V", format);
+            String text = CdtWriter.toString(oneColumnTable("T", cm, value));
+            assertTrue(colLineOf(text, 0).contains("type=Num"),
+                    format + " " + value + ": " + colLineOf(text, 0));
+            assertTrue(colLineOf(text, 0).contains("format=" + format),
+                    "the format is kept: " + colLineOf(text, 0));
+            String expected = value == Math.floor(value) ? Long.toString((long) value)
+                    : Double.toString(value);
+            assertEquals(expected, dataLineOf(text), format + " " + value);
+            IDataTable back = CdtTableBuilder.build(CdtParser.parseFirst(text, "t"),
+                    java.net.URI.create("test:t"));
+            assertEquals(value, ((Number) back.getValue(0, 0)).doubleValue(), 0.0,
+                    format + " " + value + " survives the round trip exactly");
+        }
+    }
+
+
+    /**
+     * The fallback is decided per column over all its rows: one unrenderable value makes the whole
+     * column {@code Num}, so the header and every row agree.
+     */
+    @Test
+    void oneUnrenderableValueMakesTheWholeColumnNum()
+    {
+        DataTableColumnMeta cm = numericColumn("ATM", "TIME8.");
+        DataTableMeta md = DataTableMeta.builder().name("T").rowCount(3).totalRowCount(3)
+                .setColumns(cm).build();
+        CachedDataTableColumn col = new CachedDataTableColumn(0, DataValueType.DOUBLE);
+        col.addElement(36610.0);
+        col.addElement(90000.0);
+        col.addElement(1.0);
+        col.complete();
+        String text = CdtWriter.toString(new ColumnCachedDataTable(md, col));
+        String[] lines = text.split("\n", -1);
+        assertTrue(lines[1].contains("type=Num"), lines[1]);
+        assertEquals("36610", lines[3]);
+        assertEquals("90000", lines[4]);
+        assertEquals("1", lines[5]);
+    }
+
+
+    /**
+     * P0 premise of C7: a round trip keeps a non-default format token, so a {@code YEAR4.} column
+     * written as a date comes back as {@code YEAR4.}, not as the parser's {@code DATE9.} default.
+     */
+    @Test
+    void roundTripKeepsTheYearFormat()
+    {
+        String text = CdtWriter
+                .toString(oneColumnTable("T", numericColumn("YR", "YEAR4."), 20892.0));
+        assertTrue(colLineOf(text, 0).contains("type=Date"), colLineOf(text, 0));
+        assertTrue(colLineOf(text, 0).contains("format=YEAR4."), colLineOf(text, 0));
+        IDataTable back = CdtTableBuilder.build(CdtParser.parseFirst(text, "t"),
+                java.net.URI.create("test:t"));
+        assertEquals("YEAR4.", back.getMetaData().getColumn(0).getDisplayFormat());
     }
 
     // ---- write(...): append mode ----------------------------------------------------------

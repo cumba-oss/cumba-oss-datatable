@@ -2,7 +2,6 @@ package net.cumba.datatable.provider.cdt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -25,8 +24,9 @@ import org.junit.jupiter.api.io.TempDir;
  * <li>F-prov-03 — an integral double outside the {@code long} range must not be saturated to
  * {@code Long.MAX_VALUE} on the "print without .0" shortcut.</li>
  * <li>F-prov-04 — a SAS TIME value outside {@code [0, 86400)} cannot be represented in a CDT
- * {@code Time} field and must be refused with an {@link IOException} (not wrapped modulo 24 h, not
- * escaping as an unchecked {@code DateTimeException}).</li>
+ * {@code Time} field: it is never wrapped modulo 24 h and never escapes as an unchecked
+ * {@code DateTimeException}. Since 2026-10-15 (PLAN-date-format-classifier-agreement SC11) the
+ * column is written {@code Num} with the value whole instead of the export being refused.</li>
  * <li>F-prov-05 — {@code DATEAMPM} is a SAS <em>datetime</em> format and must be rendered on the
  * DATETIME path, not as a date of {@code SAS_EPOCH + seconds} days.</li>
  * </ul>
@@ -98,21 +98,22 @@ class CdtWriterRenderingFixesTest
 
 
     @Test
-    void timeOfTwentyFiveHoursIsRefusedNotWrapped(@TempDir Path tmp)
+    void timeOfTwentyFiveHoursIsWrittenAsANumberNotWrapped(@TempDir Path tmp) throws IOException
     {
-        IDataTable t = numTable("ELAPSED", "TIME8.", 90000.0);
-        IOException ex = assertThrows(IOException.class, () -> writeToString(t, tmp));
-        assertTrue(ex.getMessage().contains("ELAPSED"), ex.getMessage());
-        assertTrue(ex.getMessage().contains("90000"), ex.getMessage());
+        String text = writeToString(numTable("ELAPSED", "TIME8.", 90000.0, 3661.0), tmp);
+        assertTrue(text.contains("col ELAPSED type=Num format=TIME8."), text);
+        assertTrue(text.contains("\n90000\n"), text);
+        assertTrue(text.contains("\n3661\n"), "the whole column is Num: " + text);
+        assertFalse(text.contains("01:00:00"), "never wrapped: " + text);
     }
 
 
     @Test
-    void negativeTimeIsRefusedWithIOExceptionNotDateTimeException(@TempDir Path tmp)
+    void negativeTimeIsWrittenAsANumberNotDateTimeException(@TempDir Path tmp) throws IOException
     {
-        IDataTable t = numTable("NEGT", "TIME8.", -3600.0);
-        IOException ex = assertThrows(IOException.class, () -> writeToString(t, tmp));
-        assertTrue(ex.getMessage().contains("NEGT"), ex.getMessage());
+        String text = writeToString(numTable("NEGT", "TIME8.", -3600.0), tmp);
+        assertTrue(text.contains("col NEGT type=Num format=TIME8."), text);
+        assertTrue(text.contains("\n-3600\n"), text);
     }
 
 
