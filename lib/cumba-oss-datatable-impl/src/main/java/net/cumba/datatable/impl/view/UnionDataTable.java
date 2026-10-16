@@ -175,6 +175,32 @@ public final class UnionDataTable extends AbstractDataTable
     }
 
 
+    /**
+     * The type the split-domain constructor {@link #UnionDataTable(String, IDataTable...)} gives
+     * {@code aColumn} over {@code aMembers}, without building the union (owner ruling
+     * {@code ECT-Q7} ⓐ, {@link UnionColumnTypes}). Members that lack the column are skipped; when
+     * the members that declare it agree, that type is returned without scanning a cell; otherwise a
+     * member whose column holds no value in any row is deferred and the column takes the type of
+     * the members that hold a value (STRING when every member is blank).
+     *
+     * <p>
+     * The engine's scope gates call this with a split domain's member tables, so that adding an
+     * empty member never changes a scope verdict the union itself would not change.
+     * </p>
+     *
+     * @param aMembers
+     *            the member tables, in union order.
+     * @param aColumn
+     *            the column name, matched under each member's own column-name case-sensitivity.
+     * @return the resolved type, or {@code null} when two members holding values declare different
+     *         types (the union would fail) or no member declares the column.
+     */
+    public static @Nullable DataValueType resolvedColumnType(IDataTable[] aMembers, String aColumn)
+    {
+        return UnionColumnTypes.resolvedType(aMembers, aColumn);
+    }
+
+
     /** Null-member / null-meta / case-sensitivity / unknown-row-count guards. */
     private static void validateMembers(IDataTable[] aMembers)
     {

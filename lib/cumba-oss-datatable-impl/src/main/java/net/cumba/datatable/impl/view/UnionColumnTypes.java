@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.view;
 
+// OSS-IDENTITY datatable-union: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.values.DataValueType;
@@ -131,6 +134,54 @@ final class UnionColumnTypes
             }
         }
         return new Typed(column);
+    }
+
+
+    /**
+     * The type a union of {@code aMembers} gives the column named {@code aColumn}, without building
+     * the union ({@link UnionDataTable#resolvedColumnType(IDataTable[], String)}). Members lacking
+     * the column are skipped; members that agree on its type are never scanned.
+     *
+     * @param aMembers
+     *            the member tables.
+     * @param aColumn
+     *            the column name, looked up under each member's own case-sensitivity.
+     * @return the resolved type, or {@code null} on a {@link Clash} or when no member declares the
+     *         column.
+     */
+    static @Nullable DataValueType resolvedType(IDataTable[] aMembers, String aColumn)
+    {
+        int[][] maps = new int[aMembers.length][1];
+        @Nullable
+        DataValueType agreed = null;
+        boolean disagree = false;
+        for (int m = 0; m < aMembers.length; m++)
+        {
+            int mc = aMembers[m].getMetaData().getColumnIndex(aColumn);
+            maps[m][0] = mc;
+            if (mc < 0)
+            {
+                continue;
+            }
+            DataValueType type = typeOf(aMembers, maps, m, 0);
+            if (agreed == null)
+            {
+                agreed = type;
+            }
+            else if (agreed != type)
+            {
+                disagree = true;
+            }
+        }
+        if (!disagree)
+        {
+            return agreed;
+        }
+        return switch (resolve(aMembers, maps, 0))
+        {
+        case Typed(DataTableColumnMeta column) -> column.getType();
+        case Clash _ -> null;
+        };
     }
 
 

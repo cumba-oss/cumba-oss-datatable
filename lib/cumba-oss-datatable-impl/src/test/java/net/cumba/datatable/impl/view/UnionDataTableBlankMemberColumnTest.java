@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.view;
 
+// OSS-IDENTITY datatable-union: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -10,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import net.cumba.datatable.ColumnContent;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
+import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
 import net.cumba.datatable.values.DataValueType;
@@ -346,5 +350,90 @@ class UnionDataTableBlankMemberColumnTest
         union.getValue(1, c);
         assertEquals(1, a.contentAsks, "a cell read never scans");
         assertEquals(1, blank.contentAsks, "a cell read never scans");
+    }
+
+
+    /**
+     * The engine's scope gates ask for a column's union type without building the union
+     * ({@link UnionDataTable#resolvedColumnType(IDataTable[], String)}): members that agree give
+     * their type without a scan, and a member lacking the column is skipped.
+     */
+    @Test
+    void resolvedColumnTypeOfAgreeingMembersIsTheirTypeWithoutScanning()
+    {
+        CountingTable a = member("lb1", col("LBSTRESN", DataValueType.DOUBLE), 1.0);
+        CountingTable b = member("lb2", col("LBSTRESN", DataValueType.DOUBLE), 2.0);
+        CountingTable lacking = table("lb3", new DataTableColumnMeta[]
+        {
+                col("USUBJID", DataValueType.STRING)
+        }, new Object[][]
+        {
+                {
+                        "lb3-0"
+                }
+        });
+
+        assertSame(DataValueType.DOUBLE, UnionDataTable.resolvedColumnType(new IDataTable[]
+        {
+                a, lacking, b
+        }, "LBSTRESN"));
+        assertEquals(0, a.contentAsks);
+        assertEquals(0, b.contentAsks);
+        assertEquals(0, lacking.contentAsks);
+        assertNull(UnionDataTable.resolvedColumnType(new IDataTable[]
+        {
+                lacking
+        }, "LBSTRESN"), "no member declares the column");
+    }
+
+
+    /**
+     * A blank member of another type is deferred, as the union defers it: the type is the valued
+     * members', so adding an empty member never changes the answer.
+     */
+    @Test
+    void resolvedColumnTypeDefersABlankMemberToTheValuedType()
+    {
+        CountingTable numbers = member("lb1", col("LBSEQ", DataValueType.LONG), 7L);
+        CountingTable blank = member("lb2", col("LBSEQ", DataValueType.STRING), "", "");
+
+        IDataTable[] members =
+        {
+                blank, numbers
+        };
+        assertSame(DataValueType.LONG, UnionDataTable.resolvedColumnType(members, "LBSEQ"));
+        UnionDataTable union = new UnionDataTable("LB", members);
+        assertSame(union.getMetaData().getColumn(columnOf(union, "LBSEQ")).getType(),
+                UnionDataTable.resolvedColumnType(members, "LBSEQ"));
+    }
+
+
+    /** Two valued members of different types: the union would fail, so there is no type. */
+    @Test
+    void resolvedColumnTypeOfAClashIsNull()
+    {
+        CountingTable numeric = member("lbch", col("LBSTRESN", DataValueType.LONG), 1L);
+        CountingTable text = member("lbhe", col("LBSTRESN", DataValueType.STRING), "high");
+
+        assertNull(UnionDataTable.resolvedColumnType(new IDataTable[]
+        {
+                numeric, text
+        }, "LBSTRESN"));
+    }
+
+
+    /** Every member blank and the types disagreeing: STRING, the Char default. */
+    @Test
+    void resolvedColumnTypeOfAllBlankDisagreeingMembersIsString()
+    {
+        CountingTable blankDouble = member("lb1", col("LBORNRLO", DataValueType.DOUBLE),
+                MissingValue.MIS);
+        CountingTable blankBoolean = member("lb2", col("LBORNRLO", DataValueType.BOOLEAN),
+                MissingValue.MIS);
+
+        assertSame(DataValueType.STRING, UnionDataTable.resolvedColumnType(new IDataTable[]
+        {
+                blankDouble, blankBoolean
+        }, "LBORNRLO"));
     }
 }
