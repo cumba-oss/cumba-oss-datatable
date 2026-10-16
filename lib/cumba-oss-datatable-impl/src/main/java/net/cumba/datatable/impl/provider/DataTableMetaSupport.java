@@ -355,6 +355,123 @@ public class DataTableMetaSupport
 
 
     /**
+     * Adds to {@code aBuilder} the {@value #META_KEY_ENCODING} / {@value #META_KEY_ENCODING_SOURCE}
+     * pair a view over several tables carries (owner ruling B2-Q4 ⓐ, 2026-10-16) — always both keys
+     * or neither:
+     * <ul>
+     * <li>{@value #META_KEY_ENCODING}: the members' common value when every member reports the same
+     * one, {@value #ENCODING_MIXED} when they differ; <b>none</b> when any member reports none (a
+     * view whose rows came partly from text of unknown charset has no charset to claim).</li>
+     * <li>{@value #META_KEY_ENCODING_SOURCE}: the members' common value when they agree, else the
+     * least certain one present ({@value #ENCODING_SOURCE_DEFAULT} &lt;
+     * {@value #ENCODING_SOURCE_CONFIGURED} &lt; {@value #ENCODING_SOURCE_FORMAT} &lt;
+     * {@value #ENCODING_SOURCE_DECLARED}; a value outside that vocabulary counts as less certain
+     * than all of them and is carried as it is).</li>
+     * </ul>
+     * A member counts as reporting an encoding only when it carries <b>both</b> keys as strings.
+     * The rule engine measures byte lengths in the evaluated table's {@value #META_KEY_ENCODING}
+     * ({@code extract_metadata("encoding")}), and a union is evaluated over (a split domain), so
+     * the pair is what a byte count over the union reads.
+     *
+     * <p>
+     * The builder must not already hold either key: {@code addMetaData} keeps the <b>first</b>
+     * value of a duplicate key, so a copied member pair would shadow the agreed one — strip it with
+     * {@link #withoutEncoding(Object[])} first.
+     * </p>
+     *
+     * @param aBuilder
+     *            the view's metadata builder.
+     * @param aMembers
+     *            the members' metadata, at least one.
+     */
+    public static void putAgreedEncoding(DataTableMetaBuilder aBuilder, DataTableMeta... aMembers)
+    {
+        String encoding = null;
+        String source = null;
+        for (DataTableMeta member : aMembers)
+        {
+            if (!(member.getMetaData(META_KEY_ENCODING) instanceof String memberEncoding)
+                    || !(member
+                            .getMetaData(META_KEY_ENCODING_SOURCE) instanceof String memberSource))
+            {
+                return;
+            }
+            if (encoding == null || source == null)
+            {
+                encoding = memberEncoding;
+                source = memberSource;
+                continue;
+            }
+            if (!encoding.equals(memberEncoding))
+            {
+                encoding = ENCODING_MIXED;
+            }
+            if (encodingSourceCertainty(memberSource) < encodingSourceCertainty(source))
+            {
+                source = memberSource;
+            }
+        }
+        if (encoding != null && source != null)
+        {
+            aBuilder.addMetaData(META_KEY_ENCODING, encoding);
+            aBuilder.addMetaData(META_KEY_ENCODING_SOURCE, source);
+        }
+    }
+
+
+    /**
+     * A copy of a {@code [key, value, …]} custom-metadata table without the
+     * {@value #META_KEY_ENCODING} / {@value #META_KEY_ENCODING_SOURCE} entries — the input
+     * {@link #putAgreedEncoding(DataTableMetaBuilder, DataTableMeta...)} needs when a view starts
+     * from a member's metadata.
+     *
+     * @param aMetaTable
+     *            the table, as {@link DataTableMeta#getMetaTable()} returns it; may be
+     *            {@code null}.
+     * @return the filtered copy, or {@code null} when nothing is left.
+     */
+    public static Object @Nullable [] withoutEncoding(Object @Nullable [] aMetaTable)
+    {
+        if (aMetaTable == null)
+        {
+            return null;
+        }
+        List<Object> kept = new ArrayList<>(aMetaTable.length);
+        for (int i = 0; i + 1 < aMetaTable.length; i += 2)
+        {
+            Object key = aMetaTable[i];
+            if (!META_KEY_ENCODING.equals(key) && !META_KEY_ENCODING_SOURCE.equals(key))
+            {
+                kept.add(key);
+                kept.add(aMetaTable[i + 1]);
+            }
+        }
+        return kept.isEmpty() ? null : kept.toArray();
+    }
+
+
+    /**
+     * The certainty rank of an {@value #META_KEY_ENCODING_SOURCE} value: {@code DEFAULT} 0,
+     * {@code CONFIGURED} 1, {@code FORMAT} 2, {@code DECLARED} 3, anything else -1.
+     *
+     * @param aSource
+     *            the source value.
+     * @return its rank; lower is less certain.
+     */
+    private static int encodingSourceCertainty(String aSource)
+    {
+        return switch (aSource)
+        {
+        case ENCODING_SOURCE_DEFAULT -> 0;
+        case ENCODING_SOURCE_CONFIGURED -> 1;
+        case ENCODING_SOURCE_FORMAT -> 2;
+        case ENCODING_SOURCE_DECLARED -> 3;
+        default -> -1;
+        };
+    }
+
+
+    /**
      * Records the size of the file a {@code file:} URI points at — the stream-based providers' form
      * of {@link #setDatasetSize(File, URI)}, which hold no file of their own. A remote source
      * yields no size rather than a guessed one.

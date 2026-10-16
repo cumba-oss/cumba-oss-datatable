@@ -14,6 +14,7 @@ import net.cumba.datatable.ExMsgs;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.impl.AbstractDataTable;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.values.DataValueSupport;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
@@ -39,6 +40,16 @@ import org.jspecify.annotations.Nullable;
  * provenance use {@link #memberOf(long)}. Note also that a downstream {@code RowFindingSlab} built
  * from member-local real row indexes would violate its documented "sorted ascending, distinct"
  * invariant — another reason the union must never become a primary/eval table.
+ * </p>
+ *
+ * <p>
+ * Encoding: the union carries the members' <b>agreed</b> {@code Encoding} / {@code EncodingSource}
+ * pair (owner ruling B2-Q4 ⓐ, 2026-10-16;
+ * {@link DataTableMetaSupport#putAgreedEncoding(DataTableMeta.DataTableMetaBuilder, DataTableMeta...)}):
+ * the common charset, {@code MIXED} when the members differ, neither key when any member has none;
+ * the source agreed, else the least certain present. The rule engine evaluates sub-contexts over a
+ * split domain and counts bytes in the evaluated table's {@code Encoding}, so the union reports
+ * what its rows were decoded with.
  * </p>
  *
  * <p>
@@ -288,21 +299,25 @@ public final class UnionDataTable extends AbstractDataTable
             List<DataTableColumnMeta> aUnionCols, long aTotalRows)
     {
         StringJoiner memberNames = new StringJoiner(",");
-        for (IDataTable t : aMembers)
+        DataTableMeta[] memberMetas = new DataTableMeta[aMembers.length];
+        for (int i = 0; i < aMembers.length; i++)
         {
-            memberNames.add(nameOf(t));
+            memberNames.add(nameOf(aMembers[i]));
+            memberMetas[i] = aMembers[i].getMetaData();
         }
         // Built fresh (no builderFrom(member 0)): the union must not inherit member 0's tableURI
         // or custom metadata — DataTableMetaBuilder.addMetaData keeps the FIRST value for a
-        // duplicate key, so an inherited UNION_OF would shadow the one added here.
-        return DataTableMeta.builder()//
+        // duplicate key, so an inherited UNION_OF would shadow the one added here. The only other
+        // custom metadata is the members' agreed Encoding pair (B2-Q4 ⓐ).
+        DataTableMeta.DataTableMetaBuilder builder = DataTableMeta.builder()//
                 .name(aName)//
                 .columnNameCaseSensitive(aMembers[0].getMetaData().isColumnNameCaseSensitive())//
                 .setColumns(aUnionCols)//
                 .rowCount(aTotalRows)//
                 .totalRowCount(aTotalRows)//
-                .addMetaData(META_UNION_OF, memberNames.toString())//
-                .build();
+                .addMetaData(META_UNION_OF, memberNames.toString());
+        DataTableMetaSupport.putAgreedEncoding(builder, memberMetas);
+        return builder.build();
     }
 
 
