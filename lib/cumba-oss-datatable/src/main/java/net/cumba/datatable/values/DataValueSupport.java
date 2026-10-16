@@ -341,10 +341,11 @@ public class DataValueSupport
 
 
     /**
-     * Per-type "default missing" value used when initialising new cells (synthetic added rows on
-     * source columns, and added columns with empty user-supplied default). Mirrors SAS character
-     * semantics: a STRING column has no missing sentinel — an empty string is its missing value —
-     * while numeric / boolean / other types map to {@link MissingValue#MIS}.
+     * Per-type default value used when initialising new cells (synthetic added rows on source
+     * columns, and added columns with empty user-supplied default), and the absent-column default
+     * (register {@code D34 #3/#4}): a STRING cell starts as the present empty string {@code ""},
+     * which is a value, not a missing one; numeric / boolean / other types start as
+     * {@link MissingValue#MIS}.
      *
      * @param aType
      *            the column's data type. Must not be {@code null}.
