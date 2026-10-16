@@ -429,6 +429,17 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      * whole sheet in {@code DataTableMetaSupport}), so a fallback that equals, ignoring case, a
      * header name of the sheet or an earlier fallback takes the next free {@code V<n>_<k>}
      * ({@code k = 1, 2, …}).
+     * <p>
+     * A NUMERIC header never collides either: one whose rendered name ({@link ExcelRow#numberText})
+     * equals, ignoring case, a text header of the sheet - before or after it - or an earlier
+     * numeric header takes the next free {@code <name>_<k>}, logged at {@code WARNING} (ECT review
+     * ② M1, coordinator ruling (b), 2026-10-16). A number reads as its plain decimal digits since
+     * ECT-Q2 ⓐ, so a numeric {@code 1} now spells a text header {@code "1"}, and {@code 0} and
+     * {@code -0.0} spell the same {@code "0"}; while a number read {@link Double#toString}
+     * ({@code "1.0"}, {@code "-0.0"}) those sheets loaded, and
+     * {@code PLAN-bugfix-empty-column-type} promises that no sheet that loads today stops loading.
+     * A text header always keeps its own name, and two text headers that spell the same name still
+     * fail the sheet, as they always did.
      *
      * @param aRow
      *            the header row as the reader gives it, for the cell types.
@@ -444,7 +455,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      *            would not say which sheet of a multi-sheet workbook it is about.
      * @param aUri
      *            source URI, for log context.
-     * @return a non-blank name per column, unique as far as the fallbacks go.
+     * @return a non-blank name per column, unique as far as the fallbacks and the numeric headers
+     *         go.
      */
     private static String[] headerNames(Row aRow, ExcelRow aHeadRow, int[] aSheetColumns,
             String aSheetName, URI aUri)
@@ -463,10 +475,33 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             {
                 whyFallback[i] = "has a blank name";
             }
-            else
+            else if (!aHeadRow.isNumber(i))
             {
                 names[i] = name;
                 used.add(name.toLowerCase(Locale.ROOT));
+            }
+        }
+        // a numeric header yields to every text header, wherever it stands (ECT review ② M1)
+        for (int i = 0; i < names.length; i++)
+        {
+            if (whyFallback[i] != null || names[i] != null)
+            {
+                continue;
+            }
+            String name = aHeadRow.getStringValue(i);
+            String unique = name;
+            for (int k = 1; used.contains(unique.toLowerCase(Locale.ROOT)); k++)
+            {
+                unique = name + "_" + k;
+            }
+            used.add(unique.toLowerCase(Locale.ROOT));
+            names[i] = unique;
+            if (!unique.equals(name))
+            {
+                LOGGER.log(Level.WARNING,
+                        "Excel column %s of sheet '%s' has the numeric header %s, a name already used; using '%s' (uri=%s)"
+                                .formatted(CellReference.convertNumToColString(aSheetColumns[i]),
+                                        aSheetName, name, unique, aUri));
             }
         }
         for (int i = 0; i < names.length; i++)
@@ -1033,6 +1068,17 @@ public class ExcelTableProvider extends AbstractDataTableProvider
          * serial number. A non-finite value keeps {@link Double#toString} ({@code "Infinity"}):
          * {@link BigDecimal#valueOf(double)} throws for it, and a stored {@code 1E+400} reaches
          * here.
+         * <p>
+         * ⚠ It differs ON PURPOSE from {@code DataValueSupport.toPlainNumberText}, and only for an
+         * integral value of magnitude from 2<sup>54</sup> up to 2<sup>63</sup>: there that method
+         * prints the double's exact binary value, as a {@code long} would ({@code 2^60} reads
+         * {@code "1152921504606846976"}), so that a DOUBLE key renders like the LONG of the same
+         * value, while this one prints the shortest decimal that reads back as the same double
+         * ({@code "1152921504606847000"}). Here the text IS the value of a Char cell or the name of
+         * a header, so it keeps the digits the sheet's author typed - the fewest that identify the
+         * stored double; the exact binary digits are an artefact nobody wrote, and a Char cell
+         * takes part in no numeric key. Every other finite value reads the same through both (ECT
+         * review ② L2).
          */
         static String numberText(double aValue)
         {

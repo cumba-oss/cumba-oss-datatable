@@ -1465,6 +1465,78 @@ class ExcelTableProviderTest
 
 
     /**
+     * A numeric header whose rendered name is already used takes the next free {@code <name>_<k>}
+     * and logs why (ECT review ② M1, coordinator ruling (b), 2026-10-16): since a number reads as
+     * its plain decimal digits (ECT-Q2 ⓐ), a numeric {@code 1} spells the text header {@code "1"},
+     * {@code 0} and {@code -0.0} spell the same {@code "0"}, and {@code 1E7} spells
+     * {@code "10000000"}; each of these sheets loaded while a number read {@link Double#toString}
+     * ({@code "1.0"}, {@code "-0.0"}, {@code "1.0E7"}), and the plan promises that no sheet that
+     * loads today stops loading. A text header keeps its name, wherever it stands - the numeric
+     * header yields, even when it comes first. Two text headers that spell the same name still fail
+     * the sheet, as they always did.
+     */
+    @Test
+    void testANumericHeaderThatCollidesTakesTheNextFreeSuffix() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue(1.0);
+            h.createCell(1).setCellValue("1");
+            h.createCell(2).setCellValue(0.0);
+            h.createCell(3).setCellValue(-0.0);
+            h.createCell(4).setCellValue(1.0E7);
+            h.createCell(5).setCellValue("10000000");
+            h.createCell(6).setCellValue("1_1");
+            h.createCell(7).setCellValue(1.0);
+            Row r1 = s.createRow(1);
+            for (int c = 0; c < 8; c++)
+            {
+                r1.createCell(c).setCellValue(c);
+            }
+        });
+
+        IDataTable table;
+        try (LoggerCapture log = LoggerCapture.attach(ExcelTableProvider.class.getName()))
+        {
+            table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+            assertTrue(log.containsMessageContaining(
+                    "Excel column A of sheet 'DATA' has the numeric header 1, a name already used;"
+                            + " using '1_2'"),
+                    () -> String.valueOf(log.messages()));
+            assertTrue(log.containsMessageContaining("using '0_1'"),
+                    () -> String.valueOf(log.messages()));
+        }
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] inferred = ExcelTableProvider.inferColumns(openSheet(uri), uri, 50);
+
+        List<String> expected = List.of("1_2", "1", "0", "0_1", "10000000_1", "10000000", "1_1",
+                "1_3");
+        for (int c = 0; c < expected.size(); c++)
+        {
+            assertEquals(expected.get(c), table.getMetaData().getColumn(c).getName());
+            assertEquals(expected.get(c), meta.getColumn(c).getName());
+            assertEquals(expected.get(c), inferred[c].getName());
+            assertEquals((double) c, (double) table.getValue(0, c), 0.0, "nothing is lost");
+        }
+
+        URI texts = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("A");
+            h.createCell(1).setCellValue("a");
+            s.createRow(1).createCell(0).setCellValue(1.0);
+        });
+        Exception ex = assertThrows(Exception.class,
+                () -> provider.provide(texts, ExcelProviderSupplier.FI_XLSX));
+        assertTrue(String.valueOf(ex).contains("already defined")
+                || String.valueOf(ex.getCause()).contains("already defined"), ex::toString);
+    }
+
+
+    /**
      * A genuinely {@code CellType.BLANK} header cell (a cell object exists — e.g. it carries
      * formatting — but no value was ever set) terminates the header range, distinct from a
      * whitespace-only STRING cell (already covered) and from a missing cell object entirely
