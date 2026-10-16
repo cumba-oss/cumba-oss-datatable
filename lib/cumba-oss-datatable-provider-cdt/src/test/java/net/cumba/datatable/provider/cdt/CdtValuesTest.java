@@ -2,7 +2,9 @@ package net.cumba.datatable.provider.cdt;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDate;
 import net.cumba.datatable.values.DataValueType;
@@ -195,5 +197,45 @@ class CdtValuesTest
         assertEquals(DataValueType.DOUBLE, CdtValues.toDataValueType(CdtType.DATE));
         assertEquals(DataValueType.DOUBLE, CdtValues.toDataValueType(CdtType.TIME));
         assertEquals(DataValueType.DOUBLE, CdtValues.toDataValueType(CdtType.DATETIME));
+    }
+
+
+    /**
+     * Owner ruling B2-Q1 (2026-10-16, ⓐ <i>"yes MIS_ERROR"</i>): an infinity is no real value, so a
+     * NUM field spelling one &mdash; {@code Infinity}, {@code -Infinity}, or a literal that
+     * overflows to it &mdash; loads as {@link MissingValue#MIS_ERROR}, as CSV's text
+     * {@code Infinity} does.
+     */
+    @Test
+    void numInfinityIsAnError()
+    {
+        assertSame(MissingValue.MIS_ERROR, CdtValues.parseValue("Infinity", CdtType.NUM));
+        assertSame(MissingValue.MIS_ERROR, CdtValues.parseValue("-Infinity", CdtType.NUM));
+        assertSame(MissingValue.MIS_ERROR, CdtValues.parseValue("+Infinity", CdtType.NUM));
+        assertSame(MissingValue.MIS_ERROR, CdtValues.parseValue("1e400", CdtType.NUM));
+        assertSame(MissingValue.MIS_ERROR, CdtValues.parseValue("-1e400", CdtType.NUM));
+    }
+
+
+    /**
+     * The neighbours of the infinity arm stay as they were: the largest finite doubles are data.
+     */
+    @Test
+    void numLargestFiniteValuesStayData()
+    {
+        assertEquals(Double.MAX_VALUE, CdtValues.parseValue("1.7976931348623157E308", CdtType.NUM));
+        assertEquals(-Double.MAX_VALUE,
+                CdtValues.parseValue("-1.7976931348623157E308", CdtType.NUM));
+        assertEquals(Double.MIN_VALUE, CdtValues.parseValue("4.9E-324", CdtType.NUM));
+    }
+
+
+    /** A text NaN keeps today's arm: it parses to a NaN double, never to {@code MIS_ERROR}. */
+    @Test
+    void numNaNKeepsItsArm()
+    {
+        Object v = CdtValues.parseValue("NaN", CdtType.NUM);
+        assertTrue(v instanceof Double d && Double.isNaN(d),
+                () -> "NaN must stay a NaN double: " + v);
     }
 }

@@ -150,6 +150,24 @@ public final class CdtValues
 
 
     /**
+     * A parsed NUM value as the table stores it: an infinity &mdash; text {@code Infinity},
+     * {@code -Infinity}, or a literal such as {@code 1e400} that overflows to one &mdash; is
+     * {@link MissingValue#MIS_ERROR}, every other double (NaN included, which keeps its own arm) as
+     * parsed. Owner ruling B2-Q1 (2026-10-16, <i>"yes MIS_ERROR"</i>): neither Infinity nor NaN
+     * represents a real value, so neither may be stored as though it were &mdash; the rule CSV,
+     * XLSX, OSB and Dataset-JSON already follow for a text infinity.
+     *
+     * @param aValue
+     *            the parsed double.
+     * @return {@link MissingValue#MIS_ERROR} for an infinity, else the value.
+     */
+    private static Object finiteOrError(double aValue)
+    {
+        return Double.isInfinite(aValue) ? MissingValue.MIS_ERROR : aValue;
+    }
+
+
+    /**
      * Convert a raw string value from a CDT data row to the native object representation. Never
      * returns {@code null}.
      *
@@ -202,7 +220,7 @@ public final class CdtValues
             return switch (aType)
             {
             case CHAR -> raw;
-            case NUM -> Double.parseDouble(raw);
+            case NUM -> finiteOrError(Double.parseDouble(raw));
             case DATE -> dateToSasDays(raw);
             case TIME -> timeToSeconds(raw);
             case DATETIME -> datetimeToSasSeconds(raw);
