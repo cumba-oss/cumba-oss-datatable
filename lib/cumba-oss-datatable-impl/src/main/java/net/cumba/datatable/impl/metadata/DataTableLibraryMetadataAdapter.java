@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.metadata;
 
+// OSS-IDENTITY datatable-dblib: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
