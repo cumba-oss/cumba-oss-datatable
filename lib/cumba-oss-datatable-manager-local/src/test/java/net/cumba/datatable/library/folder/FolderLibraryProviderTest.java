@@ -85,24 +85,34 @@ class FolderLibraryProviderTest
     @Test
     void testProvideLibraryMembersWithFolderLibrary() throws IOException
     {
+        // Two supported data files and two the folder library must not list: an unsupported
+        // extension and a directory named like a data file. Only the CSV provider is on this
+        // module's test classpath, so both supported files are CSV.
+        assertTrue(new File(tempDir, "dm.csv").createNewFile());
+        assertTrue(new File(tempDir, "ae.csv").createNewFile());
+        assertTrue(new File(tempDir, "notes.txt").createNewFile());
+        assertTrue(new File(tempDir, "lb.csv").mkdir());
+
         FolderLibraryProvider provider = new FolderLibraryProvider();
         try (FolderLibrary library = new FolderLibrary(tempDir);
                 Stream<? extends ILibraryMember> members = provider.provideLibraryMembers(library))
         {
-            assertNotNull(members);
+            List<URI> uris = members.map(ILibraryMember::getUri).sorted().toList();
+            assertEquals(List.of(new File(tempDir, "ae.csv").toPath().toUri(),
+                    new File(tempDir, "dm.csv").toPath().toUri()), uris);
         }
     }
 
 
     @Test
-    void testProvideLibraryMembersWithNonFolderLibraryReturnsNull() throws IOException
+    void testProvideLibraryMembersWithNonFolderLibraryReturnsAnEmptyStream() throws IOException
     {
         FolderLibraryProvider provider = new FolderLibraryProvider();
-        // A foreign (non-folder) library: the provider must handle it gracefully (non-null result).
+        // A foreign (non-folder) library: the provider answers an empty member stream.
         try (IDataTableLibrary otherLib = stubLibrary("test", "label", URI.create("file:///test"));
                 Stream<? extends ILibraryMember> result = provider.provideLibraryMembers(otherLib))
         {
-            assertNotNull(result);
+            assertEquals(List.of(), result.toList());
         }
     }
 
