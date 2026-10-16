@@ -328,6 +328,59 @@ class KeyHashSupportKeyIdentityTest
     }
 
 
+    /**
+     * Owner ruling {@code SVY OQ8} ⓑ (2026-10-16), the character half: a member that lacks a STRING
+     * column reads the column's absent-column default {@code ""} on BOTH channels, so its rows
+     * group with a member's stored {@code ""} &mdash; one block, on the hash index and on the key
+     * identity alike &mdash; while a stored {@code MIS} in the same STRING column stays a block of
+     * its own ({@code keyEquals(MIS, "")} is false). The DOUBLE case above is unchanged: a numeric
+     * absent cell stays {@code MIS}.
+     */
+    @Test
+    void aUnionMemberLackingACharColumnGroupsWithAStoredEmptyString()
+    {
+        IDataTable lbc1 = named("lbc1", new String[]
+        {
+                "USUBJID", "LBSPEC"
+        }, new DataValueType[]
+        {
+                DataValueType.STRING, DataValueType.STRING
+        }, new Object[]
+        {
+                "S1", ""
+        }, new Object[]
+        {
+                "S1", MissingValue.MIS
+        }, new Object[]
+        {
+                "S1", "SERUM"
+        });
+        IDataTable lbc2 = named("lbc2", new String[]
+        {
+                "USUBJID"
+        }, new DataValueType[]
+        {
+                DataValueType.STRING
+        }, new Object[]
+        {
+                "S1"
+        });
+        // precondition: the STRING buffer really holds a stored MIS beside a stored ""
+        int spec1 = lbc1.getMetaData().getColumnIndex("LBSPEC");
+        assertEquals("", lbc1.getValue(0, spec1));
+        assertEquals(MissingValue.MIS, lbc1.getValue(1, spec1));
+
+        UnionDataTable union = new UnionDataTable("LB", lbc1, lbc2);
+        int spec = union.getMetaData().getColumnIndex("LBSPEC");
+        assertEquals("", union.getValue(3, spec));
+        assertEquals(union.getDataValue(3, spec).getValue(), union.getValue(3, spec));
+        assertFalse(union.getDataValue(3, spec).isMissingOrInvalid());
+        assertEquals(List.of(List.of(0L, 3L), List.of(1L), List.of(2L)), blocks(union, "LBSPEC"));
+        assertEquals(List.of(List.of(0L, 3L), List.of(1L), List.of(2L)),
+                blocks(union, "USUBJID", "LBSPEC"));
+    }
+
+
     @Test
     void theMatchersCompareThroughKeyEquals()
     {

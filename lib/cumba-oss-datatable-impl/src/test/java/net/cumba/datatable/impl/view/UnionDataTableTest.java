@@ -1,6 +1,7 @@
 package net.cumba.datatable.impl.view;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -17,9 +18,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Tests for {@link UnionDataTable}: offset arithmetic at member boundaries, first-seen column union
- * with missing-as-missing, the constructor guards (type clash, unknown row count, int ceiling,
- * case-sensitivity mismatch), member-local {@code getRealRowIndex}, and the {@code UNION_OF}
- * metadata.
+ * with the absent-column default for a member-absent cell, the constructor guards (type clash,
+ * unknown row count, int ceiling, case-sensitivity mismatch), member-local {@code getRealRowIndex},
+ * and the {@code UNION_OF} metadata.
  */
 class UnionDataTableTest
 {
@@ -88,7 +89,8 @@ class UnionDataTableTest
 
     private static IDataTable lbhe()
     {
-        // No LBSPEC column: reads of LBSPEC on lbhe rows must be missing, not an error.
+        // No LBSPEC column: reads of LBSPEC on lbhe rows answer the absent-column default (""),
+        // not an error.
         return table("lbhe", new String[]
         {
                 "USUBJID", "LBSEQ", "LBORRES"
@@ -224,17 +226,54 @@ class UnionDataTableTest
 
 
     @Test
-    void columnMissingFromAMember_readsAsMissingNeverNullDataValue()
+    void charColumnMissingFromAMember_readsTheEmptyStringNeverNull()
     {
         UnionDataTable union = new UnionDataTable("LB", lbch(), lbhe());
         int lbspec = union.getMetaData().getColumnIndex("LBSPEC");
         // lbch rows carry the value.
         assertEquals("SERUM", union.getDataValue(0, lbspec).getValueAsString());
-        // lbhe lacks LBSPEC: getDataValue is a MISSING IDataValue (never null), and getValue its
-        // raw MIS -- never null (D46; PLAN-grouping-key-identity review round 1, M1).
+        // lbhe lacks the STRING LBSPEC: the absent-column default "", on both channels (owner
+        // ruling SVY OQ8 ⓑ, D34 #3/#4) - a present value, not a missing one; never null (D46).
         IDataValue dv = union.getDataValue(2, lbspec);
-        assertTrue(dv.isMissingOrInvalid());
-        assertEquals(MissingValue.MIS, union.getValue(2, lbspec));
+        assertFalse(dv.isMissingOrInvalid());
+        assertEquals("", dv.getValue());
+        assertEquals("", union.getValue(2, lbspec));
+    }
+
+
+    /**
+     * SVY OQ8 ⓑ, the numeric half: a member-absent cell of every non-STRING column keeps
+     * {@link MissingValue#MIS} on both channels &mdash; the absent-column default of a numeric
+     * column &mdash; and stays {@code isMissingOrInvalid()}.
+     */
+    @Test
+    void nonCharColumnMissingFromAMember_staysMissing()
+    {
+        IDataTable withExtra = table("lbc2", new String[]
+        {
+                "USUBJID", "LBSEQ", "LBSTRESN", "LBFLAG"
+        }, new DataValueType[]
+        {
+                DataValueType.STRING, DataValueType.LONG, DataValueType.DOUBLE,
+                DataValueType.BOOLEAN
+        }, new Object[][]
+        {
+                {
+                        "U4", 3L, 12.5, true
+                }
+        });
+
+        UnionDataTable union = new UnionDataTable("LB", lbhe(), withExtra);
+        for (String name : new String[]
+        {
+                "LBSTRESN", "LBFLAG"
+        })
+        {
+            int c = union.getMetaData().getColumnIndex(name);
+            assertEquals(MissingValue.MIS, union.getValue(0, c), name);
+            assertEquals(MissingValue.MIS, union.getDataValue(0, c).getValue(), name);
+            assertTrue(union.getDataValue(0, c).isMissingOrInvalid(), name);
+        }
     }
 
 

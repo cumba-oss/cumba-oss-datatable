@@ -23,9 +23,11 @@ import org.jspecify.annotations.Nullable;
 /**
  * A read-only {@link IDataTable} that presents several member tables as one, rows stacked in member
  * order. Columns are the ordered, first-seen union of the members' columns; a cell whose member
- * lacks the column reads as missing ({@link #getDataValue(long, int)} returns a shared MISSING
- * {@link IDataValue}, {@link #getValue(long, int)} its raw {@link MissingValue#MIS} — never
- * {@code null}, register {@code D46}). Built for split CDISC domains
+ * lacks the column reads as the column type's absent-column default (owner ruling {@code SVY OQ8}
+ * ⓑ, register {@code D34 #3/#4}): {@link #getDataValue(long, int)} returns the present empty string
+ * {@code ""} for a STRING column and a shared MISSING {@link IDataValue} for every other type,
+ * {@link #getValue(long, int)} its raw form ({@code ""} / {@link MissingValue#MIS}) — never
+ * {@code null}, register {@code D46}. Built for split CDISC domains
  * ({@code lbch}/{@code lbhe}/{@code lbur} → {@code LB}); copies nothing.
  *
  * <p>
@@ -41,10 +43,13 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>
  * Note on {@link IDataTable#hashCodeAt(long, int)}: it is deliberately not overridden. A
- * member-absent cell answers {@link MissingValue#MIS} from {@code getValue}
- * ({@code PLAN-grouping-key-identity} review round 1, M1 — it answered {@code null} before) and so
- * hashes via {@code MissingValue.hashCodeStable()}, exactly as a present-but-{@code MIS} cell does:
- * the hash index groups the two together, as the key identity does.
+ * member-absent cell answers the raw form of its absent-column default from {@code getValue}
+ * ({@code PLAN-grouping-key-identity} review round 1, M1 — it answered {@code null} before): in a
+ * non-STRING column {@link MissingValue#MIS}, which hashes via
+ * {@code MissingValue.hashCodeStable()} exactly as a present-but-{@code MIS} cell does; in a STRING
+ * column {@code ""}, which hashes as a stored {@code ""} does (owner ruling {@code SVY OQ8} ⓑ).
+ * Either way the hash index groups the absent cell with the stored value it equals, as the key
+ * identity does.
  * </p>
  *
  * <p>
@@ -72,9 +77,11 @@ public final class UnionDataTable extends AbstractDataTable
     public static final String META_UNION_OF = "UNION_OF";
 
     /**
-     * Shared "the matched member lacks this column" value — the house idiom (see
-     * {@code PolymorphicMergedColumn}); column-type-independent, so no per-column variant is
-     * needed. Never {@code null}, and {@code isMissingOrInvalid()} is {@code true}.
+     * Shared "the matched member lacks this column" value of every <b>non-STRING</b> union column —
+     * the house idiom (see {@code PolymorphicMergedColumn}): {@link MissingValue#MIS}, the
+     * absent-column default of a numeric / boolean / other column (register {@code D34 #3/#4}).
+     * Never {@code null}, and {@code isMissingOrInvalid()} is {@code true}. A STRING column's
+     * default is {@code ""} (see {@link #absentDefaults}).
      */
     private static final IDataValue MISSING_VALUE = DataValueSupport.getAsDataValue(null,
             DataValueType.MISSING);
@@ -93,6 +100,17 @@ public final class UnionDataTable extends AbstractDataTable
      * absent.
      */
     private final int[][] memberColOfUnionCol;
+
+    /**
+     * {@code absentDefaults[unionColumn]} → the value a cell reads when its owning member lacks the
+     * column: the column type's absent-column default (owner ruling {@code SVY OQ8} ⓑ, 2026-10-16:
+     * <i>"we always want the default value for an absent column"</i>; register {@code D34 #3/#4}) —
+     * {@code DataValueSupport.defaultForType(STRING)}, the present {@code ""}, for a STRING column,
+     * and the shared {@link #MISSING_VALUE} for every other type. One value per column, built once,
+     * so the read allocates nothing; {@code getValue} answers its raw form, so the hash index and
+     * the key identity agree.
+     */
+    private final IDataValue[] absentDefaults;
 
     /**
      * Creates the union of the given member tables under the given table name.
@@ -133,6 +151,7 @@ public final class UnionDataTable extends AbstractDataTable
 
         List<DataTableColumnMeta> unionCols = new ArrayList<>();
         this.memberColOfUnionCol = buildColumnMap(this.members, unionCols);
+        this.absentDefaults = buildAbsentDefaults(unionCols);
 
         // MergeDataTable idiom: assign fields first, setMetaData(...) LAST (AbstractDataTable has
         // no meta-taking constructor).
@@ -240,6 +259,28 @@ public final class UnionDataTable extends AbstractDataTable
             memberMaps.add(map);
         }
         return memberMaps.toArray(int[][]::new);
+    }
+
+
+    /**
+     * The per-column absent-column defaults ({@link #absentDefaults}). The union column's type is
+     * one type by construction ({@link #buildColumnMap} rejects a clash), so the default is well
+     * defined.
+     *
+     * @param aUnionCols
+     *            the union's columns.
+     * @return {@code [unionColumn]} → the value a member-absent cell reads.
+     */
+    private static IDataValue[] buildAbsentDefaults(List<DataTableColumnMeta> aUnionCols)
+    {
+        IDataValue[] defaults = new IDataValue[aUnionCols.size()];
+        for (int c = 0; c < defaults.length; c++)
+        {
+            DataValueType type = aUnionCols.get(c).getType();
+            defaults[c] = type == DataValueType.STRING ? DataValueSupport.defaultForType(type)
+                    : MISSING_VALUE;
+        }
+        return defaults;
     }
 
 
@@ -363,11 +404,13 @@ public final class UnionDataTable extends AbstractDataTable
      * <ul>
      * <li>if {@code mc >= 0}, {@link #getDataValue(long, int) getDataValue(r, c)} is exactly
      * {@code member(m).getDataValue(rr, mc)} — the union adds no conversion;</li>
-     * <li>if {@code mc < 0}, {@code getDataValue(r, c)} is the union's shared missing-column value
-     * (never {@code null}, {@code isMissingOrInvalid()} is {@code true}), and
-     * {@link #getValue(long, int)} is {@link MissingValue#MIS}, that value's raw form — never
-     * {@code null} (register {@code D46}; {@code PLAN-grouping-key-identity} review round 1,
-     * M1).</li>
+     * <li>if {@code mc < 0}, {@code getDataValue(r, c)} is the column's absent-column default
+     * (owner ruling {@code SVY OQ8} ⓑ; register {@code D34 #3/#4}): for a STRING column the present
+     * empty string ({@code isMissingOrInvalid()} is {@code false}), for every other type the
+     * union's one shared {@link MissingValue#MIS} value ({@code isMissingOrInvalid()} is
+     * {@code true}); and {@link #getValue(long, int)} is that value's raw form ({@code ""} /
+     * {@link MissingValue#MIS}) — never {@code null} (register {@code D46};
+     * {@code PLAN-grouping-key-identity} review round 1, M1).</li>
      * </ul>
      *
      * @param aMember
@@ -437,14 +480,17 @@ public final class UnionDataTable extends AbstractDataTable
      * {@inheritDoc}
      *
      * <p>
-     * A cell whose owning member lacks the column answers {@link MissingValue#MIS} — the raw value
-     * of the very {@code MISSING_VALUE} {@link #getDataValue(long, int)} answers for it — never
-     * {@code null}: register {@code D46} (<i>"a null will always be converted to a MissingValue.
-     * The null value is not allowed as a data value in the IDataTable."</i>). Until
+     * A cell whose owning member lacks the column answers the raw form of the very absent-column
+     * default {@link #getDataValue(long, int)} answers for it — {@code ""} for a STRING column,
+     * {@link MissingValue#MIS} for every other type (owner ruling {@code SVY OQ8} ⓑ, 2026-10-16) —
+     * never {@code null}: register {@code D46} (<i>"a null will always be converted to a
+     * MissingValue. The null value is not allowed as a data value in the IDataTable."</i>). Until
      * {@code PLAN-grouping-key-identity} review round 1 (M1) this answered {@code null}, so a union
      * column holding a member-absent cell and a stored {@code MIS} on another member split into two
      * groups on the hash index (raw {@code null} ≠ {@code MIS}) while the key identity, built from
-     * {@code getDataValue}, made them one — two blocks under one key.
+     * {@code getDataValue}, made them one — two blocks under one key. M1's union half (absent ⇒
+     * {@code MIS} for every type) is superseded by {@code SVY OQ8}: a STRING absent cell now groups
+     * with a stored {@code ""}, on both channels alike.
      * </p>
      */
     @Override
@@ -453,7 +499,8 @@ public final class UnionDataTable extends AbstractDataTable
         int m = memberOf(aRow); // bounds-checks the row
         checkColumn(aColumn);
         int mc = memberColOfUnionCol[m][aColumn];
-        return mc < 0 ? MissingValue.MIS : members[m].getValue(aRow - rowOffsets[m], mc);
+        return mc < 0 ? absentDefaults[aColumn].getValue()
+                : members[m].getValue(aRow - rowOffsets[m], mc);
     }
 
 
@@ -463,7 +510,7 @@ public final class UnionDataTable extends AbstractDataTable
         int m = memberOf(aRow); // bounds-checks the row
         checkColumn(aColumn);
         int mc = memberColOfUnionCol[m][aColumn];
-        return mc < 0 ? MISSING_VALUE : members[m].getDataValue(aRow - rowOffsets[m], mc);
+        return mc < 0 ? absentDefaults[aColumn] : members[m].getDataValue(aRow - rowOffsets[m], mc);
     }
 
 
@@ -471,8 +518,9 @@ public final class UnionDataTable extends AbstractDataTable
      * {@inheritDoc}
      *
      * <p>
-     * A column the owning member lacks is a stored missing value, not a merge marker: it is
-     * <b>supplied</b>. Every other cell delegates to the member, so a member's marker survives.
+     * A column the owning member lacks reads its absent-column default, a supplied value, not a
+     * merge marker: it is <b>supplied</b>. Every other cell delegates to the member, so a member's
+     * marker survives.
      * </p>
      */
     @Override

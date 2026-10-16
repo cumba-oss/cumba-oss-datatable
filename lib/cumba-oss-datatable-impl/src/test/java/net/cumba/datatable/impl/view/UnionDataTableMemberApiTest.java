@@ -6,11 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
+import java.util.Map;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.DataTableMeta;
 import net.cumba.datatable.IDataTable;
 import net.cumba.datatable.impl.CachedDataTableColumn;
 import net.cumba.datatable.impl.ColumnCachedDataTable;
+import net.cumba.datatable.values.DataValueSupport;
 import net.cumba.datatable.values.DataValueType;
 import net.cumba.datatable.values.IDataValue;
 import net.cumba.datatable.values.MissingValue;
@@ -347,6 +350,7 @@ class UnionDataTableMemberApiTest
         int missing = 0;
         @Nullable
         IDataValue sharedMissing = null;
+        Map<Integer, IDataValue> stringDefaults = new HashMap<>();
         for (long r = 0; r < aUnion.getRowCount(); r++)
         {
             int m = aUnion.memberOf(r);
@@ -369,17 +373,31 @@ class UnionDataTableMemberApiTest
                 }
                 else
                 {
-                    assertTrue(actual.isMissingOrInvalid(), where);
-                    assertEquals(DataValueType.MISSING, actual.getType(), where);
-                    // the raw read agrees with the typed one: MIS, never null (D46; review
-                    // round 1 of PLAN-grouping-key-identity, M1)
+                    // the column type's absent-column default (SVY OQ8 ⓑ, D34 #3/#4): "" for a
+                    // STRING column, MIS for every other type - and the raw read agrees with the
+                    // typed one, never null (D46; PLAN-grouping-key-identity round 1, M1)
+                    DataValueType type = aUnion.getMetaData().getColumn(col).getType();
+                    IDataValue expected = DataValueSupport.defaultForType(type);
+                    assertEquals(expected.getType(), actual.getType(), where);
+                    assertEquals(expected.getValue(), actual.getValue(), where);
+                    assertEquals(expected.isMissingOrInvalid(), actual.isMissingOrInvalid(), where);
                     assertEquals(actual.getValue(), aUnion.getValue(r, col), where);
-                    assertEquals(MissingValue.MIS, aUnion.getValue(r, col), where);
-                    if (sharedMissing == null)
+                    if (type == DataValueType.STRING)
                     {
-                        sharedMissing = actual;
+                        assertEquals("", aUnion.getValue(r, col), where);
+                        // one instance per column: the read allocates nothing
+                        assertSame(stringDefaults.computeIfAbsent(col, k -> actual), actual, where);
                     }
-                    assertSame(sharedMissing, actual, where);
+                    else
+                    {
+                        assertEquals(MissingValue.MIS, aUnion.getValue(r, col), where);
+                        if (sharedMissing == null)
+                        {
+                            sharedMissing = actual;
+                        }
+                        // every non-STRING absent cell is the one shared missing value
+                        assertSame(sharedMissing, actual, where);
+                    }
                     missing++;
                 }
             }
