@@ -728,4 +728,21 @@ class IDataTableDefaultsTest
         assertTrue(numCell.isMissingOrInvalid(), "a MissingValue survives in a numeric column");
         assertTrue(numCell.isEmptyOrMissing());
     }
+
+
+    /**
+     * PACK H B2 L1: the no-argument streams of a 0-row column are empty. They delegated to the
+     * ranged form with start 0, which (rightly) refuses a start row the column does not have.
+     */
+    @Test
+    void aZeroRowColumnStreamsNothing()
+    {
+        DataTableMeta meta = DataTableMeta.builder().name("e")
+                .setColumns(col(0, "S", DataValueType.STRING)).rowCount(0).totalRowCount(0).build();
+        IDataTableColumn c = new StubTable(meta, new Object[0][]).getColumn(0);
+        assertEquals(0, c.getValues().count());
+        assertEquals(0, c.getDataValues().count());
+        // the ranged form keeps its bound
+        assertThrows(IndexOutOfBoundsException.class, () -> c.getValues(0, 0));
+    }
 }

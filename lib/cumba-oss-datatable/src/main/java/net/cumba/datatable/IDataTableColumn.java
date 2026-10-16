@@ -86,7 +86,9 @@ public interface IDataTableColumn
      */
     default Stream<@Nullable Object> getValues()
     {
-        return getValues(0, getRowCount());
+        // a 0-row column has no row 0, which the ranged form (rightly) refuses as a start
+        long rc = getRowCount();
+        return rc == 0 ? Stream.empty() : getValues(0, rc);
     }
 
 
@@ -140,7 +142,9 @@ public interface IDataTableColumn
      */
     default Stream<IDataValue> getDataValues()
     {
-        return getDataValues(0, getRowCount());
+        // a 0-row column has no row 0, which the ranged form (rightly) refuses as a start
+        long rc = getRowCount();
+        return rc == 0 ? Stream.empty() : getDataValues(0, rc);
     }
 
 
