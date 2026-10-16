@@ -596,6 +596,12 @@ public class CsvTableProvider extends AbstractDataTableProvider
      * column holding a quoted cell anywhere in the block is {@link DataValueType#STRING} (owner
      * ruling K7c, 2026-09-30: <i>"yes any quoted value is always a string."</i>); the block's
      * records must therefore come from {@link CsvRecordReader#nextWithQuoteFlags()}.
+     * <p>
+     * A column with no evidence in the block - every cell absent, blank or an unquoted missing
+     * sentinel, and every column of a header-only file - is {@link DataValueType#STRING}: the
+     * default type of a column with no value is Char (owner, 2026-10-16: <i>"agree to Char as
+     * default type."</i>; the XLSX provider follows the same rule since
+     * {@code PLAN-bugfix-empty-column-type}).
      *
      * @param aRowBlock
      *            the row block used to determine the column type of the columns.
