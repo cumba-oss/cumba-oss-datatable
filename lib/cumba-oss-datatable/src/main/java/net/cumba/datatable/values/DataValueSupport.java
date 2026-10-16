@@ -340,6 +340,9 @@ public class DataValueSupport
     }
 
 
+    // OSS-IDENTITY-REGION datatable-absent-default BEGIN: the per-type default and absent-column
+    // value (D34 #3/#4) that SuppPart, the union view and the engine rely on; byte-identical in
+    // both twins (check_oss_identity.py, datatable-merge regions).
     /**
      * Per-type default value used when initialising new cells (synthetic added rows on source
      * columns, and added columns with empty user-supplied default), and the absent-column default
@@ -360,6 +363,7 @@ public class DataValueSupport
         }
         return new DataValueMissing(MissingValue.MIS);
     }
+    // OSS-IDENTITY-REGION datatable-absent-default END
 
 
     // OSS-IDENTITY-REGION datatable-key-blankness BEGIN: the blankness every join and group key
