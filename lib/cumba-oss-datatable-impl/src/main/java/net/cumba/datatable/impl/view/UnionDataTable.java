@@ -2,6 +2,7 @@ package net.cumba.datatable.impl.view;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -73,7 +74,10 @@ import org.jspecify.annotations.Nullable;
  * {@code int} (the engine narrows row counts to {@code int} throughout — mirrors
  * {@code ChildMatchPreMerger}'s parent guard); and members must agree on each shared column's
  * {@link DataValueType} (a type clash across members fails the union — the caller maps it to a
- * rule-level ERROR rather than coercing values).
+ * rule-level ERROR rather than coercing values). A member whose column holds no value in any row
+ * (every cell a missing value or {@code ""}) is no evidence of a type: it takes the valued members'
+ * type and reads as a member lacking the column; when no member holds a value the column is STRING
+ * (owner ruling {@code ECT-Q7} ⓐ, {@link UnionColumnTypes}).
  * </p>
  */
 public final class UnionDataTable extends AbstractDataTable
@@ -108,7 +112,8 @@ public final class UnionDataTable extends AbstractDataTable
 
     /**
      * {@code memberColOfUnionCol[member][unionCol]} → member column index, or {@code -1} when
-     * absent.
+     * absent or deferred (no value in any row and another type than the union column's; owner
+     * ruling {@code ECT-Q7} ⓐ, {@link UnionColumnTypes}).
      */
     private final int[][] memberColOfUnionCol;
 
@@ -214,16 +219,17 @@ public final class UnionDataTable extends AbstractDataTable
     /**
      * First-seen ordered column union; fills {@code aUnionCols} and returns the per-member
      * union-column → member-column map. A shared column whose {@link DataValueType} differs between
-     * members fails the union.
+     * members holding values in it fails the union; a member whose column holds no value in any row
+     * takes the valued members' type and maps to {@code -1}, like a member lacking the column
+     * (owner ruling {@code ECT-Q7} ⓐ, {@link UnionColumnTypes}). Members that agree on every type
+     * are never scanned.
      */
     private static int[][] buildColumnMap(IDataTable[] aMembers,
             List<DataTableColumnMeta> aUnionCols)
     {
         boolean caseSensitive = aMembers[0].getMetaData().isColumnNameCaseSensitive();
         Map<String, Integer> unionIndexOfName = new HashMap<>();
-        List<DataTableColumnMeta> firstOccurrence = new ArrayList<>();
-        List<String> firstOccurrenceMember = new ArrayList<>();
-        List<int[]> memberMaps = new ArrayList<>();
+        BitSet disagreeing = new BitSet();
 
         for (IDataTable t : aMembers)
         {
@@ -238,26 +244,18 @@ public final class UnionDataTable extends AbstractDataTable
                     unionIndexOfName.put(key, aUnionCols.size());
                     aUnionCols.add(
                             DataTableColumnMeta.builderFrom(cm).index(aUnionCols.size()).build());
-                    firstOccurrence.add(cm);
-                    firstOccurrenceMember.add(nameOf(t));
                 }
-                else
+                else if (aUnionCols.get(existing).getType() != cm.getType())
                 {
-                    DataTableColumnMeta first = firstOccurrence.get(existing);
-                    if (first.getType() != cm.getType())
-                    {
-                        throw new IllegalArgumentException(
-                                "members disagree on column %s (%s:%s vs %s:%s)".formatted(
-                                        first.getName(), firstOccurrenceMember.get(existing),
-                                        first.getType(), nameOf(t), cm.getType()));
-                    }
+                    disagreeing.set(existing);
                 }
             }
         }
 
-        for (IDataTable t : aMembers)
+        int[][] maps = new int[aMembers.length][];
+        for (int i = 0; i < aMembers.length; i++)
         {
-            DataTableMeta m = t.getMetaData();
+            DataTableMeta m = aMembers[i].getMetaData();
             int[] map = new int[aUnionCols.size()];
             Arrays.fill(map, -1);
             for (int c = 0; c < m.getColumnCount(); c++)
@@ -267,16 +265,44 @@ public final class UnionDataTable extends AbstractDataTable
                 // The first pass registered every key, so the lookup cannot miss.
                 map[Objects.requireNonNull(unionIndexOfName.get(key))] = c;
             }
-            memberMaps.add(map);
+            maps[i] = map;
         }
-        return memberMaps.toArray(int[][]::new);
+
+        for (int c = disagreeing.nextSetBit(0); c >= 0; c = disagreeing.nextSetBit(c + 1))
+        {
+            DataTableColumnMeta resolved = switch (UnionColumnTypes.resolve(aMembers, maps, c))
+            {
+            case UnionColumnTypes.Typed(DataTableColumnMeta column) -> column;
+            case UnionColumnTypes.Clash(int first, int other) -> throw clash(aMembers, maps, c,
+                    first, other);
+            };
+            // The name stays the first-seen one, like the column's position; the rest follows
+            // the member the type came from.
+            aUnionCols.set(c, DataTableColumnMeta.builderFrom(resolved).index(c)
+                    .name(aUnionCols.get(c).getName()).build());
+        }
+        return maps;
+    }
+
+
+    /** The rejection of a union column two valued members declare with different types. */
+    private static IllegalArgumentException clash(IDataTable[] aMembers, int[][] aMaps,
+            int aUnionColumn, int aFirst, int aOther)
+    {
+        DataTableColumnMeta firstCol = aMembers[aFirst].getMetaData()
+                .getColumn(aMaps[aFirst][aUnionColumn]);
+        DataTableColumnMeta otherCol = aMembers[aOther].getMetaData()
+                .getColumn(aMaps[aOther][aUnionColumn]);
+        return new IllegalArgumentException("members disagree on column %s (%s:%s vs %s:%s)"
+                .formatted(firstCol.getName(), nameOf(aMembers[aFirst]), firstCol.getType(),
+                        nameOf(aMembers[aOther]), otherCol.getType()));
     }
 
 
     /**
      * The per-column absent-column defaults ({@link #absentDefaults}). The union column's type is
-     * one type by construction ({@link #buildColumnMap} rejects a clash), so the default is well
-     * defined.
+     * one type by construction ({@link #buildColumnMap} rejects a clash and defers a blank member
+     * of another type), so the default is well defined.
      *
      * @param aUnionCols
      *            the union's columns.
@@ -432,7 +458,9 @@ public final class UnionDataTable extends AbstractDataTable
      *            the 0-based member index.
      * @param aUnionColumn
      *            the 0-based union column index.
-     * @return the member's column index, or {@code -1} when that member lacks the column.
+     * @return the member's column index, or {@code -1} when that member lacks the column or its
+     *         column is deferred (no value in any row and another type than the union column's;
+     *         owner ruling {@code ECT-Q7} ⓐ) — a deferred column reads exactly as an absent one.
      * @throws IndexOutOfBoundsException
      *             if {@code aMember} is not in {@code [0, memberCount())}, or {@code aUnionColumn}
      *             is not a valid union column index.
@@ -533,9 +561,9 @@ public final class UnionDataTable extends AbstractDataTable
      * {@inheritDoc}
      *
      * <p>
-     * A column the owning member lacks reads its absent-column default, a supplied value, not a
-     * merge marker: it is <b>supplied</b>. Every other cell delegates to the member, so a member's
-     * marker survives.
+     * A column the owning member lacks (or defers, owner ruling {@code ECT-Q7}) reads its
+     * absent-column default, a supplied value, not a merge marker: it is <b>supplied</b>. Every
+     * other cell delegates to the member, so a member's marker survives.
      * </p>
      */
     @Override
