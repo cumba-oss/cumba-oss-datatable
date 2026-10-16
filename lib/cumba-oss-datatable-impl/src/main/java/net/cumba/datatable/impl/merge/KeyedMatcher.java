@@ -142,8 +142,10 @@ public final class KeyedMatcher
      * @throws UnresolvedQualifiedKeyException
      *             for a qualified left name the primary does not carry.
      * @throws JoinKeyTypeMismatchException
-     *             when a component is numeric on one side and character on the other (D4) and the
-     *             spec neither declares {@code joinAsString} nor excludes the type check.
+     *             when a component is numeric on one side and character on the other (D4), both
+     *             columns hold a value in some row ({@code SVY OQ11}: an all-blank column has no
+     *             type of its own), and the spec neither declares {@code joinAsString} nor excludes
+     *             the type check.
      * @throws DegenerateJoinKeyException
      *             when no component is present on both sides.
      */
@@ -194,10 +196,18 @@ public final class KeyedMatcher
             {
                 // D4-R1/R2: the join-key type identity, decided here because this is the only
                 // site holding both sides' declared types. A kind of null (BOOLEAN, MISSING, ...)
-                // is never a mismatch (D4-R6a: an all-NA R column is logical).
+                // is never a mismatch (D4-R6a covers kindless types; the .rds all-NA shape is Char
+                // since ECT U3 and is exempted by OQ11's blank check below). Neither is a
+                // column blank in every row (SVY OQ11, owner 2026-10-16, "exempt in every key-kind
+                // check": a provider infers a type for such a column from values it does not
+                // have — CSV Char, XLSX Num — so the type is the transport's, not the data's;
+                // ColumnContent.isBlank(), the predicate the engine's key checks and RowMax
+                // share). The scan is lazy: asked only when the two kinds already disagree.
                 ColumnKind primaryKind = ColumnKind.of(primaryType);
                 ColumnKind partnerKind = ColumnKind.of(partnerType);
-                if (primaryKind != null && partnerKind != null && primaryKind != partnerKind)
+                if (primaryKind != null && partnerKind != null && primaryKind != partnerKind
+                        && !aPrimary.getColumnContent(recordColIds[i]).isBlank()
+                        && !aPartner.getColumnContent(partnerColIds[i]).isBlank())
                 {
                     throw new JoinKeyTypeMismatchException(dataset, key.left(), key.right(),
                             primaryKind.text(), partnerKind.text());
