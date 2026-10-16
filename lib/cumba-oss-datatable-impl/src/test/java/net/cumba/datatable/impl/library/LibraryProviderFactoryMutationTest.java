@@ -1,10 +1,12 @@
 package net.cumba.datatable.impl.library;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -128,5 +130,32 @@ class LibraryProviderFactoryMutationTest
         // A relative URI reaches the provider (the extension matches) and fails in URI.toURL().
         assertThrows(IllegalArgumentException.class, () -> LibraryProviderFactory.getInstance()
                 .provide(URI.create("relative.dblib"), null, Map.of()));
+    }
+
+
+    /**
+     * B2-C4 (PLAN-bugfix-datatable-readers-views U12): when two suppliers' providers both throw,
+     * {@code provide} surfaces the first failure with the second added as suppressed &mdash; the
+     * {@code addSuppressed} arm was {@code NO_COVERAGE}. The two test-only suppliers
+     * ({@link B2ThrowingFirstLibrarySupplier}, {@link B2ThrowingSecondLibrarySupplier}) answer only
+     * their own scheme and are registered through {@code src/test/resources/META-INF/services}; no
+     * production seam.
+     */
+    @Test
+    void testTwoFailingProvidersSurfaceTheFirstWithTheSecondSuppressed()
+    {
+        IOException ex = assertThrows(IOException.class,
+                () -> LibraryProviderFactory.getInstance().provide(
+                        URI.create(B2ThrowingFirstLibrarySupplier.SCHEME + ":study"), null,
+                        Map.of()));
+
+        List<String> both = List.of(B2ThrowingFirstLibrarySupplier.MESSAGE,
+                B2ThrowingSecondLibrarySupplier.MESSAGE);
+        assertTrue(both.contains(ex.getMessage()), ex::toString);
+        assertEquals(1, ex.getSuppressed().length, () -> List.of(ex.getSuppressed()).toString());
+        Throwable suppressed = ex.getSuppressed()[0];
+        assertTrue(both.contains(suppressed.getMessage()), suppressed::toString);
+        assertNotEquals(ex.getMessage(), suppressed.getMessage(),
+                "the suppressed failure is the OTHER provider's");
     }
 }
