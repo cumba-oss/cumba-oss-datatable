@@ -115,3 +115,33 @@ nf_bits = np.frombuffer(nf.buffers()[1], dtype=np.uint32, count=len(nf), offset=
 assert list(nd_bits) == [0x8000000000000000, 0, 0xBFF8000000000000], [hex(b) for b in nd_bits]
 assert list(nf_bits) == [0x80000000, 0, 0xBFC00000], [hex(b) for b in nf_bits]
 print(OUT_NZ, "written and verified:", [hex(b) for b in nd_bits], [hex(b) for b in nf_bits])
+
+
+# --- null_column.parquet (PLAN-bugfix-empty-column-type U4, ruling ECT-Q4) ------------------------
+#
+# A pandas column holding only None: pyarrow infers the null type and writes it as a physical INT32
+# with the Parquet logical type UNKNOWN ("Null"); only nulls can be stored in it. This is the common
+# real-world "no type" column (an all-None pandas column exported with to_parquet). 3 rows, written
+# through pandas (the real path), beside a present INT64 column (pyarrow 24.0.0 / pandas 3.0.1 at
+# the time of writing; run alone, the sections above were not re-run):
+#
+#     row  ID (INT64)  X (INT32, logical UNKNOWN)
+#     0    1           null
+#     1    2           null
+#     2    3           null
+
+import pandas as pd
+
+OUT_NULL = "null_column.parquet"
+
+null_df = pd.DataFrame({"ID": [1, 2, 3], "X": [None, None, None]})
+null_table = pa.Table.from_pandas(null_df, preserve_index=False)
+assert null_table.schema.field("X").type == pa.null(), null_table.schema
+pq.write_table(null_table, OUT_NULL, use_dictionary=False, compression="NONE",
+               write_statistics=False)
+
+null_meta = pq.ParquetFile(OUT_NULL).metadata.schema.column(1)
+assert null_meta.name == "X" and null_meta.physical_type == "INT32", null_meta
+assert str(null_meta.logical_type) == "Null", null_meta.logical_type
+assert pq.read_table(OUT_NULL).column("X").null_count == 3
+print(OUT_NULL, "written and verified:", null_meta.physical_type, null_meta.logical_type)

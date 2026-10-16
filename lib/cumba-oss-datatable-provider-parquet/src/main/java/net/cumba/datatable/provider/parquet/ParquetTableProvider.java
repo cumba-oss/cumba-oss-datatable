@@ -450,6 +450,15 @@ public class ParquetTableProvider extends AbstractDataTableProvider
         LogicalTypeAnnotation lta = pt.getLogicalTypeAnnotation();
 
         // Check logical type annotations first
+        if (lta instanceof LogicalTypeAnnotation.UnknownLogicalTypeAnnotation)
+        {
+            // The UNKNOWN ("Null") logical type declares a column that can hold only nulls - what
+            // pyarrow writes for an all-None pandas column, on a physical INT32. A column with no
+            // value is Char (owner, 2026-10-16, ECT-Q4 (a) of PLAN-bugfix-empty-column-type: "agree
+            // to Char as default type."); every cell is a Parquet null, so MIS. It used to fall
+            // through to the physical type and load as LONG.
+            return DataValueType.STRING;
+        }
         if (lta instanceof LogicalTypeAnnotation.StringLogicalTypeAnnotation)
         {
             return DataValueType.STRING;
