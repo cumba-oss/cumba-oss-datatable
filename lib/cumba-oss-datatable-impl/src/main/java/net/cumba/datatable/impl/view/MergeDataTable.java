@@ -21,6 +21,13 @@ import org.jspecify.annotations.Nullable;
 /**
  * A {@link IDataTable} that can display two data tables next to each other. Both data tables must
  * contain the same number of rows and must not define columns with the same name.
+ *
+ * <p>
+ * The merge carries its base's table metadata (the given base metadata, else the first table's),
+ * {@code Encoding} / {@code EncodingSource} included. A column merged in from another table may
+ * have been decoded with a different charset: the merge's {@code Encoding} describes its base only
+ * (the engine-side byte count of a joined column is {@code PLAN-bugfix-engine-define}'s, B3).
+ * </p>
  */
 public class MergeDataTable extends AbstractDataTable
 {
