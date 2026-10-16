@@ -1,5 +1,8 @@
 package net.cumba.datatable.impl.library.dblib;
 
+// OSS-IDENTITY datatable-dblib: byte-identical in cumba-datatable and cumba-oss-datatable.
+// Edit in cumba-datatable, then copy; check_oss_identity.py fails on any divergence.
+
 import static net.cumba.datatable.impl.provider.DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
