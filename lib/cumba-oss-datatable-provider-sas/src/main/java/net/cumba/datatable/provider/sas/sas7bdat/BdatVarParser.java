@@ -91,7 +91,8 @@ public class BdatVarParser
      *
      * @param aBuffer
      *            the observation byte buffer.
-     * @return the parsed IEEE 754 double value, or a NaN encoding a SAS missing value.
+     * @return the parsed IEEE 754 double value, or a NaN encoding a SAS missing value; an IEEE
+     *         infinity is a NaN encoding {@link MissingValue#MIS_ERROR}.
      */
     public double parseDouble(byte[] aBuffer)
     {
@@ -140,6 +141,15 @@ public class BdatVarParser
                     return MissingValue.forValue(mv).asDouble();
                 }
                 return MissingValue.MIS_UNKNOWN.asDouble();
+            }
+            if (Double.isInfinite(res))
+            {
+                // Owner ruling B2-Q1 (2026-10-16, "yes MIS_ERROR"): SAS has no infinity, but the
+                // IEEE bits 0x7FF0.. / 0xFFF0.. can sit in a file (ReadStat and haven write them);
+                // neither is a real value. Encoded here, at the one decode point, so the serial and
+                // the parallel store sites (both route a NaN through MissingValue.forNaN, which
+                // decodes this payload back) agree by construction.
+                return MissingValue.MIS_ERROR.asDouble();
             }
             return res;
         }
