@@ -592,13 +592,20 @@ public class DsjTableProvider extends AbstractDataTableProvider
             b.displayFormat(aColumn.getDisplayFormat());
         }
 
+        // A data-browser library's column metadata may already carry the key sequence (copied by
+        // DataTableMetaSupport.addColumn): the metadata overrides the file, so the file's own
+        // keySequence is not appended as a second entry.
+        boolean keyFromMetadata = b.build().getMetaData(META_KEY_ITEM_KEY_SEQUENCE) != null;
         b.length(len)//
                 .nativeType(dt.toString().toLowerCase(Locale.ROOT))//
                 .addMetaData("dataType", dt)//
                 .addMetaData("targetDataType", tdt)//
-                .addMetaData(META_KEY_ITEM_KEY_SEQUENCE, aColumn.getKeySequence())//
-                .addMetaData("itemOID", aColumn.getItemOID())//
         ;
+        if (!keyFromMetadata)
+        {
+            b.addMetaData(META_KEY_ITEM_KEY_SEQUENCE, aColumn.getKeySequence());
+        }
+        b.addMetaData("itemOID", aColumn.getItemOID());
     }
 
 
