@@ -36,7 +36,7 @@ class CsvEmptyColumnTypeTest
     @Test
     void aColumnWithNoValueIsCharBesideAOneNumberColumnThatStaysDouble() throws IOException
     {
-        URI uri = writeCsv("ID,BLANK,ONENUM,ABSENT\nr1,,,\nr2,,4\nr3,\n");
+        URI uri = writeCsv("ID,BLANK,ONENUM,ABSENT\nr1,,\nr2,,4\nr3,\n");
         CsvTableProvider provider = new CsvTableProvider();
 
         IDataTable table = provider.provide(uri, CsvProviderSupplier.FI_CSV);
