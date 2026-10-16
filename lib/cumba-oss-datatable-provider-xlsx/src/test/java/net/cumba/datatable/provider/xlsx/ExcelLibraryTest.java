@@ -466,15 +466,13 @@ class ExcelLibraryTest
         {
             ExcelLibraryMember m = exLib.getMembers().findFirst().orElseThrow();
             DataTableColumnMeta[] cols = m.getColumns();
-            // Header is present; with zero sampled data rows the type-detector's "possibly double"
-            // flag stays true and the inferred type defaults to DOUBLE — consistent with the same
-            // edge-case behaviour in ExcelTableProvider.buildMeta. The test pins this so a future
-            // change to the default surface area is intentional.
+            // Header is present; zero sampled data rows are no evidence of a type, so the column
+            // is Char, as a header-only CSV is (owner, 2026-10-16: "agree to Char as default
+            // type."; ECT-C5). It used to default to DOUBLE on zero evidence.
             assertNotNull(cols);
             assertEquals(1, cols.length);
             assertEquals("COL1", cols[0].getName());
-            // Pin the documented (and quirky) edge-case: no data rows seen → DOUBLE.
-            assertEquals(DataValueType.DOUBLE, cols[0].getType());
+            assertEquals(DataValueType.STRING, cols[0].getType());
         }
     }
 

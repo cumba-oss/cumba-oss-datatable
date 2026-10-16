@@ -398,8 +398,9 @@ class ExcelTableProviderTest
 
 
     /**
-     * F-B14: a numeric header cell is a valid header — its display value (via cell.toString()) is
-     * used as the column name. Previously the old STRING-only filter would have dropped these
+     * F-B14: a numeric header cell is a valid header, named by its number as text - the shortest
+     * plain decimal, {@code 2026} reads {@code "2026"} (ECT-Q2 ⓐ, owner 2026-10-16; it read
+     * {@code "2026.0"} before). Previously the old STRING-only filter would have dropped these
      * columns entirely.
      */
     @Test
@@ -421,12 +422,7 @@ class ExcelTableProviderTest
         IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
         assertEquals(3, table.getColumnCount());
         assertEquals("NAME", table.getMetaData().getColumn(0).getName());
-        // Numeric → Double.toString gives e.g. "2026.0"; either way the column is named
-        // and is non-blank.
-        String middleName = table.getMetaData().getColumn(1).getName();
-        assertNotNull(middleName);
-        assertTrue(middleName.startsWith("2026"),
-                "numeric header should render to a string starting with '2026': " + middleName);
+        assertEquals("2026", table.getMetaData().getColumn(1).getName());
         assertEquals("SCORE", table.getMetaData().getColumn(2).getName());
     }
 
@@ -635,8 +631,170 @@ class ExcelTableProviderTest
         IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
 
         assertEquals(DataValueType.STRING, table.getMetaData().getColumn(0).getType());
-        assertEquals("5.0", table.getValue(0, 0));
+        assertEquals("5", table.getValue(0, 0),
+                "a number in a Char column reads as its plain text");
         assertEquals("0007", table.getValue(1, 0));
+    }
+
+
+    /**
+     * A number in a Char column reads as the shortest plain decimal (ECT-Q2 ⓐ, owner 2026-10-16:
+     * the engine's {@code str(3.0)} reads {@code "3"}, and so does the CSV text of the same
+     * export): no {@code ".0"}, no exponent, {@code -0.0} as {@code "0"}. A non-finite stored value
+     * ({@code 1E+400}) keeps {@code "Infinity"} and the sheet still loads -
+     * {@code BigDecimal.valueOf} would throw for it. A number after an empty sample, in the Char
+     * column that sample gives (ECT-Q1 ⓐ), reads the same way.
+     */
+    @Test
+    void testNumberInACharColumnReadsAsItsShortestPlainText() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI plain = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("VAL");
+            h.createCell(1).setCellValue("LATE");
+            double[] numbers =
+            {
+                    5.0, 0.1, 1.0E7, -0.0, 1.0E-5, 123.456, 777.0
+            };
+            s.createRow(1).createCell(0).setCellValue("ND");
+            for (int i = 0; i < numbers.length; i++)
+            {
+                s.createRow(i + 2).createCell(0).setCellValue(numbers[i]);
+            }
+            s.getRow(4).createCell(1).setCellValue(5.0);
+            s.getRow(5).createCell(1).setCellValue(2.5E10);
+        });
+        byte[] bytes = patchSheet1Xml(Files.readAllBytes(new File(plain).toPath()), "<v>777.0</v>",
+                "<v>1E+400</v>");
+        File patched = File.createTempFile("xlsxchartext", ".xlsx");
+        patched.deleteOnExit();
+        Files.write(patched.toPath(), bytes);
+
+        IDataTable table = provider.provide(patched.toURI(), ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.STRING, table.getMetaData().getColumn(0).getType());
+        assertEquals(DataValueType.STRING, table.getMetaData().getColumn(1).getType());
+        assertAll(() -> assertEquals("ND", table.getValue(0, 0)),
+                () -> assertEquals("5", table.getValue(1, 0)),
+                () -> assertEquals("0.1", table.getValue(2, 0)),
+                () -> assertEquals("10000000", table.getValue(3, 0)),
+                () -> assertEquals("0", table.getValue(4, 0), "-0.0"),
+                () -> assertEquals("0.00001", table.getValue(5, 0)),
+                () -> assertEquals("123.456", table.getValue(6, 0)),
+                () -> assertEquals("Infinity", table.getValue(7, 0), "stored 1E+400"),
+                () -> assertEquals("", table.getValue(0, 1)),
+                () -> assertEquals("5", table.getValue(3, 1), "a number after an empty sample"),
+                () -> assertEquals("25000000000", table.getValue(4, 1)));
+    }
+
+
+    /**
+     * A column with no value in any sampled row is Char, as CSV types it (owner, 2026-10-16:
+     * <i>"agree to Char as default type."</i>; ECT-C1, ECT-C5), through every entry point: a column
+     * whose data cells are all absent, one whose cells are all {@code BLANK}, and every column of a
+     * header-only sheet. Its cells read as XLSX Char cells read: {@code ""}. The evidence sibling
+     * beside them - blank cells and ONE real number - stays {@code DOUBLE}, so the Char default
+     * cannot over-reach into a column the sample did see a number in.
+     */
+    @Test
+    void testColumnWithNoValueInTheSampleIsCharInEveryEntryPoint() throws Exception
+    {
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("ID");
+            h.createCell(1).setCellValue("ABSENT");
+            h.createCell(2).setCellValue("BLANK");
+            h.createCell(3).setCellValue("ONENUM");
+            for (int r = 1; r <= 3; r++)
+            {
+                Row row = s.createRow(r);
+                row.createCell(0).setCellValue("r" + r);
+                row.createCell(2); // a BLANK cell
+                if (r == 2)
+                {
+                    row.createCell(3).setCellValue(4.0);
+                }
+                else
+                {
+                    row.createCell(3);
+                }
+            }
+        });
+        URI headerOnly = writeTempXlsx(wb ->
+        {
+            Row h = wb.createSheet("DATA").createRow(0);
+            h.createCell(0).setCellValue("A");
+            h.createCell(1).setCellValue("B");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableMeta meta = provider.provideMetaData(uri, ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] inferred = ExcelTableProvider.inferColumns(openSheet(uri), uri, 50);
+        for (DataTableColumnMeta[] cols : List.of(table.getMetaData().getColumns(),
+                meta.getColumns(), inferred))
+        {
+            assertEquals(DataValueType.STRING, cols[1].getType(), "ABSENT");
+            assertEquals(DataValueType.STRING, cols[2].getType(), "BLANK");
+            assertEquals(DataValueType.DOUBLE, cols[3].getType(), "ONENUM: one number is evidence");
+            assertNull(cols[1].getDisplayFormat());
+            assertNull(cols[2].getDisplayFormat());
+        }
+        for (int r = 0; r < 3; r++)
+        {
+            assertEquals("", table.getValue(r, 1), "ABSENT row " + r);
+            assertEquals("", table.getValue(r, 2), "BLANK row " + r);
+        }
+        assertSame(MissingValue.MIS, table.getValue(0, 3));
+        assertEquals(4.0, (double) table.getValue(1, 3), 0.0);
+
+        IDataTable empty = provider.provide(headerOnly, ExcelProviderSupplier.FI_XLSX);
+        DataTableMeta emptyMeta = provider.provideMetaData(headerOnly,
+                ExcelProviderSupplier.FI_XLSX);
+        DataTableColumnMeta[] emptyInferred = ExcelTableProvider.inferColumns(openSheet(headerOnly),
+                headerOnly, 50);
+        assertEquals(0, empty.getRowCount());
+        for (DataTableColumnMeta[] cols : List.of(empty.getMetaData().getColumns(),
+                emptyMeta.getColumns(), emptyInferred))
+        {
+            assertEquals(2, cols.length);
+            assertEquals(DataValueType.STRING, cols[0].getType(), "header-only A");
+            assertEquals(DataValueType.STRING, cols[1].getType(), "header-only B");
+        }
+    }
+
+
+    /**
+     * The type comes from the sample only (ECT-Q1 ⓐ, owner 2026-10-16): a column blank for the
+     * whole sample is Char, so text after the sample is KEPT - it used to read {@code MIS_ERROR} in
+     * the {@code DOUBLE} column the empty sample produced.
+     */
+    @Test
+    void testColumnBlankForTheSampleKeepsTextAfterIt() throws Exception
+    {
+        provider.setGuessingRowCount(2);
+        URI uri = writeTempXlsx(wb ->
+        {
+            Sheet s = wb.createSheet("DATA");
+            Row h = s.createRow(0);
+            h.createCell(0).setCellValue("ID");
+            h.createCell(1).setCellValue("LATE");
+            for (int r = 1; r <= 4; r++)
+            {
+                s.createRow(r).createCell(0).setCellValue("r" + r);
+            }
+            s.getRow(4).createCell(1).setCellValue("late text");
+        });
+
+        IDataTable table = provider.provide(uri, ExcelProviderSupplier.FI_XLSX);
+
+        assertEquals(DataValueType.STRING, table.getMetaData().getColumn(1).getType());
+        assertEquals("", table.getValue(0, 1));
+        assertEquals("late text", table.getValue(3, 1));
     }
 
 
@@ -2210,9 +2368,11 @@ class ExcelTableProviderTest
 
     /**
      * A numeric DATA cell whose stored value is blank loads as MISSING - in every shape, through
-     * every entry point - while a real {@code 0} beside it stays {@code 0.0}, and a column made
-     * only of such cells is a {@code DOUBLE} column of missing values (as is a column with no cells
-     * at all), with no display format.
+     * every entry point - while a real {@code 0} beside it stays {@code 0.0}. A column made only of
+     * such cells is evidence of no type, so it is a {@code STRING} column (owner, 2026-10-16:
+     * <i>"agree to Char as default type."</i>), read as XLSX Char cells read: a blank cell is
+     * {@code ""}, an uncalculated formula {@code MIS_ERROR}; no display format either way. A column
+     * with one real number among the blank cells stays {@code DOUBLE} (the evidence sibling).
      * <p>
      * Characterised on excel-streaming-reader 5.3.0, whose {@code getNumericCellValue()} threw
      * {@code NumberFormatException("empty String")} for a blank stored value; 5.3.2 returns
@@ -2269,7 +2429,9 @@ class ExcelTableProviderTest
                     meta.getColumn(c), inferred[c]))
             {
                 assertEquals(names[c], col.getName());
-                assertEquals(DataValueType.DOUBLE, col.getType(), names[c]);
+                boolean noEvidence = c == 3 || c == 6 || c == 7;
+                assertEquals(noEvidence ? DataValueType.STRING : DataValueType.DOUBLE,
+                        col.getType(), names[c]);
                 assertNull(col.getDisplayFormat(), names[c]);
             }
         }
@@ -2290,11 +2452,12 @@ class ExcelTableProviderTest
                 3, 6, 7
         })
         {
-            MissingValue expected = c == 3 ? MissingValue.MIS_ERROR : MissingValue.MIS;
+            Object expected = c == 3 ? MissingValue.MIS_ERROR : "";
             for (int r = 0; r < 2; r++)
             {
-                assertSame(expected, table.getValue(r, c), names[c] + " row " + r
-                        + ": a column of uncalculated formulas is MIS_ERROR, of blank cells MIS");
+                assertEquals(expected, table.getValue(r, c), names[c] + " row " + r
+                        + ": a Char column of uncalculated formulas is MIS_ERROR, of blank cells"
+                        + " \"\"");
             }
         }
     }
@@ -2302,8 +2465,9 @@ class ExcelTableProviderTest
 
     /**
      * A REAL number under a number format that renders it as empty text stays a present number,
-     * through every entry point, and a real {@code 0} header under such a format keeps the name
-     * {@code "0.0"} that excel-streaming-reader 5.3.0 gave it. The formats are the ordinary
+     * through every entry point, and a real {@code 0} header under such a format is still named by
+     * its number, now {@code "0"} (the shortest plain decimal, ECT-Q2 ⓐ, owner 2026-10-16; it was
+     * {@code "0.0"}, as excel-streaming-reader 5.3.0 gave it). The formats are the ordinary
      * zero-hiding ones accounting sheets use - {@code 0;-0;""} and {@code #,##0;-#,##0;""} (third
      * section empty) and {@code [=0]"";General} (a condition) - plus {@code 0;"";""}, which hides
      * every negative number, so a real {@code -5} renders empty as well.
@@ -2319,7 +2483,7 @@ class ExcelTableProviderTest
     {
         String[] names =
         {
-                "ID", "Z1", "Z2", "Z3", "NEG", "0.0", "WS"
+                "ID", "Z1", "Z2", "Z3", "NEG", "0", "WS"
         };
         String[] formats =
         {
@@ -2409,7 +2573,7 @@ class ExcelTableProviderTest
                     meta.getColumn(c), inferred[c]))
             {
                 claims.add(() -> assertEquals(name, col.getName(),
-                        "a real 0 header under a zero-hiding format is named 0.0, as in 5.3.0"));
+                        "a real 0 header under a zero-hiding format is named by its number, 0"));
                 claims.add(() -> assertEquals(DataValueType.DOUBLE, col.getType(), name));
                 claims.add(() -> assertNull(col.getDisplayFormat(), name));
             }
@@ -2468,10 +2632,12 @@ class ExcelTableProviderTest
      * The same blank shapes, DATE-styled: a blank cell never makes a column a date column and is
      * never converted to a date - serial {@code 0} would be 1899-12-31, a present, plausible and
      * wrong date. In a column whose literal dates make it a date column, the blank row is missing;
-     * a column made only of date-styled blank cells is a {@code DOUBLE} column of missing values
-     * with NO {@code E8601DT.}, through every entry point. Characterised on excel-streaming-reader
-     * 5.3.0 (see {@link #testBlankNumericDataCellsLoadAsMissingNotZeroInEveryShape}). Expected
-     * date: 45000 is 2023-03-15, 1994457600 seconds after 1960-01-01 (Python {@code datetime}).
+     * a column made only of date-styled blank cells has no evidence of a type, so it is a
+     * {@code STRING} column (owner, 2026-10-16, Char default) with NO {@code E8601DT.}, through
+     * every entry point: a blank cell reads {@code ""}, an uncalculated formula {@code MIS_ERROR}.
+     * Characterised on excel-streaming-reader 5.3.0 (see
+     * {@link #testBlankNumericDataCellsLoadAsMissingNotZeroInEveryShape}). Expected date: 45000 is
+     * 2023-03-15, 1994457600 seconds after 1960-01-01 (Python {@code datetime}).
      */
     @Test
     void testDateStyledBlankNumericCellsAreMissingAndNeverMakeADateColumn() throws Exception
@@ -2516,7 +2682,8 @@ class ExcelTableProviderTest
                     meta.getColumn(c), inferred[c]))
             {
                 assertEquals(names[c], col.getName());
-                assertEquals(DataValueType.DOUBLE, col.getType(), names[c]);
+                assertEquals(c < 3 ? DataValueType.DOUBLE : DataValueType.STRING, col.getType(),
+                        names[c]);
                 assertEquals(expectedFormat, col.getDisplayFormat(), names[c]);
             }
         }
@@ -2529,11 +2696,11 @@ class ExcelTableProviderTest
         }
         for (int c = 3; c < names.length; c++)
         {
-            MissingValue expected = c == 3 ? MissingValue.MIS_ERROR : MissingValue.MIS;
+            Object expected = c == 3 ? MissingValue.MIS_ERROR : "";
             for (int r = 0; r < 2; r++)
             {
-                assertSame(expected, table.getValue(r, c),
-                        names[c] + " row " + r + ": a date-styled blank cell is missing");
+                assertEquals(expected, table.getValue(r, c), names[c] + " row " + r
+                        + ": a date-styled blank cell in a Char column is blank, never a date");
             }
         }
     }
@@ -2647,7 +2814,8 @@ class ExcelTableProviderTest
      * {@code src/test/resources/openpyxl/generate-openpyxl-fixture.py}): every formula carries an
      * empty cached value, so the formula column reads {@code MIS_ERROR} in every row (Q37(i):
      * <i>"a, log and continue and read as MIS_ERROR."</i>), while a cell openpyxl left out is a
-     * blank {@code MIS}.
+     * blank {@code MIS}. A column of only uncalculated formulas is evidence of no type, so it is
+     * {@code STRING} (owner, 2026-10-16, Char default); its cells are {@code MIS_ERROR} either way.
      */
     @Test
     void testOpenpyxlFormulaColumnReadsMisError() throws Exception
@@ -2655,7 +2823,9 @@ class ExcelTableProviderTest
         IDataTable table = provider.provide(openpyxlFixture(), ExcelProviderSupplier.FI_XLSX);
 
         assertEquals("CALC", table.getMetaData().getColumn(1).getName());
-        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(1).getType());
+        assertEquals(DataValueType.STRING, table.getMetaData().getColumn(1).getType());
+        assertEquals(DataValueType.DOUBLE, table.getMetaData().getColumn(2).getType(),
+                "the evidence sibling: a column with a real number stays DOUBLE");
         for (int r = 0; r < 3; r++)
         {
             assertSame(MissingValue.MIS_ERROR, table.getValue(r, 1), "CALC row " + r);

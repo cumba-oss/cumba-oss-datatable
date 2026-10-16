@@ -4,6 +4,7 @@ import com.github.pjfanning.xlsx.StreamingReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.System.Logger.Level;
+import java.math.BigDecimal;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -567,6 +568,23 @@ public class ExcelTableProvider extends AbstractDataTableProvider
     }
 
 
+    /**
+     * The type of each column, from the sampled rows: {@link DataValueType#DOUBLE} when no sampled
+     * cell vetoes a number ({@link ExcelRow#isNumberOrMissing}) <b>and</b> at least one sampled
+     * cell is a real number ({@link ExcelRow#isNumber}), otherwise {@link DataValueType#STRING}.
+     * <p>
+     * A column with no evidence either way - every sampled cell absent, {@code BLANK}, a numeric
+     * cell whose stored value is blank, or {@link Unreadable}, and a header-only sheet - is
+     * {@link DataValueType#STRING}, as the CSV provider types it (owner, 2026-10-16: <i>"agree to
+     * Char as default type."</i>; ECT-C1 of {@code PLAN-bugfix-empty-column-type}). It used to be
+     * {@code DOUBLE} on zero evidence, so the same data loaded with a different type from XLSX than
+     * from CSV. Text is evidence of text as before ({@code ""} and {@code "."} included); a present
+     * {@code 0}, even under a zero-hiding format, is evidence of a number.
+     * <p>
+     * The types come from the sample only and are never revised: a column empty for the whole
+     * sample and numeric after it is {@code STRING}, its numbers read as text
+     * ({@link ExcelRow#getStringValue}).
+     */
     private static DataValueType[] determineTypes(List<ExcelRow> aRowBlock, int aColumnCount)
     {
         DataValueType[] res = new DataValueType[aColumnCount];
@@ -576,6 +594,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             try
             {
                 boolean possiblyDouble = true;
+                boolean sawNumericEvidence = false;
                 for (ExcelRow row : aRowBlock)
                 {
                     if (!row.isNumberOrMissing(i))
@@ -583,9 +602,10 @@ public class ExcelTableProvider extends AbstractDataTableProvider
                         possiblyDouble = false;
                         break;
                     }
+                    sawNumericEvidence |= row.isNumber(i);
                 }
 
-                if (possiblyDouble)
+                if (possiblyDouble && sawNumericEvidence)
                 {
                     dt = DataValueType.DOUBLE;
                 }
@@ -988,13 +1008,37 @@ public class ExcelTableProvider extends AbstractDataTableProvider
 
         /**
          * The cell's text: {@code ""} for a cell with no value and for an {@link Unreadable} one,
-         * so a header cell of either kind gets the positional fallback name.
+         * so a header cell of either kind gets the positional fallback name. A number reads as
+         * {@link #numberText}. It is both a Char column's cell and a header's name.
          */
         String getStringValue(int aColumn)
         {
             @Nullable
             Object val = values[aColumn];
-            return val == null || val instanceof Unreadable ? "" : val.toString();
+            if (val == null || val instanceof Unreadable)
+            {
+                return "";
+            }
+            return val instanceof Double d ? numberText(d) : val.toString();
+        }
+
+
+        /**
+         * A number as text, the shortest plain decimal for a finite value: {@code 5} reads
+         * {@code "5"}, {@code 0.1} reads {@code "0.1"}, {@code 1E7} reads {@code "10000000"} and
+         * {@code -0.0} reads {@code "0"} (owner, 2026-10-16, ECT-Q2 ⓐ of
+         * {@code PLAN-bugfix-empty-column-type}; the engine's {@code str(3.0)} reads {@code "3"}
+         * the same way, and so does the CSV text of the same export). It used to be
+         * {@link Double#toString} ({@code "5.0"}, {@code "1.0E7"}). A date-styled cell reads its
+         * serial number. A non-finite value keeps {@link Double#toString} ({@code "Infinity"}):
+         * {@link BigDecimal#valueOf(double)} throws for it, and a stored {@code 1E+400} reaches
+         * here.
+         */
+        static String numberText(double aValue)
+        {
+            return Double.isFinite(aValue)
+                    ? BigDecimal.valueOf(aValue).stripTrailingZeros().toPlainString()
+                    : Double.toString(aValue);
         }
 
 
@@ -1129,6 +1173,18 @@ public class ExcelTableProvider extends AbstractDataTableProvider
             Object val = values[aColumn];
             // An Unreadable cell is no evidence either way, exactly like a blank one.
             return val == null || val instanceof Number || val instanceof Unreadable;
+        }
+
+
+        /**
+         * Whether the cell is evidence of a number: an Excel-{@code NUMERIC} cell (or a formula
+         * whose cached result is a number) with a stored value. A cell with no value and an
+         * {@link Unreadable} one are evidence of nothing ({@link #isNumberOrMissing} lets them
+         * through), so a column of only those is not typed {@code DOUBLE}.
+         */
+        boolean isNumber(int aColumn)
+        {
+            return values[aColumn] instanceof Number;
         }
 
 
