@@ -10,6 +10,7 @@ import static net.cumba.datatable.impl.merge.MergeFixtures.request;
 import static net.cumba.datatable.impl.merge.MergeFixtures.row;
 import static net.cumba.datatable.impl.merge.MergeFixtures.table;
 import static net.cumba.datatable.impl.merge.MergeFixtures.text;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -384,6 +385,42 @@ class MergedTableKeyedTest
                 .keyed(join.joinAsString(false).typeChecked(false).joinType(JoinType.LEFT).build())
                 .build());
         assertEquals(List.of(UNSUPPLIED), column(unchecked, "FA.FAOBJ"));
+    }
+
+
+    /**
+     * {@code SVY OQ11} (owner 2026-10-16, (b): <i>"exempt in every key-kind check (grouped lookup
+     * and joins)"</i>): a key component whose column holds no value in any row on either side —
+     * every cell {@code ""} or missing, {@code ColumnContent.isBlank()} — is exempt from the D4
+     * kind check: a provider infers a type for such a column from values it does not have (CSV
+     * Char, XLSX Num), so the type is the transport's, not the data's. The pair then joins under
+     * the key policy as before (a blank keys nothing against a value); a populated Char/Num pair
+     * still refuses ({@link #d4_typeMismatch_isRefusedUnlessJoinAsStringOrUnchecked}).
+     */
+    @Test
+    void d4_anAllBlankKeyColumnOnEitherSideIsExemptFromTheTypeCheck()
+    {
+        KeyedMergeSpec.KeyedMergeSpecBuilder join = KeyedMergeSpec.builder().qualifier("FA")
+                .key(KeyColumn.of("USUBJID")).key(KeyColumn.sided("AESEQ", "FASEQ"))
+                .joinType(JoinType.LEFT);
+        // the primary's Num AESEQ is missing in every row, the partner's FASEQ is Char
+        IDataTable blankAe = table("AE", "USUBJID,AESEQ:N,AETERM", "01-001,,HEADACHE",
+                "01-002,,RASH");
+        IDataTable fa = table("FA", "USUBJID,FASEQ,FAOBJ", "01-001,1,OBJ");
+        MergedTable t = assertDoesNotThrow(
+                () -> MergedTables.build(request(blankAe, fa).keyed(join.build()).build()),
+                "an all-blank Num AESEQ has no kind to disagree with a Char FASEQ");
+        assertEquals(2, t.getRowCount(), "every primary row is kept");
+        assertEquals(List.of(UNSUPPLIED, UNSUPPLIED), column(t, "FA.FAOBJ"),
+                "a missing key pairs with no value under the default key policy");
+        // the mirror: the partner's Char FASEQ blank in every row beside a populated Num AESEQ
+        IDataTable ae = table("AE", "USUBJID,AESEQ:N,AETERM", "01-001,1,HEADACHE");
+        IDataTable blankFa = table("FA", "USUBJID,FASEQ,FAOBJ", "01-001,,OBJ", "01-001,,OBJ2");
+        assertDoesNotThrow(
+                () -> MergedTables.build(request(ae, blankFa).keyed(join.build()).build()));
+        // control: both populated, kinds differ — D4 kept
+        assertThrows(JoinKeyTypeMismatchException.class,
+                () -> MergedTables.build(request(ae, fa).keyed(join.build()).build()));
     }
 
 
