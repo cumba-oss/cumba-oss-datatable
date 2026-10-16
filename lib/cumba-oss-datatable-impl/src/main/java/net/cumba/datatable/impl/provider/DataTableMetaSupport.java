@@ -103,7 +103,17 @@ public class DataTableMetaSupport
     /** The file declares the charset (a sas7bdat header byte, R's string marks or RDS header). */
     public static final String ENCODING_SOURCE_DECLARED = "DECLARED";
 
-    /** The format fixes the charset (CDT, Dataset-JSON, Parquet, XLSX, a JSON API, Delta). */
+    /**
+     * The format fixes the charset (CDT, Dataset-JSON, Parquet, XLSX, a JSON API, Delta).
+     *
+     * <p>
+     * A Dataset-JSON table reports {@code UTF-8} / {@code FORMAT} even when the file it was read
+     * from is physically UTF-16 or UTF-32 (a non-conforming file the parser still reads): for
+     * Dataset-JSON the {@value #META_KEY_ENCODING} names the format's mandated interchange charset
+     * (RFC 8259 §8.1), the one its byte counts are meant in &mdash; an exception to "describes the
+     * decode" (owner ruling B2-Q3 ⓒ, 2026-10-16).
+     * </p>
+     */
     public static final String ENCODING_SOURCE_FORMAT = "FORMAT";
 
     /** A charset other than the default was requested through the provider's charset property. */

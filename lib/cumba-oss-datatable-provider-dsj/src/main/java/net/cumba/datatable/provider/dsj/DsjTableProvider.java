@@ -152,7 +152,9 @@ public class DsjTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport metaSup = new DataTableMetaSupport(getMetadata());
         metaSup.setTable(aURI, aTable.getName());
         metaSup.setFileFormat("DATASET-JSON", null);
-        // Dataset-JSON mandates UTF-8 (E4).
+        // Dataset-JSON mandates UTF-8 (E4), and a Dataset-JSON table always reports it, whatever
+        // the physical file's charset (a UTF-16 / UTF-32 file the parser still reads): its byte
+        // counts are meant in the format's interchange charset (owner ruling B2-Q3 ⓒ, 2026-10-16).
         metaSup.setEncoding(StandardCharsets.UTF_8.name(),
                 DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
         metaSup.setDatasetSize(aURI);
@@ -538,7 +540,9 @@ public class DsjTableProvider extends AbstractDataTableProvider
         DataTableMetaSupport metaSup = new DataTableMetaSupport(getMetadata());
         metaSup.setTable(aURI, aTable.getName());
         metaSup.setFileFormat("DATASET-JSON", null);
-        // Dataset-JSON mandates UTF-8 (E4).
+        // Dataset-JSON mandates UTF-8 (E4), and a Dataset-JSON table always reports it, whatever
+        // the physical file's charset (a UTF-16 / UTF-32 file the parser still reads): its byte
+        // counts are meant in the format's interchange charset (owner ruling B2-Q3 ⓒ, 2026-10-16).
         metaSup.setEncoding(StandardCharsets.UTF_8.name(),
                 DataTableMetaSupport.ENCODING_SOURCE_FORMAT);
         metaSup.setDatasetSize(aURI);
