@@ -242,6 +242,9 @@ public enum DisplayFormatCategory
      * counts from the SAS epoch — and anything else {@link #OTHER}. Only the {@code "dataType"} key
      * is read, never the native type. The Dataset-JSON exporter asks this first for every column,
      * so a character date column passes its declaration through.
+     * <p>
+     * A column can carry the key more than once (a library's metadata as text before the provider's
+     * constant, PACK H B2 L7): the <b>last</b> enum constant wins, else the first text.
      *
      * @param aColumn
      *            the column.
@@ -249,17 +252,30 @@ public enum DisplayFormatCategory
      */
     public static DisplayFormatCategory preservedKind(DataTableColumnMeta aColumn)
     {
-        Object preserved = aColumn.getMetaData(META_KEY_DATA_TYPE);
-        String token;
-        if (preserved instanceof Enum<?> e)
+        Object[] table = aColumn.getMetaTable();
+        if (table == null)
         {
-            token = e.name();
+            return OTHER;
         }
-        else if (preserved instanceof String s)
+        Enum<?> lastConstant = null;
+        String firstText = null;
+        for (int i = 0; i < table.length - 1; i += 2)
         {
-            token = s.trim();
+            if (!META_KEY_DATA_TYPE.equals(table[i]))
+            {
+                continue;
+            }
+            if (table[i + 1] instanceof Enum<?> e)
+            {
+                lastConstant = e;
+            }
+            else if (firstText == null && table[i + 1] instanceof String s)
+            {
+                firstText = s.trim();
+            }
         }
-        else
+        String token = lastConstant != null ? lastConstant.name() : firstText;
+        if (token == null)
         {
             return OTHER;
         }

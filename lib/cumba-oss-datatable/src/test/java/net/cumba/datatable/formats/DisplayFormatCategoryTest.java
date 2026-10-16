@@ -227,6 +227,31 @@ class DisplayFormatCategoryTest
 
 
     /**
+     * PACK H B2 L7: a column carrying {@code "dataType"} twice (a library's text before the
+     * provider's constant) is read by its last constant, else by its first text.
+     */
+    @Test
+    void preservedKindPrefersTheLastConstantOverEarlierText()
+    {
+        assertEquals(DisplayFormatCategory.DATE_SAS,
+                DisplayFormatCategory.preservedKind(
+                        column(DataValueType.DOUBLE, null).addMetaData("dataType", "string")
+                                .addMetaData("dataType", DsjType.DATE).build()));
+        assertEquals(DisplayFormatCategory.TIME_SAS,
+                DisplayFormatCategory.preservedKind(
+                        column(DataValueType.DOUBLE, null).addMetaData("dataType", DsjType.DATE)
+                                .addMetaData("dataType", DsjType.TIME).build()));
+        assertEquals(DisplayFormatCategory.DATETIME_SAS,
+                DisplayFormatCategory.preservedKind(
+                        column(DataValueType.DOUBLE, null).addMetaData("dataType", "datetime")
+                                .addMetaData("dataType", "date").build()));
+        assertEquals(DisplayFormatCategory.DATE_SAS,
+                DisplayFormatCategory.preservedKind(column(DataValueType.DOUBLE, null)
+                        .addMetaData("dataType", 7).addMetaData("dataType", "date").build()));
+    }
+
+
+    /**
      * Pre-go fold #2: a JDBC native type {@code DATE} / {@code Date} is not a Dataset-JSON token
      * and is never read as a preserved kind — the display format decides.
      */
