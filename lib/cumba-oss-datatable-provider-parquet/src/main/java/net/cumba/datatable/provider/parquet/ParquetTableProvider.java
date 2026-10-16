@@ -633,6 +633,13 @@ public class ParquetTableProvider extends AbstractDataTableProvider
                             // MIS_UNKNOWN (MissingValue.forNaN).
                             aDataColumn.addElement(MissingValue.forNaN(dbl));
                         }
+                        else if (Double.isInfinite(dbl))
+                        {
+                            // Owner ruling B2-Q1 (2026-10-16, "yes MIS_ERROR"): an infinity is no
+                            // real value, so it is stored as an error, never as a number (the
+                            // CSV / XLSX / OSB / Dataset-JSON rule for a text infinity).
+                            aDataColumn.addElement(MissingValue.MIS_ERROR);
+                        }
                         else
                         {
                             aDataColumn.addElement(dbl);

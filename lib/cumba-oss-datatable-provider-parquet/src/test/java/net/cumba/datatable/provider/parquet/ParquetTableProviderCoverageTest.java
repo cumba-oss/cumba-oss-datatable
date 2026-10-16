@@ -191,6 +191,55 @@ class ParquetTableProviderCoverageTest
         assertEquals(1.25, (double) table.getValue(1, 0), 0.001);
     }
 
+
+    /**
+     * Owner ruling B2-Q1 (2026-10-16, <i>"yes MIS_ERROR"</i>): an infinity is no real value, so a
+     * Parquet {@code DOUBLE} or {@code FLOAT} {@code ±Infinity} loads as
+     * {@link MissingValue#MIS_ERROR} (R writes {@code -Inf} routinely, e.g. {@code max()} over an
+     * all-{@code NA} vector). NaN keeps its arm ({@link #testNaNDoubleProducesMissing()}); the
+     * largest finite values stay data.
+     */
+    @Test
+    void testInfinityLoadsAsAnError() throws Exception
+    {
+        MessageType schema = Types.buildMessage().optional(PrimitiveTypeName.DOUBLE).named("DBL")
+                .optional(PrimitiveTypeName.FLOAT).named("FLT").named("table");
+        double[] dbl =
+        {
+                Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.MAX_VALUE,
+                -Double.MAX_VALUE
+        };
+        float[] flt =
+        {
+                Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, Float.MAX_VALUE, -Float.MAX_VALUE
+        };
+        Path file = writeParquetWithSchema(schema, (factory, idx) ->
+        {
+            Group g = factory.newGroup();
+            g.add("DBL", dbl[idx]);
+            g.add("FLT", flt[idx]);
+            return g;
+        }, "infinity.parquet", 4);
+
+        ParquetTableProvider provider = new ParquetTableProvider();
+        IDataTable table = provider.provide(file.toUri(), ParquetProviderSupplier.FI_PARQUET);
+
+        for (int c = 0; c < 2; c++)
+        {
+            for (int r = 0; r < 2; r++)
+            {
+                assertSame(MissingValue.MIS_ERROR, table.getValue(r, c),
+                        "row " + r + ", column " + c + " holds an infinity");
+                assertSame(MissingValue.MIS_ERROR,
+                        DataValueSupport.getMissingValue(table.getRow(r).getDataValue(c)));
+            }
+        }
+        assertEquals(Double.MAX_VALUE, (double) table.getValue(2, 0));
+        assertEquals(-Double.MAX_VALUE, (double) table.getValue(3, 0));
+        assertEquals(Float.MAX_VALUE, (double) table.getValue(2, 1));
+        assertEquals(-Float.MAX_VALUE, (double) table.getValue(3, 1));
+    }
+
     // ---------- OTHER fallback for non-primitive (group) field ----------
 
 
