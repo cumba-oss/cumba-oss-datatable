@@ -149,12 +149,13 @@ class DataTableLibraryMetadataAdapterTest
         assertEquals(DataValueType.STRING, subjid.getType());
         assertEquals(0, subjid.getLength(), "length not set by provider");
         assertNull(subjid.getNativeType());
-        assertEquals(0, subjid.getKeySequence(), "adapter does not propagate key sequence");
+        assertEquals(1, subjid.getKeySequence(),
+                "the column meta's KeySequence (L5, PACK G 6 fold)");
         assertFalse(subjid.isByGroup());
         assertNull(subjid.getCodelist());
         // The .dblib's "key": 1 reaches the member's column meta as KeySequence (Q36(iii),
-        // PLAN-compare-type-change-and-column-key); it is the only meta entry on SUBJID. The
-        // adapter passes meta entries through but still reports getKeySequence() 0 (above).
+        // PLAN-compare-type-change-and-column-key); it is the only meta entry on SUBJID, and the
+        // adapter's getKeySequence() reports it (above).
         assertEquals(Set.of("KeySequence"), subjid.getMetaKeys(), "only the key on SUBJID");
         assertEquals(Optional.of(1), subjid.getMetaValue("KeySequence"));
         assertEquals(Optional.empty(), subjid.getMetaValue("k"));

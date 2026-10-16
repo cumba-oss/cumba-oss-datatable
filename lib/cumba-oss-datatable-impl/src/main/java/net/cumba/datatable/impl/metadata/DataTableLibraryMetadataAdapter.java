@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 import net.cumba.datatable.DataTableColumnMeta;
 import net.cumba.datatable.help.CDT;
 import net.cumba.datatable.impl.library.LibraryProviderFactory;
+import net.cumba.datatable.impl.provider.DataTableMetaSupport;
 import net.cumba.datatable.library.IDataTableLibrary;
 import net.cumba.datatable.library.ILibraryMember;
 import net.cumba.datatable.library.ILibraryProvider;
@@ -329,10 +330,17 @@ public final class DataTableLibraryMetadataAdapter implements IMetadataLibrary
         }
 
 
+        /**
+         * The column meta's {@code KeySequence} entry when it is a number above 0 (a Dataset-JSON
+         * {@code keySequence}, a data-browser library's {@code key}), else 0: the same answer the
+         * adapter's meta entries give.
+         */
         @Override
         public int getKeySequence()
         {
-            return 0;
+            return src.getMetaData(
+                    DataTableMetaSupport.META_KEY_ITEM_KEY_SEQUENCE) instanceof Number n
+                    && n.intValue() > 0 ? n.intValue() : 0;
         }
 
 
