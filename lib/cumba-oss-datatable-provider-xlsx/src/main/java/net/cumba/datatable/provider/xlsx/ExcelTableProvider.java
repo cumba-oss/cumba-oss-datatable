@@ -393,7 +393,8 @@ public class ExcelTableProvider extends AbstractDataTableProvider
     /**
      * The names of the header columns: each header cell's rendered text, or the positional fallback
      * {@code V<index + 1>} when that text is blank or the cell is an error ({@code #REF!}), logged
-     * once per column at {@code WARNING} naming the Excel column it applies to and why.
+     * once per column at {@code WARNING} naming the Excel column it applies to and why; a numeric
+     * header whose rendered name is already taken gets {@code <name>_<k>} (see below).
      * <p>
      * ⚠ <b>This fallback is REACHABLE and must not be deleted as dead code.</b> It is not merely
      * the mirror image of {@link #isHeaderCell(Cell)}'s blankness test: {@code isHeaderCell}
@@ -425,7 +426,7 @@ public class ExcelTableProvider extends AbstractDataTableProvider
      * 2026-10-12: <i>"I would like to get this column in with a temp name, so nothing is lost,
      * additionally log with warning."</i>).
      * <p>
-     * A fallback never collides: names are not otherwise made unique (a duplicate name fails the
+     * A fallback never collides: a text header is never renamed (a duplicate text name fails the
      * whole sheet in {@code DataTableMetaSupport}), so a fallback that equals, ignoring case, a
      * header name of the sheet or an earlier fallback takes the next free {@code V<n>_<k>}
      * ({@code k = 1, 2, …}).

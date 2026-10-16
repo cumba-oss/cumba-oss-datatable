@@ -1425,7 +1425,7 @@ class ExcelTableProviderTest
 
 
     /**
-     * A positional name never collides with a real header: names are not otherwise made unique (a
+     * A positional name never collides with a real header: a text header is never renamed (a
      * duplicate fails the whole sheet), so a fallback that a header of the sheet already spells -
      * ignoring case, before or after it - takes the next free {@code V<n>_<k>}.
      */
