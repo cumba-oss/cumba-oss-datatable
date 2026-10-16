@@ -76,6 +76,20 @@ class MergedTableSuppTest
     }
 
 
+    /**
+     * PACK H B2 L1: the column label is the first NON-BLANK {@code QLABEL}; a first row with a
+     * blank one (an absent member reads "") does not blank the label a later row gives.
+     */
+    @Test
+    void aBlankFirstQlabelDoesNotBlankTheLabel()
+    {
+        MergedTable t = merge(ae(), suppae("S1,AE,01-001,AESEQ,1,AETRTEM,,Y",
+                "S1,AE,01-001,AESEQ,2,AETRTEM,Treatment Emergent,N"));
+        int col = t.getMetaData().getColumnIndex("AETRTEM");
+        assertEquals("Treatment Emergent", t.getMetaData().getColumn(col).getLabel());
+    }
+
+
     @Test
     void case1_oneRecordLevelRow_qualifiesItsRecordOnly()
     {

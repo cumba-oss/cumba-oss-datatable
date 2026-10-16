@@ -172,8 +172,10 @@ final class SuppQnamIndex
             List<Entry> entries = byQnam.computeIfAbsent(qnam, _ -> new ArrayList<>());
             if (qlabelIdx >= 0 && !labels.containsKey(qnam))
             {
+                // the first NON-BLANK QLABEL: a blank one (an absent member reads "") must not
+                // blank the label a later row gives (PACK H B2 L1)
                 String label = RelrecLinks.cell(aSupp, qlabelIdx, r);
-                if (label != null)
+                if (RelrecLinks.isNonBlank(label))
                 {
                     labels.put(qnam, label);
                 }
@@ -231,7 +233,9 @@ final class SuppQnamIndex
     }
 
 
-    /** The {@code QLABEL} of the first row carrying {@code aQnam}, or {@code null}. */
+    /**
+     * The first non-blank {@code QLABEL} of the rows carrying {@code aQnam}, or {@code null}.
+     */
     @Nullable
     String label(String aQnam)
     {
