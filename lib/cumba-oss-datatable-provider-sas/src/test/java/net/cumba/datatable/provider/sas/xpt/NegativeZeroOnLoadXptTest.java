@@ -24,10 +24,12 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code +0.0}, at full width (8) and truncated (3).
  *
  * <p>
- * The file is crafted in-test (this repository has no XPT writer; the layout mirrors the internal
- * twin's {@code WriterXpt} output byte for byte, datetime stamps aside), and its observation bytes
- * are asserted before the provider reads it. Variables {@code V8} (width 8) and {@code V3} (width
- * 3); row 0 {@code -0.0}, row 1 the {@code +0.0} control, row 2 the non-zero control {@code -1.5}.
+ * The file is crafted in-test in the SAS TS-140 layout (this repository has no XPT writer), and its
+ * observation bytes are asserted before the provider reads it. Row 0 holds the signed IBM zero
+ * {@code 80 00..} that other writers may emit: the internal twin's {@code WriterXpt} writes every
+ * zero as {@code 00 00..} since B1-I4 (SAS 9.4's own XPORT output), so that twin sets the bytes
+ * after writing. Variables {@code V8} (width 8) and {@code V3} (width 3); row 0 {@code -0.0}, row 1
+ * the {@code +0.0} control, row 2 the non-zero control {@code -1.5}.
  * </p>
  */
 class NegativeZeroOnLoadXptTest
@@ -58,10 +60,10 @@ class NegativeZeroOnLoadXptTest
 
 
     /**
-     * The XPT v5 transport file, crafted byte by byte (this repository has no XPT writer). The
-     * layout is the one the internal {@code WriterXpt} writes for the same two variables and three
-     * rows (SAS TS-140): library, member and descriptor headers, two 140-byte namestr records
-     * padded to 80, the OBS header, then {@link #OBSERVATIONS} padded with blanks.
+     * The XPT v5 transport file, crafted byte by byte (this repository has no XPT writer), in the
+     * SAS TS-140 layout for two variables and three rows: library, member and descriptor headers,
+     * two 140-byte namestr records padded to 80, the OBS header, then {@link #OBSERVATIONS} padded
+     * with blanks.
      */
     private static byte[] xptBytes()
     {

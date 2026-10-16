@@ -127,9 +127,6 @@ class AttributionTest
         check(Files.isRegularFile(f), f + " is missing. The guard's input is gone, so the"
                 + " guard is not guarding. Restore the resource; do not delete the test.");
         List<String[]> out = new ArrayList<>();
-        // split("\n", -1), not split("\n"): the one-argument form silently drops trailing empty
-        // fields, so a manifest ending in blank lines reads differently from one that does not.
-        // Blank lines are skipped below either way; the explicit limit keeps that the only rule.
         for (String line : Files.readString(f, StandardCharsets.UTF_8).split("\n", -1))
         {
             String t = line.strip();
@@ -148,8 +145,6 @@ class AttributionTest
     }
 
 
-    // Set, not TreeSet, in the signature ([NonApiType]); the sorted order the failure messages
-    // rely on comes from the TreeSet the body builds, not from the declared type.
     private static Set<String> minus(Set<String> aLeft, Set<String> aRight)
     {
         TreeSet<String> out = new TreeSet<>(aLeft);

@@ -89,10 +89,10 @@ public final class UnionDataTable extends AbstractDataTable
 
     /**
      * Shared "the matched member lacks this column" value of every <b>non-STRING</b> union column —
-     * the house idiom (see {@code PolymorphicMergedColumn}): {@link MissingValue#MIS}, the
-     * absent-column default of a numeric / boolean / other column (register {@code D34 #3/#4}).
-     * Never {@code null}, and {@code isMissingOrInvalid()} is {@code true}. A STRING column's
-     * default is {@code ""} (see {@link #absentDefaults}).
+     * the house idiom: {@link MissingValue#MIS}, the absent-column default of a numeric / boolean /
+     * other column (register {@code D34 #3/#4}). Never {@code null}, and
+     * {@code isMissingOrInvalid()} is {@code true}. A STRING column's default is {@code ""} (see
+     * {@link #absentDefaults}).
      */
     private static final IDataValue MISSING_VALUE = DataValueSupport.getAsDataValue(null,
             DataValueType.MISSING);
