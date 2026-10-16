@@ -676,13 +676,52 @@ public class DsjTableProvider extends AbstractDataTableProvider
     protected IDataTypeMapper createDataTypeMapper(DataTableColumnMeta aMeta)
     {
         // "dataType" / "targetDataType" are always populated by addColumn(...) for every column
-        // this provider builds, so the metadata lookups are guaranteed present here.
-        ColumnDataType dt = Objects.requireNonNull((ColumnDataType) aMeta.getMetaData("dataType"),
+        // this provider builds, so the typed entries are guaranteed present here. A data-browser
+        // library may carry a String attribute under the same key, copied in FIRST
+        // (DataTableMetaSupport.addColumn), so a plain getMetaData(key) can answer the library's
+        // String: read the provider's own typed entry instead (B2-C9 / U16; it used to throw a
+        // ClassCastException and fail the load).
+        ColumnDataType dt = Objects.requireNonNull(
+                ownTypedMeta(aMeta, "dataType", ColumnDataType.class),
                 "missing 'dataType' column meta");
         ColumnTargetDataType tdt = Objects.requireNonNull(
-                (ColumnTargetDataType) aMeta.getMetaData("targetDataType"),
+                ownTypedMeta(aMeta, "targetDataType", ColumnTargetDataType.class),
                 "missing 'targetDataType' column meta");
         return new DataTypeMapperFactory().getMapper(dt, tdt);
+    }
+
+
+    /**
+     * The last custom-metadata entry under {@code aKey} whose value is an {@code aType} &mdash; the
+     * one this provider appended &mdash; or {@code null}. A library attribute under the same key is
+     * a {@link String} and is skipped.
+     *
+     * @param <T>
+     *            the expected value type.
+     * @param aMeta
+     *            the column metadata.
+     * @param aKey
+     *            the custom-metadata key.
+     * @param aType
+     *            the value type the provider stores under the key.
+     * @return the provider's own value, or {@code null} if none is present.
+     */
+    private static <T> @Nullable T ownTypedMeta(DataTableColumnMeta aMeta, String aKey,
+            Class<T> aType)
+    {
+        Object[] table = aMeta.getMetaTable();
+        T found = null;
+        if (table != null)
+        {
+            for (int i = 0; i < table.length - 1; i += 2)
+            {
+                if (aKey.equals(table[i]) && aType.isInstance(table[i + 1]))
+                {
+                    found = aType.cast(table[i + 1]);
+                }
+            }
+        }
+        return found;
     }
 
 
