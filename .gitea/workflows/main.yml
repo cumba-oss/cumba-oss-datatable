@@ -194,14 +194,32 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      # Pack each report tree into ONE archive before uploading it: Gitea's
+      # artifact v3 backend stores every uploaded FILE as one action_artifact
+      # row, and the unpacked trees were thousands of rows per run (1.43 M rows
+      # by 2026-10-20, whose expiry cleanup hung for 13 days). Identical in
+      # every repo — check_ci_report_steps.py (meta repo) guards it.
+      - name: Pack JaCoCo and Surefire reports
+        if: always()
+        run: |
+          pack() {  # pack <artifact-name> <find -path pattern>...
+            local out="target/ci-reports/$1.tar.gz" p expr=() dirs=()
+            shift
+            for p in "$@"; do expr+=(-o -path "$p"); done
+            mapfile -d '' dirs < <(find . -path '*/node_modules' -prune -o \
+              -type d \( "${expr[@]:1}" \) -prune -print0)
+            if [ ${#dirs[@]} -eq 0 ]; then echo "::warning::nothing to pack for $out"; return 0; fi
+            mkdir -p target/ci-reports && tar -czf "$out" "${dirs[@]}"
+          }
+          pack jacoco-reports '*/target/site/jacoco' '*/target/site/jacoco-aggregate'
+          pack surefire-reports '*/target/surefire-reports'
+
       - name: Upload JaCoCo reports
         uses: actions/upload-artifact@v3
         if: always()
         with:
           name: jacoco-reports
-          path: |
-            **/target/site/jacoco/**
-            **/target/site/jacoco-aggregate/**
+          path: target/ci-reports/jacoco-reports.tar.gz
           if-no-files-found: warn
           retention-days: 7
 
@@ -210,7 +228,7 @@ jobs:
         if: always()
         with:
           name: surefire-reports
-          path: '**/target/surefire-reports/**'
+          path: target/ci-reports/surefire-reports.tar.gz
           if-no-files-found: warn
           retention-days: 7
 
@@ -292,12 +310,31 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      # Pack each report tree into ONE archive before uploading it: Gitea's
+      # artifact v3 backend stores every uploaded FILE as one action_artifact
+      # row, and the unpacked trees were thousands of rows per run (1.43 M rows
+      # by 2026-10-20, whose expiry cleanup hung for 13 days). Identical in
+      # every repo — check_ci_report_steps.py (meta repo) guards it.
+      - name: Pack Pitest reports
+        if: always()
+        run: |
+          pack() {  # pack <artifact-name> <find -path pattern>...
+            local out="target/ci-reports/$1.tar.gz" p expr=() dirs=()
+            shift
+            for p in "$@"; do expr+=(-o -path "$p"); done
+            mapfile -d '' dirs < <(find . -path '*/node_modules' -prune -o \
+              -type d \( "${expr[@]:1}" \) -prune -print0)
+            if [ ${#dirs[@]} -eq 0 ]; then echo "::warning::nothing to pack for $out"; return 0; fi
+            mkdir -p target/ci-reports && tar -czf "$out" "${dirs[@]}"
+          }
+          pack pitest-reports '*/target/pit-reports'
+
       - name: Upload Pitest reports
         uses: actions/upload-artifact@v3
         if: ${{ always() }}
         with:
           name: pitest-reports
-          path: '**/target/pit-reports/**'
+          path: target/ci-reports/pitest-reports.tar.gz
           if-no-files-found: warn
           retention-days: 7
 
